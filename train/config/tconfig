@@ -1,0 +1,58 @@
+[kousei]
+## Main settings
+## algorithm version, v0 for 2k, v1 for 1k, v3 for 0.5k
+version = 0
+# mask mode , frame, fg, bg and mixed
+mode = frame
+# Initial settings, this value affects other unexposed settings of the model
+initial_config = 0
+# nums of GPU
+nums_gpu = 1
+# GPU type, cpu , mps or cuda
+gpu_type = mps
+# img_type, image or ACESCG
+img_type = image
+# When set to None, it starts from 0. If you need fine-tuning, please set the path to the .pth file.
+restore_ckpt = None
+# name of your training
+name = MM_train_20240307
+
+## Training data settings
+data_root = data
+# Enabling reload will slow down startup. Enable it if you've updated your training data, otherwise keep it disabled
+reload_data = 1
+# Data weighting and augmentation, the three values are [data weighting, minimum resize factor, maximum resize factor], where the resize calculation formula is 2**n. If it's 0, no augmentation is done; if it's 1, it's doubled, and so on.
+# Note, unreal and spring use 2k training sets, others use 1k
+sintel_clean = [0,1,1.2]
+sintel_final = [0,1,1.2]
+things_clean = [0,1,1.2]
+things_final = [0,1,1.2]
+unreal_clean = [1,0,0.1]
+unreal_final = [1,0,0.1]
+spring_clean = [0,0,0.1]
+unreal_MRQ_clean = [1,0,0.1]
+unreal_MRQ_final = [0,0,0.1]
+fps = [12,24,48]
+
+
+##other settings
+vis_iter = 5000
+save_iter = 20000
+
+
+# Hyperparameter settings
+# skip first and last frames for mv bug
+skip_frames = 1
+# Whether to enable flipping, images will have a certain probability of random flipping during training
+do_flip = 1
+# Film grain size, 0 means no addition
+film_grain = [0,0] #min size, max size 0-8
+# Maximum mv movement ratio, value is percentage of length, training will filter out mv exceeding this value
+max_mv_x = 0.6
+max_mv_y = 0.6
+# Motion blur ratio, not needed if using final data
+motion_blur_rate = 0
+# Multi-frame algorithm flip ratio, a certain probability of flipping the image's front and back relationship during training
+reverse_rate=0.3
+# Repeat frame addition rate, this value affects the model's handling capability for static areas
+repeat_frame_rate = 0

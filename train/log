@@ -1,0 +1,5908 @@
+2024-03-07 19:05:50.654 | INFO     | __main__:<module>:234 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_19_05)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload: False
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 19:06:13.170 | INFO     | __main__:<module>:234 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_19_06)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload: False
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 19:06:49.613 | INFO     | __main__:<module>:234 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_19_06)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: False
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 19:06:49.826 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 19:08:07.246 | INFO     | __main__:<module>:235 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_19_08)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: False
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 19:08:07.378 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 19:08:33.484 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_19_08)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: False
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 19:08:33.626 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:04:24.625 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_04)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:04:24.806 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:05:26.475 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_05)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:05:26.624 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:10:15.207 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_10)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:10:15.354 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:10:38.009 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_10)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:10:38.156 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:11:12.876 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_11)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:11:13.028 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:11:38.179 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_11)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:11:38.309 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:12:05.220 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_12)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:12:05.350 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:13:18.429 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_13)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:13:18.559 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:13:28.218 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_13)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:13:28.358 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:14:43.088 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_14)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:14:43.239 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:14:55.122 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_14)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:14:55.274 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:15:49.302 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_15)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:15:49.455 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:16:49.871 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_16)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:16:50.011 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:17:16.085 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_17)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:17:16.223 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 20:56:46.728 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_20_56)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 20:56:46.973 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:01:57.564 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_01)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:01:57.697 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:02:16.343 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_02)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:02:16.495 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:03:19.106 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_03)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:03:19.247 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:05:22.945 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_05)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:05:23.095 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:05:45.708 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_05)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:05:45.868 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:06:12.035 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_06)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:06:12.173 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:07:49.020 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_07)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:07:49.156 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:08:04.844 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_08)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:08:04.984 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:09:11.650 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_09)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:09:11.808 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:09:59.838 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_09)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:10:00.000 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:10:41.753 | INFO     | __main__:<module>:236 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_10)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:10:41.905 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:11:42.747 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_11)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:11:42.882 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:12:50.186 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: ldr
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: ldr
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_12)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:12:50.316 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:14:07.391 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_14)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:14:07.541 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:14:54.558 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_14)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:14:54.712 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:15:28.847 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_15)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:15:28.995 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:20:16.820 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_20)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:20:50.172 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_20)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:21:40.241 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_21)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:22:38.618 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_22)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:22:38.752 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:23:03.372 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_23)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:23:03.506 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:30:00.643 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_30)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:30:00.804 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:38:13.485 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_38)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:38:13.783 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:39:23.696 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_39)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:39:24.018 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:41:46.565 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_41)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:41:46.845 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:42:27.936 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_42)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:42:28.065 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:43:02.278 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_43)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:43:02.408 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:43:40.396 | INFO     | __main__:<module>:243 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_43)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:43:40.542 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:45:33.681 | INFO     | __main__:<module>:245 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_45)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:45:33.828 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:46:04.177 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_46)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:46:04.309 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:49:26.910 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_49)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:49:27.065 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:49:48.034 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_49)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:49:48.188 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:51:50.655 | INFO     | __main__:<module>:245 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+assertion failed: (0 <= mpsAxis && mpsAxis < 4 && "Runtime canonicalization must simplify reduction axes to minor 4 dimensions."), function encodeNDArrayOp, file GPUReductionOps.mm, line 76.
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_51)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:51:50.785 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 21:58:07.556 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_21_58)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 100
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 21:58:07.687 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:00:57.442 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_00)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:00:57.587 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:01:10.426 | INFO     | core.utils.logger:_print_training_status:19 - [     2, [5.000266664296318e-06]]     0.0081,     0.0652,     0.5401,     4.8102, 
+2024-03-07 22:01:17.812 | INFO     | core.utils.logger:_print_training_status:19 - [     3, [5.0005333285926355e-06]]     0.0077,     0.0559,     0.5959,     4.6643, 
+2024-03-07 22:01:24.451 | INFO     | core.utils.logger:_print_training_status:19 - [     4, [5.000799992888952e-06]]     0.0055,     0.0461,     0.6561,     4.4977, 
+2024-03-07 22:01:31.949 | INFO     | core.utils.logger:_print_training_status:19 - [     5, [5.00106665718527e-06]]     0.0104,     0.1099,     0.7975,     3.9883, 
+2024-03-07 22:01:39.083 | INFO     | core.utils.logger:_print_training_status:19 - [     6, [5.001333321481587e-06]]     0.0070,     0.0924,     0.6762,     4.3442, 
+2024-03-07 22:01:46.060 | INFO     | core.utils.logger:_print_training_status:19 - [     7, [5.001599985777905e-06]]     0.0080,     0.0958,     0.7313,     4.1887, 
+2024-03-07 22:01:52.920 | INFO     | core.utils.logger:_print_training_status:19 - [     8, [5.001866650074222e-06]]     0.0085,     0.1851,     0.9163,     3.8066, 
+2024-03-07 22:01:59.895 | INFO     | core.utils.logger:_print_training_status:19 - [     9, [5.002133314370539e-06]]     0.0094,     0.1929,     0.8212,     3.9624, 
+2024-03-07 22:02:21.042 | INFO     | core.utils.logger:_print_training_status:19 - [    10, [5.002399978666857e-06]]     0.0093,     0.2670,     0.8196,     3.9225, 
+2024-03-07 22:02:27.980 | INFO     | core.utils.logger:_print_training_status:19 - [    11, [5.002666642963174e-06]]     0.0095,     0.2082,     0.8260,     3.9573, 
+2024-03-07 22:02:34.896 | INFO     | core.utils.logger:_print_training_status:19 - [    12, [5.002933307259492e-06]]     0.0087,     0.3514,     0.9818,     3.4021, 
+2024-03-07 22:02:41.379 | INFO     | core.utils.logger:_print_training_status:19 - [    13, [5.003199971555808e-06]]     0.0091,     0.2793,     0.8477,     3.8574, 
+2024-03-07 22:02:47.700 | INFO     | core.utils.logger:_print_training_status:19 - [    14, [5.003466635852126e-06]]     0.0081,     0.3342,     0.8900,     3.6610, 
+2024-03-07 22:02:54.336 | INFO     | core.utils.logger:_print_training_status:19 - [    15, [5.0037333001484435e-06]]     0.0089,     0.3598,     0.9221,     3.5313, 
+2024-03-07 22:03:00.803 | INFO     | core.utils.logger:_print_training_status:19 - [    16, [5.003999964444761e-06]]     0.0071,     0.3542,     0.9862,     3.3271, 
+2024-03-07 22:03:08.319 | INFO     | core.utils.logger:_print_training_status:19 - [    17, [5.004266628741079e-06]]     0.0109,     0.4604,     0.9562,     3.2480, 
+2024-03-07 22:03:29.245 | INFO     | core.utils.logger:_print_training_status:19 - [    18, [5.004533293037395e-06]]     0.0118,     0.4394,     0.9599,     3.2242, 
+2024-03-07 22:03:35.896 | INFO     | core.utils.logger:_print_training_status:19 - [    19, [5.004799957333713e-06]]     0.0134,     0.3964,     0.9532,     3.3361, 
+2024-03-07 22:03:42.766 | INFO     | core.utils.logger:_print_training_status:19 - [    20, [5.00506662163003e-06]]     0.0088,     0.4985,     0.9902,     3.0206, 
+2024-03-07 22:03:49.959 | INFO     | core.utils.logger:_print_training_status:19 - [    21, [5.005333285926348e-06]]     0.0122,     0.4165,     0.9274,     3.2753, 
+2024-03-07 22:03:56.694 | INFO     | core.utils.logger:_print_training_status:19 - [    22, [5.0055999502226655e-06]]     0.0119,     0.6590,     0.9857,     2.7730, 
+2024-03-07 22:04:56.202 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 4
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_04)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 4
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:04:56.358 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:06:08.086 | INFO     | core.utils.logger:_print_training_status:19 - [     2, [5.000266664296318e-06]]     0.0069,     0.0564,     0.6039,     4.6084, 
+2024-03-07 22:07:43.132 | INFO     | core.utils.logger:_print_training_status:19 - [     3, [5.0005333285926355e-06]]     0.0081,     0.0549,     0.6183,     4.5354, 
+2024-03-07 22:13:22.345 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_13)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:13:22.516 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:15:37.316 | INFO     | __main__:<module>:245 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_15)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:15:37.451 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:17:11.081 | INFO     | __main__:<module>:245 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_17)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:17:11.217 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:21:22.096 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [0.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_21)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [0.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:21:22.240 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:23:22.885 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [1.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [0.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_23)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [0.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [1.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:23:23.044 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:23:48.349 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [1.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [0.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_23)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [0.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [1.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:23:48.501 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:24:51.699 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [1.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [0.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_24)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [0.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [1.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:24:51.854 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:26:05.035 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [1.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [0.0, 0.0, 0.1]
+  stage_unreal_final: [0.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_26)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 3
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [0.0, 0.0, 0.1]
+unreal_final: [0.0, 0.0, 0.1]
+unreal_mrq_clean: [1.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:26:05.191 | INFO     | __main__:train:130 - Parameter Count: 8046200
+2024-03-07 22:27:20.552 | INFO     | __main__:<module>:244 - MOFNetStack:
+  Tfusion: stack
+  cnet: basicencoder
+  context_3D: False
+  corr_fn: default
+  corr_levels: 4
+  critical_params: ['cnet', 'fnet', 'pretrain', 'corr_fn', 'Tfusion', 'corr_levels', 'decoder_depth', 'mixed_precision']
+  decoder_depth: 4
+  down_ratio: 16
+  feat_dim: 256
+  fnet: basicencoder
+  mixed_precision: False
+  pretrain: True
+batch_size: 1
+critical_params: []
+data_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data
+do_flip: True
+film_grain: [0,0] #min size, max size 0-8
+filter_epe: False
+gamma: 0.85
+gpu_type: mps
+img_type: image
+initial_config: 0
+input_frames: 5
+kousei:
+  crop_size: [880, 1920]
+  do_flip: True
+  film_grain: [0,0] #min size, max size 0-8
+  img_type: image
+  mask_enhance_range: [-1, -1]
+  mask_enhance_rate: 0.3
+  mask_treshold: 120
+  mask_type: None
+  max_mv_x: 0.6
+  max_mv_y: 0.6
+  motion_blur_rate: 0
+  repeat_frame_rate: 0.02
+  reverse_rate: 0.3
+  stage_sintel_clean: [0.0, 1.0, 1.2]
+  stage_sintel_final: [0.0, 1.0, 1.2]
+  stage_spring_clean: [0.0, 0.0, 0.1]
+  stage_things_clean: [0.0, 1.0, 1.2]
+  stage_things_final: [0.0, 1.0, 1.2]
+  stage_unreal_MRQ_clean: [1.0, 0.0, 0.1]
+  stage_unreal_MRQ_final: [0.0, 0.0, 0.1]
+  stage_unreal_clean: [1.0, 0.0, 0.1]
+  stage_unreal_final: [1.0, 0.0, 0.1]
+log_dir: logs/MM_train_20240307/MOFNetStack/cnet[basicencoder]fnet[basicencoder]pretrain[True]corr_fn[default]Tfusion[stack]corr_levels[4]decoder_depth[4]mixed_precision[False](03_07_22_27)
+max_flow: 1152.0
+max_mv_x: 0.6
+max_mv_y: 0.6
+mixed_precision: False
+mode: frame
+model: VideoFlow_ckpt/videoflow_last.pth
+motion_blur_rate: 0
+name: MM_train_20240307
+network: MOFNetStack
+nums_gpu: 1
+pkl_root: /Users/tcstudio_mm/Documents/gxliu/BaseLayer/MM/motionmodel/train/data_pkl
+reload_data: True
+repeat_frame_rate: 0.02
+restore_ckpt: None
+reverse_rate: 0.3
+save_iter: 20000
+sintel_clean: [0.0, 1.0, 1.2]
+sintel_final: [0.0, 1.0, 1.2]
+skip_frames: 1
+spring_clean: [0.0, 0.0, 0.1]
+suffix: 
+sum_freq: 1
+test: False
+things_clean: [0.0, 1.0, 1.2]
+things_final: [0.0, 1.0, 1.2]
+trainer:
+  adamw_decay: 0.0001
+  anneal_strategy: linear
+  canonical_lr: 0.000125
+  clip: 1.0
+  epsilon: 1e-08
+  num_steps: 9000000
+  optimizer: adamw
+  scheduler: OneCycleLR
+unreal_clean: [1.0, 0.0, 0.1]
+unreal_final: [1.0, 0.0, 0.1]
+unreal_mrq_clean: [1.0, 0.0, 0.1]
+unreal_mrq_final: [0.0, 0.0, 0.1]
+use_smoothl1: False
+val_freq: 100000000
+version: 0
+vis_iter: 5000
+2024-03-07 22:27:20.709 | INFO     | __main__:train:130 - Parameter Count: 8046200

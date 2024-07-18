@@ -1,0 +1,29 @@
+mm主函数
+
+1. mm
+用法:mm主函数
+mm config
+
+2.mmexrreader
+用法： 用于将unreal图片拆解成mv和image
+mmexrreader --path your_file_path
+(
+其他可选参数：
+--MRQ :for movie render queue
+--dump_depth: dump world depth
+)
+
+3.
+mmevaluation
+用法：用于评估mv
+mmevaluation --path your_file_path
+(
+其他可选参数：
+--img_path your_image_path
+)
+
+4.mmupdate
+用法：用于升级mm
+
+4.mmalgo
+用法：用于查询所有可用算法模型
