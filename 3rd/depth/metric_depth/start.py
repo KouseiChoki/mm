@@ -151,8 +151,11 @@ if __name__ == '__main__':
             output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
             if args.color:
                 import copy
-                tmpdepth = copy.deepycopy(depth)
+                tmpdepth = copy.deepcopy(depth)
+                tmpdepth = (tmpdepth - tmpdepth.min()) / (tmpdepth.max() - tmpdepth.min()) * 255.0
+                tmpdepth = tmpdepth.astype(np.uint8)
                 tmpdepth = (cmap(tmpdepth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
+                mkdir(os.path.join(output, f'{args.name}_color'))
                 cv2.imwrite(os.path.join(output, f'{args.name}_color',os.path.basename(filename).replace(f'.{last}',''))+'.png', tmpdepth)
             # output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png')
             # if args.pred_only:
