@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:03:17
+LastEditTime: 2024-07-19 10:01:48
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -48,7 +48,7 @@ from core.utils.logger import Logger
 from core.Networks import build_network
 import core.datasets_kousei as datasets
 import imageio
-from config_process_train import init_param
+from cfg_process_train import init_param
 
 train_root = os.path.abspath(os.path.dirname(os.path.abspath(__file__))+'/../../train')
 def write(path,flow,compress_method='EXR16'):

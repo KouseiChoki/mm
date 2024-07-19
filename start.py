@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:03:02
+LastEditTime: 2024-07-19 10:00:36
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -36,7 +36,7 @@ if getattr(sys, 'frozen', None):
     sys.path.insert(2, "/tt/nas/miniconda3/lib/python3.9/lib-dynload")
     sys.path.insert(3, "/tt/nas/miniconda3/lib/python3.9/site-packages")
 from myutil import *
-from config_process import init_param
+from cfg_process import init_param
 from scene_change_detection import scene_change_detect
 from pre_treatment import pre_treatment,pre_treatment_3D,get_frames_count
 from virtual_depth.virtual_depth_processor import virtual_depth_core

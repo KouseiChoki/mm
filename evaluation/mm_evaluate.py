@@ -1,15 +1,15 @@
 '''
 Author: Qing Hong
 Date: 2022-05-25 17:35:01
-LastEditors: QingHong
-LastEditTime: 2024-04-16 10:43:53
+LastEditors: Qing Hong
+LastEditTime: 2024-07-19 10:00:52
 Description: file content
 '''
 import os,sys
 cur_path = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, cur_path+'/../algo')
 import shutil
-from config_process import init_param
+from cfg_process import init_param
 from evaluate_core import mm_evaluate,show_evaluation
 import re
 import datetime
