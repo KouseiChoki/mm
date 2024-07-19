@@ -11,11 +11,11 @@ MM9_format = 0
 
 ### Algorithms
 # use mmalgo to check
-algorithm = kousei-v0-230914600
+algorithm = kousei-v1-230908280
 
 ##### Root
 # Data root and output (multiple folder)
-root = pattern/1k
+root = /Users/qhong/Desktop/0205mixed/0205
 output = result/1k
 # The name of image file (None if not exist)
 image_file = image
