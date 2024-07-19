@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:08:10
+LastEditTime: 2024-07-19 10:24:38
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -168,11 +168,13 @@ if __name__ == '__main__':
                 
             #     cv2.imwrite(output_path, combined_result)
             depth = np.repeat(depth[...,None],4,axis=2)
+            d = depth[...,0]
+            d = (d - d.min()) / (d.max() - d.min())
             # if args.norm:
-            if True:
-                d = depth[...,0]
-                d = (d - d.min()) / (d.max() - d.min())
+            if metric:
                 depth[...,-1] = d
+            else:
+                depth = np.repeat(d[...,None],4,axis=2)
             # mvwrite(os.path.join(args.outdir,os.path.basename(task),'mono_depth',os.path.basename(filename[:filename.rfind('.')]) + '.exr'),depth,precision='half')
             
             mvwrite(output_path,depth,precision='half')

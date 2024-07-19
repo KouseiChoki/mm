@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-07-11 12:14:16
+ # @LastEditTime: 2024-07-19 10:30:53
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -167,3 +167,4 @@ else
 fi
 echo "patch 3.19note 新版需要手动安装opencolorio,在控制台输入mm,左侧有(mm)的情况下输入pip install opencolorio"
 echo "patch 7.09note 新版需要手动安装plyfile,在控制台输入mm,左侧有(mm)的情况下输入pip install plyfile"
+echo "patch 7.19note 新版mmd需要升级matplotlib,左侧有(mm)的情况下输入pip install matplotlib==3.9.1"
