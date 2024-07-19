@@ -32,8 +32,7 @@ import glob
 import numpy as np
 import os
 import torch
-from depth_anything_v2.dpt import DepthAnythingV2
-from depth_anything_v2_s.dpt import DepthAnythingV2 as DepthAnythingV2s
+
 from file_utils import mvwrite,read,mkdir
 import matplotlib
 import requests
@@ -92,6 +91,10 @@ if __name__ == '__main__':
     DEVICE = args.device.lower()
     assert DEVICE in ['cpu','mps','cuda'],f'not supported device :{DEVICE}!, please use mps , cuda or cpu'
     metric = True if '_metric_' in args.algo else False
+    if metric:
+        from depth_anything_v2.dpt import DepthAnythingV2
+    else:
+        from depth_anything_v2_s.dpt import DepthAnythingV2
     model_configs = {
         'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
         'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
@@ -99,6 +102,8 @@ if __name__ == '__main__':
         'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
     }
     mkdir(os.path.join(fp,'checkpoints'))
+    dtype = args.algo.split('_')[-1]
+    assert dtype in ['vits','vitb','vitl','vitg'],'error algo'
     ckpt_path = os.path.join(fp,'checkpoints',args.algo)+'.pth'
     if not os.path.isfile(ckpt_path):
         download_url = ckpt_path
@@ -113,7 +118,7 @@ if __name__ == '__main__':
     args.load_from = ckpt_path
     encoder = args.algo.split('_')[-1]
     mmc = model_configs[encoder]
-    depth_anything = DepthAnythingV2(**{**model_configs['vitl'], 'max_depth': args.max_depth}) if metric else DepthAnythingV2s(**{**model_configs['vitl']})
+    depth_anything = DepthAnythingV2(**{**model_configs[dtype], 'max_depth': args.max_depth}) if metric else DepthAnythingV2(**{**model_configs[dtype]})
     depth_anything.load_state_dict(torch.load(args.load_from, map_location='cpu'))
     depth_anything = depth_anything.to(DEVICE).eval()
 
