@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-06-26 12:57:32
+LastEditTime: 2024-07-19 10:04:59
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -670,7 +670,7 @@ def pad_bounding_box(masks,args):
 
 
 if __name__ == '__main__':
-    from config_process import init_param
+    from cfg_process import init_param
     args = init_param(os.path.join(os.getcwd(),'..','config'))
     args.root = os.path.join(os.path.join(os.getcwd(),'..'),args.root)
     args.model = os.path.join(os.path.join(os.getcwd(),'..'),args.model)

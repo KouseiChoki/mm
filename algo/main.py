@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:02:12
+LastEditTime: 2024-07-19 10:04:56
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -42,7 +42,7 @@ from algo import *
 import argparse
 from torch import distributed as dist
 from pre_treatment import *
-from config_process import init_param,adjust_weight
+from cfg_process import init_param,adjust_weight
 test_mode = False
 
 
