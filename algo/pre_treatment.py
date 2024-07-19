@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:02:45
+LastEditTime: 2024-07-19 10:03:43
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -233,7 +233,7 @@ def get_frames_count(root):
     return final_res
 
 if __name__ == '__main__':
-    from config_process import init_param
+    from cfg_process import init_param
     cp = os.getcwd() if '/algo' in os.getcwd() else os.path.join(os.getcwd(),'algo')
     args = init_param(os.path.join(cp,'..','config'))
     args.root = os.path.join(os.path.join(cp,'..'),args.root)
