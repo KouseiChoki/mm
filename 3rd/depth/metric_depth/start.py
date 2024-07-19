@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-18 14:33:26
+LastEditTime: 2024-07-19 10:08:10
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -47,6 +47,7 @@ def download_file(url, destination):
     total_size_in_bytes = int(response.headers.get('content-length', 0))
     block_size = 1024 # 1 Kibibyte
     progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+    mkdir(os.path.dirname(destination))
     with open(destination, 'wb') as file:
         for data in response.iter_content(block_size):
             progress_bar.update(len(data))
