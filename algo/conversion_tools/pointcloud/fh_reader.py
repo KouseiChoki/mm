@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-17 11:40:24
+LastEditTime: 2024-07-29 10:31:51
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -109,7 +109,7 @@ def get_intrinsic_extrinsic(images,rows,save_path,name,args):
         image_path = os.path.join(save_path,'image',os.path.basename(image))
         if not os.path.isfile(image_path) or args.f:
             shutil.copy(image,image_path)
-        w,h = 2180,1152
+        w,h = 2048,1080
         rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
         c2w = np.eye(4,4)
         c2w[:3,:3] = rotation_matrix
@@ -137,8 +137,8 @@ def get_intrinsic_extrinsic(images,rows,save_path,name,args):
         o_cx = w/2.0 
         o_cy = h/2.0
         model="PINHOLE"
-        focal_length_x = 2417.84648
-        focal_length_y = 2417.84648
+        focal_length_x = 1879.492
+        focal_length_y = 1879.492
         cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_path).replace('.png',''),image_path = image_path, width=w, height=h,model=model)
         cam_infos.append(cam_info)
         index += 1
@@ -201,8 +201,8 @@ def ply_cal_core(images,rows,save_path,args):
 
 if __name__ == '__main__':
     args = init_param()
-    rtf = '/Users/qhong/Desktop/0717_ply/s_movement_0716/alita/6DoF.rtf'
-    path = '/Users/qhong/Desktop/0717_ply/s_movement_0716/alita'
+    rtf = '/Users/qhong/Desktop/0729/fg_avatar_0725/Avatar_5frames/6DoF.rtf'
+    path = '/Users/qhong/Desktop/0729/fg_avatar_0725/Avatar_5frames'
     args.f = True
     data = read_rtf(rtf)
     lines = data.strip().split('\n')

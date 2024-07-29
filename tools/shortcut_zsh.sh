@@ -167,4 +167,4 @@ else
 fi
 echo "patch 3.19note 新版需要手动安装opencolorio,在控制台输入mm,左侧有(mm)的情况下输入pip install opencolorio"
 echo "patch 7.09note 新版需要手动安装plyfile,在控制台输入mm,左侧有(mm)的情况下输入pip install plyfile"
-echo "patch 7.19note 新版mmd需要升级matplotlib,左侧有(mm)的情况下输入pip install matplotlib==3.9.1"
+echo "patch 7.19note 新版mmd需要升级matplotlib,左侧有(mm)的情况下输入pip install matplotlib==3.8.0"
