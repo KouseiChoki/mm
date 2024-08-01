@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-15 14:23:14
+LastEditTime: 2024-08-01 14:42:15
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -444,7 +444,7 @@ def write_colmap_model(path,cam_infos,image_infos):
         cameras[cam_info.uid] = Camera(cam_info.uid, 'PINHOLE', cam_info.width, cam_info.height, (cam_info.fx, cam_info.fy, cam_info.cx, cam_info.cy))
         qvec = np.array((qw, qx, qy, qz))
         tvec = np.array((tx, ty, tz))
-        images[cam_info.uid] = Image(cam_info.uid, qvec, tvec, cam_info.uid, cam_info.image_name+'.png', [], [])
+        images[cam_info.uid] = Image(cam_info.uid, qvec, tvec, cam_info.uid, cam_info.image_name, [], [])
     mkdir(path)
     write_model(cameras, images, None, path,ext='.txt')
 
@@ -571,7 +571,7 @@ def get_intrinsic_extrinsic(oris,save_path,name,args):
         if index>args.max_frame:
             break
         image,o_data,depth = read_exr(oris[i])
-        image_path = os.path.join(save_path,'image',os.path.basename(oris[i])).replace('.exr','.png')
+        image_path = os.path.join(save_path,'image',os.path.basename(oris[i]))
         if not os.path.isfile(image_path) or args.f:
             mvwrite(image_path,image)
         w,h = o_data['w'],o_data['h']
@@ -610,7 +610,7 @@ def get_intrinsic_extrinsic(oris,save_path,name,args):
         model="PINHOLE"
         focal_length_x = w  * o_data['focal_length'] * 1 / o_data['sensor_w']
         focal_length_y = h  * o_data['focal_length'] * 1 / o_data['sensor_h']
-        cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_path).replace('.png',''),image_path = image_path, width=w, height=h,model=model)
+        cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_path),image_path = image_path, width=w, height=h,model=model)
         cam_infos.append(cam_info)
         #downscale
         focal_length_x = focal_length_x/down_scale_x

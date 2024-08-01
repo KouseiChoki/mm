@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-01 14:25:22
+LastEditTime: 2024-08-01 14:42:40
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -162,7 +162,8 @@ def get_intrinsic_extrinsic(images,ins,ext,save_path,name,args,masks=None):
         model="PINHOLE"
         focal_length_x = ins['focal_length_x']
         focal_length_y = ins['focal_length_y']
-        cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_path).replace('.png',''),image_path = image_path, width=w, height=h,model=model)
+        last = os.path.basename(image_path).split('.')[-1]
+        cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_path),image_path = image_path, width=w, height=h,model=model)
         cam_infos.append(cam_info)
         index += 1
     return image_infos,cam_infos
@@ -229,7 +230,7 @@ def ply_cal_core(images,instrinsics,extrinsics,path,args,masks=None):
             shutil.copy(cam_info.image_path, os.path.join(sp , "images",os.path.basename(cam_info.image_path)))
         write_colmap_model(sparse_path,cam_infos,image_infos)
         shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
-
+    print('finished')
 def read_intrinsic(intrinsic_file):
     res = {}
     res['w'],res['h'],res['focal_length_x'],res['focal_length_y'] = read_txt(intrinsic_file)[0]
