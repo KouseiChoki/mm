@@ -192,3 +192,7 @@ file_server_ip = http://10.35.116.93:8088
 
 ### edit by hx
 fps = 24
+
+
+### If the motion vector (MV) contains a large area of zeros, please enable this feature. (This feature can prevent the all-pairs network from overfitting.)  sasuga watashi**
+compatibility_mode = 0

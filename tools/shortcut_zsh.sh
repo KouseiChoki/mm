@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-07-19 10:30:53
+ # @LastEditTime: 2024-08-01 13:33:20
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -150,6 +150,19 @@ else
         conda activate mm
         cd '"$PARENT_DIR"'
         python algo/conversion_tools/pointcloud/cal_ply.py "$@"
+    }' >> ~/.zshrc
+fi
+
+# source ~/.zshrc
+if grep -q "mmgs()" ~/.zshrc; then
+    echo "命令 'mmgs()' 已存在于 ~/.zshrc 中，跳过添加。"
+else
+    # 如果命令不存在，则添加到 ~/.zshrc
+    echo "添加命令 'mmgs()' 到 ~/.zshrc。"
+    echo 'mmgs(){
+        conda activate mm
+        cd '"$PARENT_DIR"'
+        python algo/conversion_tools/pointcloud/fh_reader.py "$@"
     }' >> ~/.zshrc
 fi
 
