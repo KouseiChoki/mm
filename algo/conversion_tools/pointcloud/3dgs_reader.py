@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-01 10:13:31
+LastEditTime: 2024-08-01 14:25:22
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -29,24 +29,26 @@ Now, God only knows
 import numpy as np
 import os,sys,shutil
 from tqdm import tqdm
-from cal_ply import ImageInfo,mkdir,CameraInfo,write_colmap_model,ja_ajust,jhelp_file,gofind,eulerAngles2rotationMat
+from cal_ply import ImageInfo,mkdir,CameraInfo,write_colmap_model,ja_ajust,jhelp_file
 from scipy.spatial.transform import Rotation as R
 from striprtf.striprtf import rtf_to_text
 from fileutil.read_write_model import Camera,write_model,Image
 from file_utils import mvwrite,read
 import argparse
-
+IMG_DATA = ['.png','.tiff','.tif','.exr','.jpg']
 def prune(c,keyword,mode = 'basename'):
     if mode =='basename':
         res = list(filter(lambda x:keyword.lower() not in os.path.basename(x).lower(),c)) 
     else:
         res = list(filter(lambda x:keyword.lower() not in x.lower(),c))
     return res 
-def gofind(c,keyword,mode = 'basename'):
-    if mode =='basename':
-        res = list(filter(lambda x:keyword.lower() in os.path.basename(x).lower(),c)) 
+def gofind(c,keywords,mode = 'basename'):
+    if isinstance(keywords, str):  # 如果传入的是字符串，转换为列表
+        keywords = [keywords]
+    if mode == 'basename':
+        res = list(filter(lambda x: any(keyword.lower() in os.path.basename(x).lower() for keyword in keywords), c))
     else:
-        res = list(filter(lambda x:keyword.lower() in x.lower(),c)) 
+        res = list(filter(lambda x: any(keyword.lower() in x.lower() for keyword in keywords), c))
     return res  
 
 def init_param():
@@ -267,8 +269,8 @@ if __name__ == '__main__':
     # rows = [list(map(float, line.split())) for line in lines[1:]]
     file_datas = jhelp_file(path)
     #prune data
-    file_datas = prune(gofind(file_datas,'.png'),'mask')
-    mask_tmp = gofind(gofind(jhelp_file(path),'.png'),'mask')
+    file_datas = prune(gofind(file_datas,IMG_DATA),'mask')
+    mask_tmp = gofind(gofind(jhelp_file(path),IMG_DATA),'mask')
     masks = None if len(mask_tmp) == 0 else mask_tmp
     instrinsics = read_intrinsic(intrinsic_file) # not finished
     extrinsics = read_extrinsics(extrinsic_file)
