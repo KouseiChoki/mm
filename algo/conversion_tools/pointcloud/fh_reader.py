@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-29 10:31:51
+LastEditTime: 2024-08-01 10:13:31
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -36,9 +36,22 @@ from fileutil.read_write_model import Camera,write_model,Image
 from file_utils import mvwrite,read
 import argparse
 
+def prune(c,keyword,mode = 'basename'):
+    if mode =='basename':
+        res = list(filter(lambda x:keyword.lower() not in os.path.basename(x).lower(),c)) 
+    else:
+        res = list(filter(lambda x:keyword.lower() not in x.lower(),c))
+    return res 
+def gofind(c,keyword,mode = 'basename'):
+    if mode =='basename':
+        res = list(filter(lambda x:keyword.lower() in os.path.basename(x).lower(),c)) 
+    else:
+        res = list(filter(lambda x:keyword.lower() in x.lower(),c)) 
+    return res  
+
 def init_param():
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--path',  help="your data path", required=True)
+    parser.add_argument('--root',  help="your data path", required=True)
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
     parser.add_argument('--max_frame',type=int, default=999,help="max frame")
@@ -96,20 +109,28 @@ def read_rtf(file_path):
 
 # print(image_infos)
 
-def get_intrinsic_extrinsic(images,rows,save_path,name,args):
+def get_intrinsic_extrinsic(images,ins,ext,save_path,name,args,masks=None):
     index = 1
     nums = len(images)
     cam_infos,image_infos = [],[]
+    if masks is not None:
+        assert len(images) == len(masks),f'mask data error!,num of images:{len(images)},num of masks:{len(masks)}'
     for i in tqdm(range(args.start_frame,nums,args.step),desc=f'processing {name}'): 
         if index>args.max_frame:
             break
         image = images[i]
-        rx,ry,rz,tx,ty,tz = rows[i]
+        rx,ry,rz,tx,ty,tz = ext[i]
         mkdir(os.path.join(save_path,'image'))
         image_path = os.path.join(save_path,'image',os.path.basename(image))
         if not os.path.isfile(image_path) or args.f:
             shutil.copy(image,image_path)
-        w,h = 2048,1080
+        if masks is not None:
+            mask = masks[i]
+            mkdir(os.path.join(save_path,'masks'))
+            mask_path = os.path.join(save_path,'masks',os.path.basename(mask))
+            if not os.path.isfile(mask_path) or args.f:
+                shutil.copy(mask,mask_path)
+        w,h = int(ins['w']),int(ins['h'])
         rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
         c2w = np.eye(4,4)
         c2w[:3,:3] = rotation_matrix
@@ -137,8 +158,8 @@ def get_intrinsic_extrinsic(images,rows,save_path,name,args):
         o_cx = w/2.0 
         o_cy = h/2.0
         model="PINHOLE"
-        focal_length_x = 1879.492
-        focal_length_y = 1879.492
+        focal_length_x = ins['focal_length_x']
+        focal_length_y = ins['focal_length_y']
         cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_path).replace('.png',''),image_path = image_path, width=w, height=h,model=model)
         cam_infos.append(cam_info)
         index += 1
@@ -169,7 +190,10 @@ def euler_angles_to_rotation_matrix(theta_x, theta_y, theta_z):
     R = R_x @ R_y @ R_z
     return R
 
-def ply_cal_core(images,rows,save_path,args):
+def ply_cal_core(images,instrinsics,extrinsics,path,args,masks=None):
+    save_path = os.path.abspath(os.path.join(path,'..'))
+    raw_ply = gofind(jhelp_file(path),'.ply')[0]
+
     name = os.path.basename(save_path)
     sp = os.path.join(save_path,'pointcloud')
     sparse_path = os.path.join(sp,'sparse/0')
@@ -179,12 +203,17 @@ def ply_cal_core(images,rows,save_path,args):
             return
         else:
             shutil.rmtree(sp,ignore_errors=True)
-    image_infos,cam_infos = get_intrinsic_extrinsic(images,rows,save_path,name,args)
+    image_infos,cam_infos = get_intrinsic_extrinsic(images,instrinsics,extrinsics,save_path,name,args,masks)
     mkdir(os.path.join(sp , "images"))
     for cam_info in cam_infos:
         shutil.copy(cam_info.image_path, os.path.join(sp , "images",os.path.basename(cam_info.image_path)))
+    if masks is not None:
+        mkdir(os.path.join(sp , "mask"))
+        for mask in masks:
+            shutil.copy(mask, os.path.join(sp , "mask",os.path.basename(mask)))
     # Write out the camera parameters.
     write_colmap_model(sparse_path,cam_infos,image_infos)
+    shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
     if args.judder_angle!= -1:
         print('writing ja file')
         image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
@@ -197,18 +226,51 @@ def ply_cal_core(images,rows,save_path,args):
         for cam_info in cam_infos:
             shutil.copy(cam_info.image_path, os.path.join(sp , "images",os.path.basename(cam_info.image_path)))
         write_colmap_model(sparse_path,cam_infos,image_infos)
+        shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
 
+def read_intrinsic(intrinsic_file):
+    res = {}
+    res['w'],res['h'],res['focal_length_x'],res['focal_length_y'] = read_txt(intrinsic_file)[0]
+    return res
+
+def read_extrinsics(extrinsic_file):
+    return read_txt(extrinsic_file)
+
+def read_txt(file_path):
+    data = []
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
+    # Skip the header line
+    for line in lines[1:]:
+        # Split the line into components and convert them to floats
+        components = list(map(float, line.strip().split()))
+        data.append(components)
+    return data
 
 if __name__ == '__main__':
     args = init_param()
-    rtf = '/Users/qhong/Desktop/0729/fg_avatar_0725/Avatar_5frames/6DoF.rtf'
-    path = '/Users/qhong/Desktop/0729/fg_avatar_0725/Avatar_5frames'
     args.f = True
-    data = read_rtf(rtf)
-    lines = data.strip().split('\n')
-    rows = [list(map(float, line.split())) for line in lines[1:]]
+    # rtf = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw/6DoF.rtf'
+    # path = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw'
+    path = args.root
+    if os.path.basename(args.root) != 'raw':
+        tmps = jhelp_file(args.root)
+        mkdir(os.path.join(args.root,'raw'))
+        for tmp in tmps:
+            shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
+        path = os.path.join(args.root,'raw')
+    intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
+    extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
+    
+    # data = read_rtf(rtf)
+    # lines = data.strip().split('\n')
+    # rows = [list(map(float, line.split())) for line in lines[1:]]
     file_datas = jhelp_file(path)
     #prune data
-    file_datas = gofind(file_datas,'.png')
-    save_path = os.path.abspath(os.path.join(path,'..'))
-    ply_cal_core(file_datas,rows,save_path,args)
+    file_datas = prune(gofind(file_datas,'.png'),'mask')
+    mask_tmp = gofind(gofind(jhelp_file(path),'.png'),'mask')
+    masks = None if len(mask_tmp) == 0 else mask_tmp
+    instrinsics = read_intrinsic(intrinsic_file) # not finished
+    extrinsics = read_extrinsics(extrinsic_file)
+    ply_cal_core(file_datas,instrinsics,extrinsics,path,args,masks)
+    

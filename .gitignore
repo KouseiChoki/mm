@@ -19,7 +19,6 @@ train_checkpoints/
 *data_pkl*
 kousei-v*
 kousei-mask-*
-config_*
 run_*
 testdata/
 pattern/
