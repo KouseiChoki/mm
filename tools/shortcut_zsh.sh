@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-08-01 13:33:20
+ # @LastEditTime: 2024-08-01 14:16:47
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -162,7 +162,7 @@ else
     echo 'mmgs(){
         conda activate mm
         cd '"$PARENT_DIR"'
-        python algo/conversion_tools/pointcloud/fh_reader.py "$@"
+        python algo/conversion_tools/pointcloud/3dgs_reader.py "$@"
     }' >> ~/.zshrc
 fi
 
