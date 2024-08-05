@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-01 14:42:40
+LastEditTime: 2024-08-02 10:33:13
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -31,7 +31,7 @@ import os,sys,shutil
 from tqdm import tqdm
 from cal_ply import ImageInfo,mkdir,CameraInfo,write_colmap_model,ja_ajust,jhelp_file
 from scipy.spatial.transform import Rotation as R
-from striprtf.striprtf import rtf_to_text
+# from striprtf.striprtf import rtf_to_text
 from fileutil.read_write_model import Camera,write_model,Image
 from file_utils import mvwrite,read
 import argparse
@@ -211,9 +211,9 @@ def ply_cal_core(images,instrinsics,extrinsics,path,args,masks=None):
     for cam_info in cam_infos:
         shutil.copy(cam_info.image_path, os.path.join(sp , "images",os.path.basename(cam_info.image_path)))
     if masks is not None:
-        mkdir(os.path.join(sp , "mask"))
+        mkdir(os.path.join(sp , "masks"))
         for mask in masks:
-            shutil.copy(mask, os.path.join(sp , "mask",os.path.basename(mask)))
+            shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
     # Write out the camera parameters.
     write_colmap_model(sparse_path,cam_infos,image_infos)
     shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))

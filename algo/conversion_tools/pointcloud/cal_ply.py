@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-01 14:42:15
+LastEditTime: 2024-08-05 16:38:37
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -94,6 +94,7 @@ def init_param():
     parser.add_argument('--mask', action='store_true', help="use mask")
     parser.add_argument('--judder_angle',type=int, default=-1,help="frame step")
     parser.add_argument('--final_image', action='store_true', help="use final image")
+    parser.add_argument('--extra_depth', action='store_true', help="use extra_depth")
     parser.add_argument('--test', action='store_true', help="use test")
     args = parser.parse_args()
     return args
@@ -567,10 +568,14 @@ def get_intrinsic_extrinsic(oris,save_path,name,args):
     index = 1
     nums = len(oris)
     cam_infos,image_infos,points,rgbs = [],[],[],[]
+    if args.extra_depth:
+        extra_depths = jhelp_file(os.path.join(os.path.dirname(os.path.dirname(oris[0])),'extra_depth'))
     for i in tqdm(range(args.start_frame,nums,args.step),desc=f'processing {name}'): 
         if index>args.max_frame:
             break
         image,o_data,depth = read_exr(oris[i])
+        if args.extra_depth:
+            depth = read(extra_depths[i])[0]
         image_path = os.path.join(save_path,'image',os.path.basename(oris[i]))
         if not os.path.isfile(image_path) or args.f:
             mvwrite(image_path,image)
