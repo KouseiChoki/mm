@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-02 10:33:13
+LastEditTime: 2024-08-06 15:29:26
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -57,6 +57,7 @@ def init_param():
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
     parser.add_argument('--max_frame',type=int, default=999,help="max frame")
+    parser.add_argument('--baseline_distance', type=float, default=0,help="baseline_distance")
     parser.add_argument('--f', action='store_true', help="force run")
     parser.add_argument('--mask', action='store_true', help="use mask")
     parser.add_argument('--judder_angle',type=int, default=-1,help="frame step")
@@ -135,6 +136,8 @@ def get_intrinsic_extrinsic(images,ins,ext,save_path,name,args,masks=None):
         w,h = int(ins['w']),int(ins['h'])
         rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
         c2w = np.eye(4,4)
+        if args.baseline_distance!=0:
+            tx += args.baseline_distance
         c2w[:3,:3] = rotation_matrix
         c2w[:,1:3] *= -1
         c2w[:3,-1] = [tx,ty,tz]
@@ -153,8 +156,9 @@ def get_intrinsic_extrinsic(images,ins,ext,save_path,name,args,masks=None):
         # print(rotation_matrix)
         w2c = np.linalg.inv(c2w)
         qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
-        tvec = w2c[:3, 3]
-        image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec[0],tvec[1],tvec[2]]))
+        tvec0,tvec1,tvec2 = tvec = w2c[:3, 3]
+        
+        image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]))
         image_infos.append(image_info)
         # intrinsic
         o_cx = w/2.0 
@@ -198,7 +202,11 @@ def ply_cal_core(images,instrinsics,extrinsics,path,args,masks=None):
     raw_ply = gofind(jhelp_file(path),'.ply')[0]
 
     name = os.path.basename(save_path)
-    sp = os.path.join(save_path,'pointcloud')
+    pointcloud_name = 'pointcloud'
+    if args.baseline_distance!=0:
+        pointcloud_name+='_right'
+    sp = os.path.join(save_path,pointcloud_name)
+    
     sparse_path = os.path.join(sp,'sparse/0')
     ply_path = os.path.join(sparse_path , "points3D.ply")
     if os.path.isdir(sp):
@@ -220,7 +228,7 @@ def ply_cal_core(images,instrinsics,extrinsics,path,args,masks=None):
     if args.judder_angle!= -1:
         print('writing ja file')
         image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
-        sp = os.path.join(save_path,f'pointcloud_ja_{args.judder_angle}')
+        sp = os.path.join(save_path,f'{pointcloud_name}_ja_{args.judder_angle}')
         shutil.rmtree(sp,ignore_errors=True)
         sparse_path = os.path.join(sp,'sparse/0')
         mkdir(sparse_path)

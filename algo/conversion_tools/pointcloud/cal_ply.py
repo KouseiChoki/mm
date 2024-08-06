@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-05 16:38:37
+LastEditTime: 2024-08-05 16:55:47
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -576,8 +576,9 @@ def get_intrinsic_extrinsic(oris,save_path,name,args):
         image,o_data,depth = read_exr(oris[i])
         if args.extra_depth:
             depth = read(extra_depths[i])[0]
-        image_path = os.path.join(save_path,'image',os.path.basename(oris[i]))
+        image_path = os.path.join(save_path,'image',os.path.basename(oris[i]).replace('.exr','.png'))
         if not os.path.isfile(image_path) or args.f:
+            print(image.shape)
             mvwrite(image_path,image)
         w,h = o_data['w'],o_data['h']
         down_scale_x = args.down_scale
