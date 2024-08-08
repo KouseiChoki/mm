@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-06 15:29:26
+LastEditTime: 2024-08-07 11:09:32
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -261,6 +261,7 @@ def read_txt(file_path):
 if __name__ == '__main__':
     args = init_param()
     args.f = True
+    maskname = 'mask'
     # rtf = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw/6DoF.rtf'
     # path = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw'
     path = args.root
@@ -278,8 +279,8 @@ if __name__ == '__main__':
     # rows = [list(map(float, line.split())) for line in lines[1:]]
     file_datas = jhelp_file(path)
     #prune data
-    file_datas = prune(gofind(file_datas,IMG_DATA),'mask')
-    mask_tmp = gofind(gofind(jhelp_file(path),IMG_DATA),'mask')
+    file_datas = prune(gofind(file_datas,IMG_DATA),maskname)
+    mask_tmp = gofind(gofind(jhelp_file(path),IMG_DATA),maskname)
     masks = None if len(mask_tmp) == 0 else mask_tmp
     instrinsics = read_intrinsic(intrinsic_file) # not finished
     extrinsics = read_extrinsics(extrinsic_file)
