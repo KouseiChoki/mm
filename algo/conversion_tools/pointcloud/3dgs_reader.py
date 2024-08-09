@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 13:48:59
+LastEditTime: 2024-08-09 14:56:54
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -381,13 +381,13 @@ if __name__ == '__main__':
 
 
     instrinsics = read_intrinsic(intrinsic_file) # not finished
-    extrinsics = read_extrinsics(extrinsic_file)
+    extrinsics = sliding_window(read_extrinsics(extrinsic_file),args.max_frame)
     
     for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
         name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
         name1 = os.path.splitext(os.path.basename(images_prepare[i][-1]))[0]
         name = f'{name0}_to_{name1}'
         save_path = os.path.join(path,'..','pointcloud',name)
-        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics,save_path,args,masks_prepare[i])
+        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
     print('finished')
     

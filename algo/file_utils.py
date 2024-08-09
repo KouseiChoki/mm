@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-06-24 17:25:59
+LastEditTime: 2024-08-09 14:53:04
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -36,7 +36,7 @@ import os
 import Imath,OpenEXR
 import array
 from collections import defaultdict
-from conversion_tools.exr_processing.color_convertion.colorutil import Color_transform
+# from conversion_tools.exr_processing.color_convertion.colorutil import Color_transform
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
 FLOAT = Imath.PixelType(Imath.PixelType.FLOAT)
@@ -545,17 +545,30 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
         writer(path,flow,compress,precision_)
     elif '.flo' in path:
         write_flo_file(flow[...,:2],path)
+    elif '.tif' in path:
+        if len(flow.shape) == 2:
+          flow = np.repeat(flow[...,None],3,axis=2)
+        if flow.shape[2] == 2:
+          flow = np.insert(flow,2,0,axis=2)
+        flow = np.clip(flow,-1,1)
+        flow *= 65535
+        flow = flow.astype('uint16')
+        if flow.shape[2] ==4:
+          Image.fromarray(flow).save(path)
+        else:
+          cv2.imwrite(path,flow[...,:3][...,::-1])
     else:
         if len(flow.shape) == 2:
-            flow = np.repeat(flow[...,None],3,axis=2)
+          flow = np.repeat(flow[...,None],3,axis=2)
         if flow.shape[2] == 2:
-            flow = np.insert(flow,2,0,axis=2)
-        if flow.min() < -1:
-           flow = np.clip(flow,-1,1)
-        if flow.max() <= 1:
-           flow = ((flow+1)/2 * 255).astype('uint8')
+          flow = np.insert(flow,2,0,axis=2)
+        flow = np.clip(flow,-1,1)
+        if flow.min() < 0:
+          flow = ((flow+1)/2 * 255).astype('uint8')
+        else:
+          flow = (flow * 255).astype('uint8')
         if flow.shape[2] ==4:
-           Image.fromarray(flow).save(path)
+          Image.fromarray(flow).save(path)
         else:
           cv2.imwrite(path,flow[...,:3][...,::-1])
 

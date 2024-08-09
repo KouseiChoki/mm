@@ -145,7 +145,6 @@ for i in tqdm(range(len(dps))):
     # cloud point
     R = np.transpose(qvec2rotmat(extr[i+1].qvec))
     T = np.array(extr[i+1].tvec)
-
     W2C = getWorld2View2(R,T)
     C2W = np.linalg.inv(W2C)
     extrinsics = C2W
