@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 13:10:49
+LastEditTime: 2024-08-09 13:48:59
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -57,7 +57,7 @@ def init_param():
     parser.add_argument('--root',  help="your data path", required=True)
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
-    parser.add_argument('--max_frame',type=int, default=999,help="max frame")
+    parser.add_argument('--max_frame',type=int, default=999,help="max generated frames")
     parser.add_argument('--baseline_distance', type=float, default=0,help="baseline_distance")
     parser.add_argument('--f', action='store_true', help="force run")
     parser.add_argument('--mask', action='store_true', help="use mask")
@@ -138,32 +138,23 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
     return points_world
 
-def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,args,mask_folder=None):
+def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     index = 1
-    images = jhelp_file(image_folder)
-    depths = jhelp_file(depth_folder)
-    masks = []
     nums = len(images)
     cam_infos,image_infos = [],[]
     points,rgbs = [],[]
-    if mask_folder is not None:
-        masks = jhelp_file(mask_folder)
-        assert len(images) == len(masks),f'mask data error!,num of images:{len(images)},num of masks:{len(masks)}'
-    for i in tqdm(range(args.start_frame,nums,args.step),desc=f'processing {name}'): 
-        if index>args.max_frame:
-            break
-        image = images[i]
+    for i in range(args.start_frame,nums,args.step): 
         rx,ry,rz,tx,ty,tz = ext[i]
-        mkdir(os.path.join(save_path,'image'))
-        image_path = os.path.join(save_path,'image',os.path.basename(image))
-        if not os.path.isfile(image_path) or args.f:
-            shutil.copy(image,image_path)
-        if masks is not None:
-            mask = masks[i]
-            mkdir(os.path.join(save_path,'masks'))
-            mask_path = os.path.join(save_path,'masks',os.path.basename(mask))
-            if not os.path.isfile(mask_path) or args.f:
-                shutil.copy(mask,mask_path)
+        # mkdir(os.path.join(save_path,'image'))
+        # image_path = os.path.join(save_path,'image',os.path.basename(image))
+        # if not os.path.isfile(image_path) or args.f:
+        #     shutil.copy(image,image_path)
+        # if masks is not None:
+        #     mask = masks[i]
+        #     mkdir(os.path.join(save_path,'masks'))
+        #     mask_path = os.path.join(save_path,'masks',os.path.basename(mask))
+        #     if not os.path.isfile(mask_path) or args.f:
+        #         shutil.copy(mask,mask_path)
         w,h = int(ins['w']),int(ins['h'])
         rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
         c2w = np.eye(4,4)
@@ -184,7 +175,7 @@ def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,arg
         
         image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]))
         image_infos.append(image_info)
-        cam_info = CameraInfo(uid=index, fx=ins['focal_length_x'],fy=ins['focal_length_y'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(image_path),image_path = image_path, width=w, height=h,model="PINHOLE")
+        cam_info = CameraInfo(uid=index, fx=ins['focal_length_x'],fy=ins['focal_length_y'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=w, height=h,model="PINHOLE")
         cam_infos.append(cam_info)
 
         #downscale
@@ -210,7 +201,7 @@ def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,arg
         # rgb = rgb[depth!= 0]
         rgb=rgb.reshape(-1,3)
         
-        if len(masks)>0:
+        if masks is not None:
             if args.cur == i+1:
                 pass
             else:
@@ -231,7 +222,7 @@ def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,arg
     #create pointcloud
     xyz = np.concatenate(points)
     rgbs = np.concatenate(rgbs)
-    print('writing plyfile........')
+    # print('writing plyfile........')
     dtype = [
         ("x", "f4"),
         ("y", "f4"),
@@ -276,31 +267,27 @@ def euler_angles_to_rotation_matrix(theta_x, theta_y, theta_z):
     R = R_x @ R_y @ R_z
     return R
 
-def ply_cal_core(image_folder,depth_folder,instrinsics,extrinsics,path,args,mask_folder=None):
-    save_path = os.path.abspath(os.path.join(path,'..'))
-    # raw_ply = gofind(jhelp_file(path),'.ply')[0]
-
-    name = os.path.basename(save_path)
-    pointcloud_name = 'pointcloud'
+def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     if args.baseline_distance!=0:
-        pointcloud_name+='_right'
-    sp = os.path.join(save_path,pointcloud_name)
-    
+        sp+=f'_bd_{args.baseline_distance}'
+
     sparse_path = os.path.join(sp,'sparse/0')
-    
     ply_path = os.path.join(sparse_path , "points3D.ply")
     if os.path.isdir(sp):
         if not args.f and args.judder_angle==-1:
             return
         else:
             shutil.rmtree(sp,ignore_errors=True)
-    image_infos,cam_infos,ply_data = get_intrinsic_extrinsic(image_folder,depth_folder,instrinsics,extrinsics,save_path,name,args,mask_folder)
+    image_infos,cam_infos,ply_data = get_intrinsic_extrinsic(images,depths,instrinsics,extrinsics,save_path,args,masks)
     mkdir(os.path.join(sp , "images"))
-    # for cam_info in cam_infos:
-    #     shutil.copy(cam_info.image_path, os.path.join(sp , "images",os.path.basename(cam_info.image_path)))
-    if mask_folder is not None:
-        shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
-    shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
+    for image in images:
+        shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
+    mkdir(os.path.join(sp , "masks"))
+    for mask in masks:
+        shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
+    # if mask_folder is not None:
+    #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
+    # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
     # Write out the camera parameters.
     write_colmap_model(sparse_path,cam_infos,image_infos)
     # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
@@ -310,20 +297,25 @@ def ply_cal_core(image_folder,depth_folder,instrinsics,extrinsics,path,args,mask
     if args.judder_angle!= -1:
         print('writing ja file')
         image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
-        sp = os.path.join(save_path,f'{pointcloud_name}_ja_{args.judder_angle}')
+        sp += f'_ja_{args.judder_angle}'
         shutil.rmtree(sp,ignore_errors=True)
         sparse_path = os.path.join(sp,'sparse/0')
         mkdir(sparse_path)
         # Write out the images.
         mkdir(os.path.join(sp , "images"))
-        if mask_folder is not None:
-            shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
-        shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
+        for image in images:
+            shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
+        mkdir(os.path.join(sp , "masks"))
+        for mask in masks:
+            shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
+        # if mask_folder is not None:
+        #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
+        # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
         write_colmap_model(sparse_path,cam_infos,image_infos)
         # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
-        if args.baseline_distance==0:
-            ply_data.write(ply_path)
-    print('finished')
+        # if args.baseline_distance==0:
+        #     ply_data.write(ply_path)
+    
 def read_intrinsic(intrinsic_file):
     res = {}
     res['w'],res['h'],res['focal_length_x'],res['focal_length_y'] = read_txt(intrinsic_file)[0]
@@ -342,6 +334,11 @@ def read_txt(file_path):
         components = list(map(float, line.strip().split()))
         data.append(components)
     return data
+
+def sliding_window(arr, n):
+    if arr is None:
+        return [None for i in range(len(arr) - n + 1)]
+    return [arr[i:i + n] for i in range(len(arr) - n + 1)]
 
 if __name__ == '__main__':
     args = init_param()
@@ -363,11 +360,34 @@ if __name__ == '__main__':
     # lines = data.strip().split('\n')
     # rows = [list(map(float, line.split())) for line in lines[1:]]
     #prune data
-    image_folder = gofind(jhelp_folder(path),'images')[0]
-    mask_folder = gofind(jhelp_folder(path),'masks')[0]
-    depth_folder = gofind(jhelp_folder(path),'depths')[0]
-    mask_folder = None if len(mask_folder) == 0 else mask_folder
+    try:
+        image_folder = gofind(jhelp_folder(path),'images')[0]
+        mask_folder = gofind(jhelp_folder(path),'masks')[0]
+        depth_folder = gofind(jhelp_folder(path),'depths')[0]
+        images = jhelp_file(image_folder)
+        masks = jhelp_file(mask_folder)
+        depths  = jhelp_file(depth_folder)
+    except:
+        raise ImportError('error input folder, need IMAGES and DEPTHS (MASKS) folder!')
+    assert len(images)==len(masks) and len(images)==len(depths),f'error input number of image/mask/depth,{len(images)},{len(masks)},{len(depths)}'
+    if len(images) <= args.max_frame:
+        images_prepare = [images]
+        masks_prepare = [masks]
+        depths_prepare = [depths]
+    else:
+        images_prepare = sliding_window(images,args.max_frame)
+        masks_prepare = sliding_window(masks,args.max_frame)
+        depths_prepare = sliding_window(depths,args.max_frame)
+
+
     instrinsics = read_intrinsic(intrinsic_file) # not finished
     extrinsics = read_extrinsics(extrinsic_file)
-    ply_cal_core(image_folder,depth_folder,instrinsics,extrinsics,path,args,mask_folder)
+    
+    for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
+        name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
+        name1 = os.path.splitext(os.path.basename(images_prepare[i][-1]))[0]
+        name = f'{name0}_to_{name1}'
+        save_path = os.path.join(path,'..','pointcloud',name)
+        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics,save_path,args,masks_prepare[i])
+    print('finished')
     
