@@ -2,7 +2,7 @@
  * @Author: Qing Hong
  * @FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
  * @LastEditors: Qing Hong
- * @LastEditTime: 2024-08-09 16:24:54
+ * @LastEditTime: 2024-08-09 16:36:09
  * @Description: 
  *          ▄              ▄
  *         ▌▒█           ▄▀▒▌     
@@ -78,7 +78,7 @@ python algo/conversion_tools/pointcloud/3dgs_reader.py
 ## 3DGS
 
 ### 用法
-本算法用于通过mmgs生成的点云结果进行高斯训练
+本算法用于通过mmgs生成的点云结果进行高斯训练,如果对点云进行编辑，请用编辑后的点云替换后进行训练
 git clone http://10.35.116.93/mm/3dgs.git
 获取代码
 
