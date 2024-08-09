@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 11:26:38
+LastEditTime: 2024-08-09 13:10:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -117,7 +117,7 @@ def read_rtf(file_path):
 # print(image_infos)
 
 
-def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics):
+def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=None):
     h, w = depth_image.shape
     i, j = np.meshgrid(np.arange(w), np.arange(h), indexing='xy')
     # 相机内参
@@ -131,6 +131,8 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics):
     # 将点组合成[N, 3]的点云
     points_camera = np.stack((x, y, z), axis=-1).reshape(-1, 3)
     # 去除非法点
+    if mask is not None:
+        points_camera = points_camera[mask]
     points_camera = points_camera[points_camera[:, 2] != 0]
     # 将点云从相机坐标系转换到世界坐标系
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
@@ -170,6 +172,11 @@ def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,arg
         c2w[:3,:3] = rotation_matrix
         c2w[:,1:3] *= -1
         c2w[:3,-1] = [tx,ty,tz]
+        # tt = np.array([[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,1]])
+        # c2w*= tt
+        # if i ==1:
+        #     print(c2w)
+        #     sys.exit(0)
 
         w2c = np.linalg.inv(c2w)
         qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
@@ -196,12 +203,13 @@ def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,arg
         if args.inverse_depth:
             depth = 1/depth
         rgb = read(images[i],type='image')
-        rgb = rgb[depth!= 0]
         if args.downscale != 1:
             import cv2
             depth = cv2.resize(depth,(target_w,target_h),interpolation=cv2.INTER_NEAREST)
             rgb = cv2.resize(rgb,(target_w,target_h))
-        point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
+        # rgb = rgb[depth!= 0]
+        rgb=rgb.reshape(-1,3)
+        
         if len(masks)>0:
             if args.cur == i+1:
                 pass
@@ -213,7 +221,10 @@ def get_intrinsic_extrinsic(image_folder,depth_folder,ins,ext,save_path,name,arg
                 else:
                     mask = mask.reshape(-1)
                 rgb = rgb[mask == 0]
-                point = point[mask == 0]
+                # point = point[mask == 0]
+                point = generate_point_cloud_from_depth(depth,intrinsics,c2w,mask == 0)
+        else:
+            point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
         points.append(point.reshape(-1,3))
         rgbs.append(rgb.reshape(-1,3))
         index += 1
@@ -339,10 +350,11 @@ if __name__ == '__main__':
     # path = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw'
     path = args.root
     if os.path.basename(args.root) != 'raw':
-        tmps = jhelp(args.root)
-        mkdir(os.path.join(args.root,'raw'))
-        for tmp in tmps:
-            shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
+        tmps = prune(jhelp(args.root),'raw')
+        if not os.path.isdir(os.path.join(args.root,'raw')):
+            mkdir(os.path.join(args.root,'raw'))
+            for tmp in tmps:
+                shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
         path = os.path.join(args.root,'raw')
     intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
     extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
