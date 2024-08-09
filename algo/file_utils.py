@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 14:53:04
+LastEditTime: 2024-08-09 15:40:14
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -377,9 +377,11 @@ def read(path,type='flo',lut_file=None,self_mask=False,OPENEXR=True,Unrealmode=F
             res = LUT.apply(tmp,interpolator=colour.algebra.table_interpolation_trilinear)*255
         else:
             if '.exr' in path:
-                res = mvr(path)
+              res = mvr(path)
+            elif '.tif' in path:
+              res = cv2.imread(path,-1)[...,::-1]/65535
             else:
-                res = cv2.imread(path)[...,::-1]/255
+              res = cv2.imread(path)[...,::-1]/255
         if type.lower() == 'image':
            res = (np.clip(res,0,1)*255).astype('uint8')
         res = res[...,:3]
@@ -575,7 +577,10 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
 def write(path,flow,compress='piz'):
     if flow is None or path is None:
       return
-    mvwrite(path,flow,compress)
+    if type(path) == str:
+      mvwrite(path,flow,compress)
+    else:
+      mvwrite(flow,path,compress)
 
     #front masked area set to 0.5 and back to 1 
 def save_mv_file(save_name,opt,valid,args):
