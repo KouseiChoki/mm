@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 14:56:54
+LastEditTime: 2024-08-12 12:07:45
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -203,7 +203,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
         
         if masks is not None:
             if args.cur == i+1:
-                pass
+                point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
             else:
                 mask_path = masks[i]
                 mask = read(mask_path,type='mask')
