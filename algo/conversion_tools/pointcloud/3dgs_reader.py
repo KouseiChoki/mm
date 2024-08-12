@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-12 12:07:45
+LastEditTime: 2024-08-12 14:35:03
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -292,8 +292,8 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     write_colmap_model(sparse_path,cam_infos,image_infos)
     # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
     mkdir(sparse_path)
-    if args.baseline_distance==0:
-        ply_data.write(ply_path)
+    # if args.baseline_distance==0:
+    ply_data.write(ply_path)
     if args.judder_angle!= -1:
         print('writing ja file')
         image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
@@ -314,7 +314,7 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
         write_colmap_model(sparse_path,cam_infos,image_infos)
         # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
         # if args.baseline_distance==0:
-        #     ply_data.write(ply_path)
+        ply_data.write(ply_path)
     
 def read_intrinsic(intrinsic_file):
     res = {}
