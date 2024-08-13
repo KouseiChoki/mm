@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-12 14:35:03
+LastEditTime: 2024-08-13 11:50:29
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -202,7 +202,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
         rgb=rgb.reshape(-1,3)
         
         if masks is not None:
-            if args.cur == i+1:
+            if args.cur == index:
                 point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
             else:
                 mask_path = masks[i]
@@ -374,14 +374,16 @@ if __name__ == '__main__':
         images_prepare = [images]
         masks_prepare = [masks]
         depths_prepare = [depths]
+        extrinsics = [read_extrinsics(extrinsic_file)]
     else:
         images_prepare = sliding_window(images,args.max_frame)
         masks_prepare = sliding_window(masks,args.max_frame)
         depths_prepare = sliding_window(depths,args.max_frame)
+        extrinsics = sliding_window(read_extrinsics(extrinsic_file),args.max_frame)
 
 
     instrinsics = read_intrinsic(intrinsic_file) # not finished
-    extrinsics = sliding_window(read_extrinsics(extrinsic_file),args.max_frame)
+    
     
     for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
         name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
