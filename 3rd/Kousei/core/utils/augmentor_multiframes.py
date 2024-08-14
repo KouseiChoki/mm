@@ -20,7 +20,7 @@ class FlowAugmentor:
         self.min_scale = aug_params['min_scale']
         self.max_scale = aug_params['max_scale']
         self.img_type = aug_params['img_type']
-        self.spatial_aug_prob = 0.8
+        self.spatial_aug_prob = 1.1
         self.stretch_prob = 0.8
         self.max_stretch = 0.2
 
@@ -32,7 +32,7 @@ class FlowAugmentor:
         # photometric augmentation params
         self.photo_aug = ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.5/3.14)
         self.asymmetric_color_aug_prob = 0.2
-        self.eraser_aug_prob = 0.5
+        self.eraser_aug_prob = 0.2
         self.linear = True if aug_params['img_type'].lower()=='image' else False
 
     def aug_helper1(self,img):
@@ -135,6 +135,8 @@ class FlowAugmentor:
         if imgs[0].shape[0] == self.crop_size[0]:
             y0 = 0
         else:
+            if imgs[0].shape[0] - self.crop_size[0]<=0:
+                print(imgs[0].shape,self.crop_size[0])
             y0 = np.random.randint(0, imgs[0].shape[0] - self.crop_size[0])
         if imgs[0].shape[1] == self.crop_size[1]:
             x0 = 0
@@ -167,7 +169,7 @@ class FlowAugmentor_Mask:
         self.min_scale = min_scale
         self.max_scale = max_scale
         self.spatial_aug_prob = 0.8
-        self.stretch_prob = 0.8
+        self.stretch_prob = 1.1
         self.max_stretch = 0.2
 
         # flip augmentation params
@@ -178,7 +180,7 @@ class FlowAugmentor_Mask:
         # photometric augmentation params
         self.photo_aug = ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.5/3.14)
         self.asymmetric_color_aug_prob = 0.2
-        self.eraser_aug_prob = 0.5
+        self.eraser_aug_prob = 0.2
 
     def color_transform(self, imgs):
         """ Photometric augmentation """

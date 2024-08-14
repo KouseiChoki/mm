@@ -1,8 +1,8 @@
 '''
 Author: Qing Hong
 Date: 2023-08-08 13:15:11
-LastEditors: QingHong
-LastEditTime: 2024-04-08 17:18:46
+LastEditors: Qing Hong
+LastEditTime: 2024-08-13 13:31:01
 Description: file content
 '''
 
@@ -14,7 +14,6 @@ def get_cfg(args):
     _CN.kousei = CN()
     if args.version == 0:
         _CN.kousei.crop_size = [880, 1920]
-        _CN.kousei.crop_size = [432, 960]
         _CN.BOFNet.cnet = 'basicencoder'
         _CN.BOFNet.fnet = 'basicencoder'
         _CN.BOFNet.down_ratio = 16

@@ -1,8 +1,8 @@
 '''
 Author: Qing Hong
 Date: 2023-08-08 13:15:11
-LastEditors: QingHong
-LastEditTime: 2024-03-11 16:44:14
+LastEditors: Qing Hong
+LastEditTime: 2024-08-13 13:39:01
 Description: file content
 '''
 
@@ -30,6 +30,12 @@ def get_cfg(args):
         _CN.MOFNetStack.fnet = 'basicencoder'
         _CN.MOFNetStack.down_ratio = 4
         _CN.MOFNetStack.decoder_depth = 4
+    elif args.version ==4:
+        _CN.kousei.crop_size = [680, 1440]
+        _CN.MOFNetStack.cnet = 'twins'
+        _CN.MOFNetStack.fnet = 'twins'
+        _CN.MOFNetStack.down_ratio = 8
+        _CN.MOFNetStack.decoder_depth = 3
     else:
         raise NotImplementedError('wrong version')
     _CN.batch_size = args.nums_gpu

@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2023-08-10 15:13:47
 LastEditors: Qing Hong
-LastEditTime: 2024-04-28 13:20:42
+LastEditTime: 2024-08-13 14:13:06
 Description: file content
 '''
 import pickle
@@ -91,10 +91,10 @@ def prepare_things(root,sp,input_frames,multi_mv):
         mv1_lists = []
         mask_lists = []
         for cam in ['left','right']:
-            image_dirs = sorted(glob(osp.join(root, dstype, 'TRAIN{sl}*{sl}*')))
+            image_dirs = sorted(glob(osp.join(root, dstype, 'TRAIN/*/*')))
             image_dirs = sorted([osp.join(f, cam) for f in image_dirs])
-            flow_dirs = sorted(glob(osp.join(root, 'optical_flow{sl}TRAIN{sl}*{sl}*')))
-            mask_dirs  = sorted(glob(osp.join(root, 'object_index{sl}TRAIN{sl}*{sl}*')))
+            flow_dirs = sorted(glob(osp.join(root, 'optical_flow/TRAIN/*/*')))
+            mask_dirs  = sorted(glob(osp.join(root, 'object_index/TRAIN/*/*')))
             mask_dirs = sorted([osp.join(f, cam) for f in mask_dirs])
             flow_future_dirs = sorted([osp.join(f, 'into_future', cam) for f in flow_dirs])
             flow_past_dirs = sorted([osp.join(f, 'into_past', cam) for f in flow_dirs])
@@ -162,7 +162,7 @@ def prepare_sintel(root,sp,input_frames,multi_mv):
 def clean_source(source):
     res = set()
     for s in source:
-        num = s.split('{sl}')[-1]
+        num = s.split(f'/')[-1]
         if num.lower() not in ['image','mask','mv0','mv1','obj','video']:
             res.add(s)
         else:
@@ -226,20 +226,20 @@ def prepare_Unreal(root,sp,input_frames,multi_mv,ldr=True,skip_frames=0,ctype='i
                 mv1_lists = []
                 mask_lists = []
                 fpstype = f'{fps}fps'
-                source_root = find_folders_with_subfolder(root,keys=[ctype],path_keys=[fpstype,f'{sl}{split}{sl}',f'{sl}{baja}{sl}'],path_excs=['{sl}bbox','{sl}obj'])
+                source_root = find_folders_with_subfolder(root,keys=[ctype],path_keys=[fpstype,f'/{split}/',f'/{baja}/'],path_excs=[f'/bbox',f'/obj'])
                 if fps == 24:
-                    source_root += find_folders_with_subfolder(root,keys=[ctype],path_keys=[f'{sl}{split}{sl}',f'{sl}{baja}{sl}'],path_excs=['{sl}bbox','fpstype','{sl}obj'])
-                # source_root = find_folders_with_subfolder(f'{root}{sl}{split}{sl}{baja}',ctype,f'{sl}{fpstype}')
-                # source_root = sorted(glob(osp.join(root, f'{split}{sl}{baja}{sl}*{sl}{fpstype}{sl}*'))+glob(osp.join(root, f'{split}{sl}{baja}{sl}*{sl}{fps}{sl}*')))
+                    source_root += find_folders_with_subfolder(root,keys=[ctype],path_keys=[f'/{split}/',f'/{baja}/'],path_excs=[f'/bbox','fpstype',f'/obj'])
+                # source_root = find_folders_with_subfolder(f'{root}/{split}/{baja}',ctype,f'/{fpstype}')
+                # source_root = sorted(glob(osp.join(root, f'{split}/{baja}/*/{fpstype}/*'))+glob(osp.join(root, f'{split}/{baja}/*/{fps}/*')))
                 # source_root = clean_source(source_root)
                 hdr_dirs = [osp.join(f, ctype) for f in source_root]
                 flow_dirs_mv0 = [osp.join(f, 'mv0') for f in source_root]
                 flow_dirs_mv1 = [osp.join(f, 'mv1') for f in source_root]
                 mdir_dirs = [osp.join(f, 'Mask') for f in source_root]
                 if baja == 'final': #final data use clean mv0,mv1
-                    flow_dirs_mv0 = [f.replace('{sl}final','{sl}clean') for f in flow_dirs_mv0]
-                    flow_dirs_mv1 = [f.replace('{sl}final','{sl}clean')for f in flow_dirs_mv1]
-                    mdir_dirs = [f.replace('{sl}final','{sl}clean') for f in mdir_dirs]
+                    flow_dirs_mv0 = [f.replace('/final','/clean') for f in flow_dirs_mv0]
+                    flow_dirs_mv1 = [f.replace('/final','/clean')for f in flow_dirs_mv1]
+                    mdir_dirs = [f.replace('/final','/clean') for f in mdir_dirs]
                 for idir, fdir0,fdir1,mdir in zip(hdr_dirs, flow_dirs_mv0,flow_dirs_mv1,mdir_dirs):
                     images = sorted(glob(osp.join(idir, f'*{ctype_}')) )
                     if (len(images))<=input_frames:
@@ -293,15 +293,15 @@ def prepare_UnrealMRQ(root,sp,input_frames,multi_mv,skip_frames,ldr=True):
             mv1_lists = []
             mask_lists = []
             fpstype = '24fps'
-            source_root = find_folders_with_subfolder(f'{root}{sl}{split}{sl}{baja}',ctype,'')
+            source_root = find_folders_with_subfolder(f'{root}/{split}/{baja}',ctype,'')
             hdr_dirs = [osp.join(f, ctype) for f in source_root]
             flow_dirs_mv0 = [osp.join(f, 'mv0') for f in source_root]
             flow_dirs_mv1 = [osp.join(f, 'mv1') for f in source_root]
             mdir_dirs = [osp.join(f, 'Mask') for f in source_root]
             if baja == 'final': #final data use clean mv0,mv1
-                flow_dirs_mv0 = [f.replace('{sl}final','{sl}clean') for f in flow_dirs_mv0]
-                flow_dirs_mv1 = [f.replace('{sl}final','{sl}clean')for f in flow_dirs_mv1]
-                mdir_dirs = [f.replace('{sl}final','{sl}clean') for f in mdir_dirs]
+                flow_dirs_mv0 = [f.replace('/final','/clean') for f in flow_dirs_mv0]
+                flow_dirs_mv1 = [f.replace('/final','/clean')for f in flow_dirs_mv1]
+                mdir_dirs = [f.replace('/final','/clean') for f in mdir_dirs]
             for idir, fdir0,fdir1,mdir in zip(hdr_dirs, flow_dirs_mv0,flow_dirs_mv1,mdir_dirs):
                 images = sorted(glob(osp.join(idir, f'*{ctype_}')) )
                 if (len(images))<=input_frames:
@@ -350,10 +350,10 @@ def prepare_Spring(root,sp,input_frames,multi_mv):
         mv0_lists = []
         mv1_lists = []
         for cam in ['left','right']:
-            source_root = sorted(glob(osp.join(root, f'{split}{sl}*')))
-            hdr_dirs = sorted([osp.join(f, f'{cam}{sl}image') for f in source_root])
-            flow_dirs_mv0 = sorted([osp.join(f, f'{cam}{sl}mv0') for f in source_root])
-            flow_dirs_mv1 = sorted([osp.join(f, f'{cam}{sl}mv1') for f in source_root])
+            source_root = sorted(glob(osp.join(root, f'{split}/*')))
+            hdr_dirs = sorted([osp.join(f, f'{cam}/image') for f in source_root])
+            flow_dirs_mv0 = sorted([osp.join(f, f'{cam}/mv0') for f in source_root])
+            flow_dirs_mv1 = sorted([osp.join(f, f'{cam}/mv1') for f in source_root])
             for idir, fdir0,fdir1 in zip(hdr_dirs, flow_dirs_mv0,flow_dirs_mv1):
                 images = sorted(glob(osp.join(idir, '*.png')) )
                 mv0s = sorted(glob(osp.join(fdir0, '*.exr')) )
