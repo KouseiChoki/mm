@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-14 11:47:59
+LastEditTime: 2024-08-16 12:32:31
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -775,6 +775,14 @@ def getname(image):
         tmp = tmp[-tmp[::-1].find('.'):]
         return tmp
 
+def write_np_2_txt(path,datas,describes=None):
+    with open(path, 'w') as f:
+        for i in range(len(datas)):
+            if describes is None:
+                f.write(' '.join(map(str, datas[i])) + '\n')
+            else:
+                f.write(f'{describes[i]}:\t')
+                f.write(' '.join(map(str, datas[i])) + '\n')
 
 def write_txts(output,txts):
     for seq,txt in txts.items():

@@ -2,7 +2,7 @@
  * @Author: Qing Hong
  * @FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
  * @LastEditors: Qing Hong
- * @LastEditTime: 2024-08-09 16:36:09
+ * @LastEditTime: 2024-08-16 12:35:44
  * @Description: 
  *          ▄              ▄
  *         ▌▒█           ▄▀▒▌     
@@ -70,9 +70,11 @@ python algo/conversion_tools/pointcloud/3dgs_reader.py
 3. --max_frame : 单次merge使用帧
 4. --baseline_distance : 添加数字（单位米）, 更改相机平移位置，用于生成左右眼相机 
 5. --judder_angle : 添加数字（度），生成ja差值相机
-6. --cur : 如果输入数据包含mask,添加此参数指定某一帧作为前景帧（此帧不使用mask）构建点云，比如使用三帧渲染，设定--cur 2,则中间帧前景参与点云构建
+6. --step 跳帧step
 7. --downscale : 生成下采样倍率的点云文件
 
+8. --rub:输出viwer.txt的rub格式viewmatrix
+   ![alt text](image-3.png)
 
 
 ## 3DGS
