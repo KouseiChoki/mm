@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-08 15:11:07
+LastEditTime: 2024-08-16 12:30:19
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -66,6 +66,7 @@ class CameraInfo():
 class ImageInfo():
     uid:int
     extrinsic:np.array
+    rub:np.array
 
 type_dict = {"PW_PRM_BT601"              : [  0.640, 0.330, 0.290, 0.600, 0.150, 0.060  ],
     "rec709"              : [  0.640, 0.330, 0.300, 0.600, 0.150, 0.060  ],
@@ -439,6 +440,7 @@ def write_colmap_model(path,cam_infos,image_infos):
     # Define the cameras (intrinsics).
     cameras = {}
     images = {}
+    rubs,descs = [],[]
     for cam_info,image_info in zip(cam_infos,image_infos):
         assert cam_info.uid == image_info.uid
         qw,qx,qy,qz,tx,ty,tz = image_info.extrinsic
@@ -446,8 +448,14 @@ def write_colmap_model(path,cam_infos,image_infos):
         qvec = np.array((qw, qx, qy, qz))
         tvec = np.array((tx, ty, tz))
         images[cam_info.uid] = Image(cam_info.uid, qvec, tvec, cam_info.uid, cam_info.image_name, [], [])
+        if image_info.rub is not None:
+            rubs.append(image_info.rub)
+            descs.append(cam_info.image_name)
     mkdir(path)
     write_model(cameras, images, None, path,ext='.txt')
+    if len(rubs)>0:
+        from myutil import write_np_2_txt
+        write_np_2_txt(os.path.join(path,'viwer.txt'),rubs,descs)
 
 def slerp(q1, q2, t):
     """Perform spherical linear interpolation (slerp) between two quaternions."""
@@ -507,7 +515,7 @@ def ja_ajust(image_infos,cam_infos,judder_angle):
         new_q = slerp(prev_extrinsic[:4],extrinsic[:4],t=ja)
         new_t = interpolate_translation(prev_extrinsic[4:],extrinsic[4:],t=ja)
         #change uid and name
-        new_image_info = ImageInfo(uid=image_info.uid*2-2,extrinsic=np.concatenate([new_q,new_t]))
+        new_image_info = ImageInfo(uid=image_info.uid*2-2,extrinsic=np.concatenate([new_q,new_t]),rub=None)
         image_info.uid = image_info.uid*2-1
         new_cam_info = deepcopy(cam_info)
         new_cam_info.uid = new_cam_info.uid*2-2
@@ -608,7 +616,7 @@ def get_intrinsic_extrinsic(oris,save_path,name,args):
         w2c = np.linalg.inv(extrinsic)
         qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
         tvec = w2c[:3, 3]
-        image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec[0],tvec[1],tvec[2]]))
+        image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec[0],tvec[1],tvec[2]]),rub=None)
         image_infos.append(image_info)
         # intrinsic
         o_cx = w/2.0 

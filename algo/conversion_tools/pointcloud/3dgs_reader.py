@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-13 11:50:29
+LastEditTime: 2024-08-16 12:53:36
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -35,6 +35,7 @@ from plyfile import PlyData, PlyElement
 # from striprtf.striprtf import rtf_to_text
 from fileutil.read_write_model import Camera,write_model,Image
 from file_utils import mvwrite,read
+from myutil import mask_adjust
 import argparse
 IMG_DATA = ['.png','.tiff','.tif','.exr','.jpg']
 def prune(c,keyword,mode = 'basename'):
@@ -60,12 +61,15 @@ def init_param():
     parser.add_argument('--max_frame',type=int, default=999,help="max generated frames")
     parser.add_argument('--baseline_distance', type=float, default=0,help="baseline_distance")
     parser.add_argument('--f', action='store_true', help="force run")
-    parser.add_argument('--mask', action='store_true', help="use mask")
+    parser.add_argument('--mask_type', type=str,default='nomask', help="bg or mix",choices=['nomask','bg','mix'])
+    parser.add_argument('--mask_threshold', type=float, default=0,help="prune mask threshold")
+    parser.add_argument('--mask_adjust', type=int, default=0,help="prune mask threshold")
     parser.add_argument('--judder_angle',type=int, default=-1,help="frame step")
-    parser.add_argument('--cur',type=int, default=-1,help="which frame do not use mask")
     parser.add_argument('--inverse_depth',action='store_true', help="depth= 1/depth")
+    parser.add_argument('--rub', action='store_true', help="dump rub viewmatrix")
     parser.add_argument('--test', action='store_true', help="use test")
-    parser.add_argument('--downscale',type=int, default=1,help="downscale rate")
+    parser.add_argument('--full_result', action='store_true', help="output full result")
+    parser.add_argument('--down_scale',type=int, default=1,help="downscale rate")
     args = parser.parse_args()
     return args
 
@@ -115,7 +119,27 @@ def read_rtf(file_path):
 #     i +=1
 
 # print(image_infos)
-
+def get_ply(xyz,rgbs):
+    #create pointcloud
+    dtype = [
+        ("x", "f4"),
+        ("y", "f4"),
+        ("z", "f4"),
+        ("nx", "f4"),
+        ("ny", "f4"),
+        ("nz", "f4"),
+        ("red", "u1"),
+        ("green", "u1"),
+        ("blue", "u1"),
+    ]
+    # print('writing plyfile........')
+    normals = np.zeros_like(xyz)
+    elements = np.empty(xyz.shape[0], dtype=dtype)
+    attributes = np.concatenate((xyz, normals, rgbs), axis=1)
+    elements[:] = list(map(tuple, attributes))
+    vertex_element = PlyElement.describe(elements, "vertex")
+    ply_data = PlyData([vertex_element])
+    return ply_data
 
 def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=None):
     h, w = depth_image.shape
@@ -143,7 +167,9 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     nums = len(images)
     cam_infos,image_infos = [],[]
     points,rgbs = [],[]
-    for i in range(args.start_frame,nums,args.step): 
+    tmp_points,tmp_rgbs = [],[]
+    fg_ply_data = None
+    for i in range(nums): 
         rx,ry,rz,tx,ty,tz = ext[i]
         # mkdir(os.path.join(save_path,'image'))
         # image_path = os.path.join(save_path,'image',os.path.basename(image))
@@ -160,9 +186,11 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
         c2w = np.eye(4,4)
         if args.baseline_distance!=0:
             tx += args.baseline_distance
+        
         c2w[:3,:3] = rotation_matrix
-        c2w[:,1:3] *= -1
         c2w[:3,-1] = [tx,ty,tz]
+        rub = c2w.copy() if args.rub else None
+        c2w[:,1:3] *= -1
         # tt = np.array([[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,1]])
         # c2w*= tt
         # if i ==1:
@@ -173,7 +201,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
         qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
         tvec0,tvec1,tvec2 = w2c[:3, 3]
         
-        image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]))
+        image_info = ImageInfo(uid=index,extrinsic=np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),rub=rub)
         image_infos.append(image_info)
         cam_info = CameraInfo(uid=index, fx=ins['focal_length_x'],fy=ins['focal_length_y'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=w, height=h,model="PINHOLE")
         cam_infos.append(cam_info)
@@ -181,12 +209,12 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
         #downscale
         o_cx = w/2.0 
         o_cy = h/2.0
-        o_cx = o_cx //args.downscale
-        o_cy = o_cy //args.downscale
-        focal_length_x = ins['focal_length_x']/args.downscale
-        focal_length_y = ins['focal_length_y']/args.downscale
-        target_w = w//args.downscale
-        target_h = h//args.downscale
+        o_cx = o_cx //args.down_scale
+        o_cy = o_cy //args.down_scale
+        focal_length_x = ins['focal_length_x']/args.down_scale
+        focal_length_y = ins['focal_length_y']/args.down_scale
+        target_w = w//args.down_scale
+        target_h = h//args.down_scale
 
         #point
         intrinsics = np.array([[focal_length_x,0,o_cx],[0,focal_length_y,o_cy],[0,0,1]])
@@ -194,53 +222,48 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
         if args.inverse_depth:
             depth = 1/depth
         rgb = read(images[i],type='image')
-        if args.downscale != 1:
+        if args.down_scale != 1:
             import cv2
             depth = cv2.resize(depth,(target_w,target_h),interpolation=cv2.INTER_NEAREST)
             rgb = cv2.resize(rgb,(target_w,target_h))
         # rgb = rgb[depth!= 0]
         rgb=rgb.reshape(-1,3)
         
-        if masks is not None:
-            if args.cur == index:
-                point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
+        if args.mask_type != 'nomask':
+            mask_path = masks[i]
+            mask = read(mask_path,type='mask')
+            if args.mask_adjust != 0:
+                mask = mask_adjust(mask,size=args.mask_adjust)
+            if args.down_scale != 1 :
+                mask = cv2.resize(mask,(target_w,target_h),interpolation=cv2.INTER_NEAREST).reshape(-1)
             else:
-                mask_path = masks[i]
-                mask = read(mask_path,type='mask')
-                if args.downscale != 1 :
-                    mask = cv2.resize(mask,(target_w,target_h),interpolation=cv2.INTER_NEAREST).reshape(-1)
-                else:
-                    mask = mask.reshape(-1)
-                rgb = rgb[mask == 0]
-                # point = point[mask == 0]
-                point = generate_point_cloud_from_depth(depth,intrinsics,c2w,mask == 0)
+                mask = mask.reshape(-1)
+
+            if args.mask_type =='bg' or (args.mask_type !='bg' and args.cur != i):
+                condition = mask <= args.mask_threshold
+                rgb = rgb[condition]
+                point = generate_point_cloud_from_depth(depth,intrinsics,c2w,condition)
+            else:
+                condition = mask > args.mask_threshold
+                tmp_rgbs = rgb[condition]
+                tmp_points = generate_point_cloud_from_depth(depth,intrinsics,c2w,condition)
+                point = None
+                rgb = None
         else:
             point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
-        points.append(point.reshape(-1,3))
-        rgbs.append(rgb.reshape(-1,3))
+        if point is not None:
+            points.append(point.reshape(-1,3))
+        if rgb is not None:
+            rgbs.append(rgb.reshape(-1,3))
         index += 1
-    #create pointcloud
     xyz = np.concatenate(points)
     rgbs = np.concatenate(rgbs)
-    # print('writing plyfile........')
-    dtype = [
-        ("x", "f4"),
-        ("y", "f4"),
-        ("z", "f4"),
-        ("nx", "f4"),
-        ("ny", "f4"),
-        ("nz", "f4"),
-        ("red", "u1"),
-        ("green", "u1"),
-        ("blue", "u1"),
-    ]
-    normals = np.zeros_like(xyz)
-    elements = np.empty(xyz.shape[0], dtype=dtype)
-    attributes = np.concatenate((xyz, normals, rgbs), axis=1)
-    elements[:] = list(map(tuple, attributes))
-    vertex_element = PlyElement.describe(elements, "vertex")
-    ply_data = PlyData([vertex_element])
-    return image_infos,cam_infos,ply_data
+    ply_data = get_ply(xyz,rgbs)
+    if tmp_points is not None:
+        # xyz = np.array(tmp_points)
+        # rgbs = np.array(tmp_rgbs)
+        fg_ply_data = get_ply(tmp_points,tmp_rgbs)
+    return image_infos,cam_infos,ply_data,fg_ply_data
 def euler_angles_to_rotation_matrix(theta_x, theta_y, theta_z):
     """
     将欧拉角转换为旋转矩阵（按 ZYX 顺序）。
@@ -278,7 +301,7 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
             return
         else:
             shutil.rmtree(sp,ignore_errors=True)
-    image_infos,cam_infos,ply_data = get_intrinsic_extrinsic(images,depths,instrinsics,extrinsics,save_path,args,masks)
+    image_infos,cam_infos,ply_data,fg_ply_data = get_intrinsic_extrinsic(images,depths,instrinsics,extrinsics,save_path,args,masks)
     mkdir(os.path.join(sp , "images"))
     for image in images:
         shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
@@ -289,11 +312,14 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
     # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
     # Write out the camera parameters.
-    write_colmap_model(sparse_path,cam_infos,image_infos)
-    # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
     mkdir(sparse_path)
+    write_colmap_model(sparse_path,cam_infos,image_infos)
+    if fg_ply_data is not None:
+        fg_ply_data.write(os.path.join(sparse_path , f"fg_points3D.ply"))
+    # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
     # if args.baseline_distance==0:
-    ply_data.write(ply_path)
+    if ply_data is not None:
+        ply_data.write(ply_path)
     if args.judder_angle!= -1:
         print('writing ja file')
         image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
@@ -314,7 +340,8 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
         write_colmap_model(sparse_path,cam_infos,image_infos)
         # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
         # if args.baseline_distance==0:
-        ply_data.write(ply_path)
+        if ply_data is not None:
+            ply_data.write(ply_path)
     
 def read_intrinsic(intrinsic_file):
     res = {}
@@ -335,10 +362,19 @@ def read_txt(file_path):
         data.append(components)
     return data
 
-def sliding_window(arr, n):
-    if arr is None:
-        return [None for i in range(len(arr) - n + 1)]
-    return [arr[i:i + n] for i in range(len(arr) - n + 1)]
+def sliding_window(sequence, window_size,window_step,pad=0,pad_step=0):
+    """Generate a sliding window over a sequence."""
+    window_size -=2
+    res = []
+    for i in range(0, len(sequence), window_step):
+        window = sequence[i:i+window_size]
+        if len(window) < window_size:
+            window = sequence[-window_size:]
+        if pad>0:
+            for _ in range(pad):
+                window = np.hstack((window[0]-pad_step,window,window[-1]+pad_step))
+        res.append(window)
+    return res
 
 if __name__ == '__main__':
     args = init_param()
@@ -370,25 +406,70 @@ if __name__ == '__main__':
     except:
         raise ImportError('error input folder, need IMAGES and DEPTHS (MASKS) folder!')
     assert len(images)==len(masks) and len(images)==len(depths),f'error input number of image/mask/depth,{len(images)},{len(masks)},{len(depths)}'
+    if args.mask_type != 'nomask':
+        assert len(masks)>0,'can not find mask file!'
     if len(images) <= args.max_frame:
-        images_prepare = [images]
-        masks_prepare = [masks]
-        depths_prepare = [depths]
+        images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
+        masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]]
+        depths_prepare = [[depths[i] for i in range(0,len(depths),args.step)]]
         extrinsics = [read_extrinsics(extrinsic_file)]
     else:
-        images_prepare = sliding_window(images,args.max_frame)
-        masks_prepare = sliding_window(masks,args.max_frame)
-        depths_prepare = sliding_window(depths,args.max_frame)
-        extrinsics = sliding_window(read_extrinsics(extrinsic_file),args.max_frame)
+        images_prepare = sliding_window(images,args.max_frame,args.step)
+        masks_prepare = sliding_window(masks,args.max_frame,args.step)
+        depths_prepare = sliding_window(depths,args.max_frame,args.step)
+        extrinsics = sliding_window(read_extrinsics(extrinsic_file),args.max_frame,args.step)
 
+    task_indexes = np.arange(args.start_frame,args.start_frame+args.max_frame)
+    task_indexes = []
+    curs = []
+    for i in range(len(images)):
+        cur = args.max_frame//2
 
-    instrinsics = read_intrinsic(intrinsic_file) # not finished
+        tmp = i+(np.arange(args.max_frame)-args.max_frame//2)*args.step
+
+        while(tmp.min()<0):
+            tmp +=args.step
+            cur -= 1
+            if cur < 0 or cur >= args.max_frame:
+                raise ValueError('error max framse')
+        
+        while(tmp.max()>len(images)-1):
+            tmp -=args.step
+            cur += 1
+            if cur < 0 or cur >= args.max_frame:
+                raise ValueError('error max framse')
+        
+        tmp = [np.clip(k,0,len(images)-1) for k in tmp]
+
+        task_indexes.append(tmp)
+        curs.append(cur)
+    if not args.full_result:
+        tmp_curs = []
+        tmp_task_indexes = []
+        for i in range(len(curs)):
+            if curs[i] == args.max_frame//2:
+                tmp_curs.append(curs[i])
+                tmp_task_indexes.append(task_indexes[i])
+        curs = tmp_curs
+        task_indexes = tmp_task_indexes
+    images_prepare = [[images[ii] for ii in i]for i in task_indexes]
+    masks_prepare = [[masks[ii] for ii in i]for i in task_indexes]
+    depths_prepare = [[depths[ii] for ii in i]for i in task_indexes]
+    extrinsics_ = read_extrinsics(extrinsic_file)
+    extrinsics = [[extrinsics_[ii] for ii in i]for i in task_indexes]
+    #需要判断重复元素 --root /Users/qhong/Desktop/avatar_data/2039 --max_frame 5 --step 2  --inverse_depth  --mask_type fg 
+    instrinsics = read_intrinsic(intrinsic_file)
     
     
     for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
+        args.cur = curs[i]
         name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
         name1 = os.path.splitext(os.path.basename(images_prepare[i][-1]))[0]
         name = f'{name0}_to_{name1}'
+        if args.step!=1:
+            name += f'_step_{args.step}'
+        if args.mask_type=='mix':
+            name += f'_cur_{args.cur}'
         save_path = os.path.join(path,'..','pointcloud',name)
         ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
     print('finished')
