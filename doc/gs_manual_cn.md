@@ -2,7 +2,7 @@
  * @Author: Qing Hong
  * @FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
  * @LastEditors: Qing Hong
- * @LastEditTime: 2024-08-16 12:35:44
+ * @LastEditTime: 2024-08-16 13:01:14
  * @Description: 
  *          ▄              ▄
  *         ▌▒█           ▄▀▒▌     
@@ -75,6 +75,8 @@ python algo/conversion_tools/pointcloud/3dgs_reader.py
 
 8. --rub:输出viwer.txt的rub格式viewmatrix
    ![alt text](image-3.png)
+
+9.--mask_type: bg or mix , mix生成2d-3d用点云,bg则只生成背景点云
 
 
 ## 3DGS

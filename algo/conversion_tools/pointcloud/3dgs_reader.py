@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-16 12:53:36
+LastEditTime: 2024-08-19 15:19:08
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -63,7 +63,8 @@ def init_param():
     parser.add_argument('--f', action='store_true', help="force run")
     parser.add_argument('--mask_type', type=str,default='nomask', help="bg or mix",choices=['nomask','bg','mix'])
     parser.add_argument('--mask_threshold', type=float, default=0,help="prune mask threshold")
-    parser.add_argument('--mask_adjust', type=int, default=0,help="prune mask threshold")
+    parser.add_argument('--fg_mask_adjust', type=int, default=0,help="prune mask threshold")
+    parser.add_argument('--bg_mask_adjust', type=int, default=0,help="prune mask threshold")
     parser.add_argument('--judder_angle',type=int, default=-1,help="frame step")
     parser.add_argument('--inverse_depth',action='store_true', help="depth= 1/depth")
     parser.add_argument('--rub', action='store_true', help="dump rub viewmatrix")
@@ -227,28 +228,31 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
             depth = cv2.resize(depth,(target_w,target_h),interpolation=cv2.INTER_NEAREST)
             rgb = cv2.resize(rgb,(target_w,target_h))
         # rgb = rgb[depth!= 0]
-        rgb=rgb.reshape(-1,3)
+        rgb_=rgb.reshape(-1,3)
         
         if args.mask_type != 'nomask':
-            mask_path = masks[i]
-            mask = read(mask_path,type='mask')
-            if args.mask_adjust != 0:
-                mask = mask_adjust(mask,size=args.mask_adjust)
+            mask = read(masks[i],type='mask')
+            if args.bg_mask_adjust != 0:
+                mask = mask_adjust(mask,size=args.bg_mask_adjust)
             if args.down_scale != 1 :
                 mask = cv2.resize(mask,(target_w,target_h),interpolation=cv2.INTER_NEAREST).reshape(-1)
             else:
                 mask = mask.reshape(-1)
-
-            if args.mask_type =='bg' or (args.mask_type !='bg' and args.cur != i):
-                condition = mask <= args.mask_threshold
-                rgb = rgb[condition]
-                point = generate_point_cloud_from_depth(depth,intrinsics,c2w,condition)
-            else:
-                condition = mask > args.mask_threshold
-                tmp_rgbs = rgb[condition]
-                tmp_points = generate_point_cloud_from_depth(depth,intrinsics,c2w,condition)
-                point = None
-                rgb = None
+            condition = mask <= args.mask_threshold
+            rgb = rgb_[condition]
+            point = generate_point_cloud_from_depth(depth,intrinsics,c2w,condition)
+            
+            if args.mask_type =='mix' and args.cur == i:
+                cur_mask = read(masks[i],type='mask')
+                if args.fg_mask_adjust != 0:
+                    cur_mask = mask_adjust(cur_mask,size=args.fg_mask_adjust)
+                if args.down_scale != 1 :
+                    cur_mask = cv2.resize(cur_mask,(target_w,target_h),interpolation=cv2.INTER_NEAREST).reshape(-1)
+                else:
+                    cur_mask = cur_mask.reshape(-1)
+                tmp_condition = (cur_mask > args.mask_threshold) & (depth.reshape(-1)!=0)
+                tmp_rgbs = rgb_[tmp_condition]
+                tmp_points = generate_point_cloud_from_depth(depth,intrinsics,c2w,tmp_condition)
         else:
             point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
         if point is not None:
