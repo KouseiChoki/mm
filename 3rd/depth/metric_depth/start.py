@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:24:38
+LastEditTime: 2024-08-21 11:54:15
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     for prepare in prepares:
         filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
         
-        cmap = matplotlib.colormaps.get_cmap('Spectral')
+        
         
         for k, filename in enumerate(filenames):
             print(f'Progress {k+1}/{len(filenames)}: {filename}')
@@ -158,6 +158,7 @@ if __name__ == '__main__':
             output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
             if args.color:
                 import copy
+                cmap = matplotlib.colormaps.get_cmap('Spectral')
                 tmpdepth = copy.deepcopy(depth)
                 tmpdepth = (tmpdepth - tmpdepth.min()) / (tmpdepth.max() - tmpdepth.min()) * 255.0
                 tmpdepth = tmpdepth.astype(np.uint8)
