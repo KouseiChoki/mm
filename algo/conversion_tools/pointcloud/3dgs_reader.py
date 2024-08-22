@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-19 15:19:08
+LastEditTime: 2024-08-22 14:40:59
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -263,7 +263,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     xyz = np.concatenate(points)
     rgbs = np.concatenate(rgbs)
     ply_data = get_ply(xyz,rgbs)
-    if tmp_points is not None:
+    if len(tmp_points)>0:
         # xyz = np.array(tmp_points)
         # rgbs = np.array(tmp_rgbs)
         fg_ply_data = get_ply(tmp_points,tmp_rgbs)
