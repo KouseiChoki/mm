@@ -1,8 +1,8 @@
 '''
 Author: Qing Hong
 Date: 2023-07-18 16:34:39
-LastEditors: QingHong
-LastEditTime: 2023-07-20 11:33:52
+LastEditors: Qing Hong
+LastEditTime: 2024-08-22 12:00:43
 Description: file content
 '''
 
@@ -20,7 +20,7 @@ def jhelp_file(c):
     return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
 from file_utils import read
 
-def cal_border_length(image,threshold=5):
+def cal_border_length(image,threshold=5,setsumei=True):
     if isinstance(image, str):
         image = read(image,type='gray')
     height, width = image.shape
@@ -48,7 +48,8 @@ def cal_border_length(image,threshold=5):
         if np.mean(image[:, y]) > threshold:
             right_border = width - y - 1
             break
-
+    if setsumei:
+        print(f'宽（上下左右）:{top_border},{bottom_border},{left_border},{right_border}, 起始像素(上to下，左to右):{top_border} to {height-bottom_border},{left_border} to {width-right_border}')
     return [top_border,bottom_border,left_border,right_border]
 
 if __name__ == '__main__':
