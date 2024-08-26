@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-21 11:54:15
+LastEditTime: 2024-08-26 14:04:31
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     # parser.add_argument('--save-numpy', dest='save_numpy', action='store_true', help='save the model raw output')
     # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
     parser.add_argument('--color', action='store_true', help='apply colorful palette')
-    
+    parser.add_argument('--inverse_depth', action='store_true', help='apply colorful palette')
     args = parser.parse_args()
     
     DEVICE = args.device.lower()
@@ -178,6 +178,8 @@ if __name__ == '__main__':
             d = (d - d.min()) / (d.max() - d.min())
             # if args.norm:
             if metric:
+                if args.inverse_depth:
+                    d = 1 - d
                 depth[...,-1] = d
             else:
                 depth = np.repeat(d[...,None],4,axis=2)
