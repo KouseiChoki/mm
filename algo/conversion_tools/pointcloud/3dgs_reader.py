@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-22 14:40:59
+LastEditTime: 2024-09-02 14:33:48
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -395,7 +395,6 @@ if __name__ == '__main__':
         path = os.path.join(args.root,'raw')
     intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
     extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
-    
     # data = read_rtf(rtf)
     # lines = data.strip().split('\n')
     # rows = [list(map(float, line.split())) for line in lines[1:]]
@@ -472,7 +471,7 @@ if __name__ == '__main__':
         name = f'{name0}_to_{name1}'
         if args.step!=1:
             name += f'_step_{args.step}'
-        if args.mask_type=='mix':
+        if args.mask_type!='fg':
             name += f'_cur_{args.cur}'
         save_path = os.path.join(path,'..','pointcloud',name)
         ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
