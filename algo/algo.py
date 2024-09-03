@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:04:59
+LastEditTime: 2024-09-03 13:51:01
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -164,8 +164,8 @@ def optical_flow_core(imgs,args,model,initial_flow=None,dump_name = None,mv_offs
         
     resize_rate_x,resize_rate_y = get_resize_rate(args.algorithm,imgs[0].shape[0],imgs[0].shape[1])
     if args.compatibility_mode: #for frame bugs
-        resize_rate_x = 1920/imgs[0].shape[1]
-        resize_rate_y = 880/imgs[0].shape[0]
+        resize_rate_x = 1
+        resize_rate_y = 1
     resize_rate_x *= args.resize_rate_x
     resize_rate_y *= args.resize_rate_y
     pre_size = imgs[0].shape
