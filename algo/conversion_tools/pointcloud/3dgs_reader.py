@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-04 14:15:37
+LastEditTime: 2024-09-04 15:33:44
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -473,9 +473,13 @@ if __name__ == '__main__':
         save_path = os.path.join(path,'..','pointcloud',name)
         ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
 
-        if i < len(images_prepare)-2:
-            image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None),ImageInfo(uid=i+1,extrinsic=source_ext[i+1],rub=None)]
-            cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE"),CameraInfo(uid=i+1, fx=float(source_ins[i+1]['fx']),fy=float(source_ins[i+1]['fy']),cx=int(source_ins[i+1]['w'])/2.0 ,cy=int(source_ins[i+1]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i+1]['w']), height=int(source_ins[i+1]['h']),model="PINHOLE")]
+        if i < len(images_prepare):
+            if i == len(images_prepare)-1:
+                image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None)]
+                cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE")]
+            else:
+                image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None),ImageInfo(uid=i+1,extrinsic=source_ext[i+1],rub=None)]
+                cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE"),CameraInfo(uid=i+1, fx=float(source_ins[i+1]['fx']),fy=float(source_ins[i+1]['fy']),cx=int(source_ins[i+1]['w'])/2.0 ,cy=int(source_ins[i+1]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i+1]['w']), height=int(source_ins[i+1]['h']),model="PINHOLE")]
             write_colmap_model(os.path.join(save_path,'sparse/0'),cam_infos,image_infos,'.jatxt')
 
         # HEADER = (f'extra information for judder_angle renders,cf={str(i)}')
