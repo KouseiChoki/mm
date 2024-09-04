@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 15:40:14
+LastEditTime: 2024-08-09 15:56:09
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -330,7 +330,7 @@ def mvread2(path):
 
 def read(path,type='flo',lut_file=None,self_mask=False,OPENEXR=True,Unrealmode=False,color_space=None):
     mvr = mvread3 if OPENEXR else mvread
-    if path == None or path.lower()=='none':
+    if path is None or path.lower()=='none' or not os.path.isfile(path):
         return None
     res = None
     if type.lower() == 'flo':

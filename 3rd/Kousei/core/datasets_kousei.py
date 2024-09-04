@@ -191,8 +191,9 @@ class FlowDatasetKousei(data.Dataset):
         # film grain
         film_grain = int(self.film_grain[1])
         if film_grain>0:
-            tmp = 1/255 if self.img_type == 'image' else 1
-            imgs = [(image + tmp*np.random.uniform(*film_grain) * np.random.randn(*image.shape).astype('float32')).clip(*self.image_range) for image in imgs]
+            if np.random.rand() < float(self.film_grain[2]):
+                tmp = 1/255 if self.img_type == 'image' else 1
+                imgs = [(image + tmp*np.random.uniform(*film_grain) * np.random.randn(*image.shape).astype('float32')).clip(*self.image_range) for image in imgs]
         # motion blur
         motion_blur_rate = float(self.motion_blur_rate)
         if motion_blur_rate > 0: 

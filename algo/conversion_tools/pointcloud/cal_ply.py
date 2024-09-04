@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-16 12:30:19
+LastEditTime: 2024-09-04 13:50:16
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -436,7 +436,7 @@ def write_ply(path,xyz,rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
-def write_colmap_model(path,cam_infos,image_infos):
+def write_colmap_model(path,cam_infos,image_infos,ext='.txt'):
     # Define the cameras (intrinsics).
     cameras = {}
     images = {}
@@ -452,7 +452,7 @@ def write_colmap_model(path,cam_infos,image_infos):
             rubs.append(image_info.rub)
             descs.append(cam_info.image_name)
     mkdir(path)
-    write_model(cameras, images, None, path,ext='.txt')
+    write_model(cameras, images, None, path,ext=ext)
     if len(rubs)>0:
         from myutil import write_np_2_txt
         write_np_2_txt(os.path.join(path,'viwer.txt'),rubs,descs)

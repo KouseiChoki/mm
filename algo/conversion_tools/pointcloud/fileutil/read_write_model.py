@@ -517,7 +517,10 @@ def write_model(cameras, images, points3D, path, ext=".bin"):
         write_cameras_text(cameras, os.path.join(path, "cameras" + ext))
         write_images_text(images, os.path.join(path, "images" + ext))
         if points3D is not None:
-            write_points3D_text(points3D, os.path.join(path, "points3D") + ext)
+            write_points3D_text(points3D, os.path.join(path, "points3D") + 'ext')
+    elif ext == ".jatxt":
+        write_cameras_text(cameras, os.path.join(path, "ja_cameras.txt"))
+        write_images_text(images, os.path.join(path, "ja_images.txt"))
     else:
         write_cameras_binary(cameras, os.path.join(path, "cameras" + ext))
         write_images_binary(images, os.path.join(path, "images" + ext))
