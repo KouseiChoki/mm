@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2024-06-17 15:50:12
+LastEditTime: 2024-09-05 16:17:38
 Description: file content
 '''
 import os,sys
@@ -11,7 +11,7 @@ from tqdm import tqdm
 sys.path.insert(0, cur_path+'/../algo')
 from file_utils import read
 from openpyxl import Workbook
-
+import datetime
 
 import numpy as np
 def jhelp(c):
@@ -121,6 +121,47 @@ def show_evaluation(di,algorithm='mm',sp='',excel=True):
                 vv = esf(f'{value[3]:.2%}',7)
                 print(esf(item,20),f'    {zz}                       {xx}    {cc}    {vv}',file=f)
 
+
+def find_folders_with_subfolder(root_path, keys = [], path_keys = [] ,excs = [] ,path_excs =[]):
+    """
+    Find all folders in the root_path that contain a subfolder with the name subfolder_name.
+    """
+    folders_with_subfolder = []
+
+    # Walk through the directory
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        # Check if the subfolder_name is in the list of directories
+        flag = True
+        for key in keys:
+            if key not in dirnames:
+                flag = False
+        for path_key in path_keys:
+            if path_key not in dirpath:
+                flag = False
+        for exc in excs:
+            if exc in dirnames:
+                flag = False
+        for exc in path_excs:
+            if exc in dirpath:
+                flag = False
+        if flag:
+            folders_with_subfolder.append(dirpath)
+
+    return folders_with_subfolder
+
 if __name__ == '__main__':
-    res = mm_evaluate('/Users/qhong/Documents/1117test/MM/motionmodel/evaluation/tmp', '/Users/qhong/Documents/1117test/MM/motionmodel/evaluation/data',True)
-    show_evaluation(res,'test',sp='/Users/qhong/Documents/1117test/MM/motionmodel/evaluation/1.txt')
+    assert len(sys.argv) == 3,'error input'
+    # source_paths = find_folders_with_subfolder(sys.argv[1],keys=['mv1'])
+    source_path = sys.argv[1]
+    target_path = sys.argv[2]
+    # for i in range(len(source_paths)):
+    print(source_path,target_path)
+    res = mm_evaluate(source_path,target_path)
+    now = datetime.datetime.now()
+    # 格式化为年月日小时分钟秒
+    formatted_date = now.strftime("%Y%m%d_%H%M%S")  # 输出格式类似 '20220429_153142'
+    # 使用这个字符串来命名文件
+    filename = f"data_{formatted_date}.txt"  # 文件名类似 'data_20220429_153142.txt'
+    filename = os.path.join(cur_path,filename)
+    show_evaluation(res,'custom_algo',sp=filename)
+    # show_evaluation(res,'test',sp='/Users/qhong/Documents/1117test/MM/motionmodel/evaluation/1.txt')
