@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-05 13:56:04
+LastEditTime: 2024-09-05 13:42:26
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -42,7 +42,6 @@ import warnings
 import re
 import argparse
 from color_convertion.colorutil import Color_transform
-from conversion_tools.pointcloud.unreal_reader import unreal_ply
 rec709_to_acescg = Color_transform('lin_rec709','acescg')
 acescg_to_rec709 = Color_transform('acescg','lin_rec709')
 type_dict = {"PW_PRM_BT601"              : [  0.640, 0.330, 0.290, 0.600, 0.150, 0.060  ],
@@ -66,7 +65,6 @@ def init_param():
     parser.add_argument('--onlymv', action='store_false', help="output hdr to ldr image")
     parser.add_argument('--debug', action='store_true', help="Enable debug mode.")
     parser.add_argument('--dump_depth', action='store_true', help="dump world depth.")
-    parser.add_argument('--dump_ply', action='store_true', help="dump_ply")
     parser.add_argument('--depth_only', action='store_true', help="only dump world depth.")
     parser.add_argument('--colormap', action='store_true', help="dump world depth colormap.")
     parser.add_argument('--MRQ', action='store_true', help="movie render queue source")
@@ -770,7 +768,6 @@ if __name__ == '__main__':
     num_of_core = args.core
     root = args.path
     mode = 1
-    args.dump_depth = True
     # if '/final' in root:
         # mode = 2
     if args.MRQ:
@@ -822,8 +819,6 @@ if __name__ == '__main__':
                 mv_cal_core(data[0])
             else:
                 process_map(mv_cal_core, data, max_workers= num_of_core,desc='processing:{}'.format(name))
-            if args.dump_ply:
-                unreal_ply(save_path)
     elif mode ==2:
         file_names = loop_helper(root)
         assert len(file_names)>0,'error root'

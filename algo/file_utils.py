@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-08-09 15:56:09
+LastEditTime: 2024-09-05 13:54:23
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -561,16 +561,15 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
           cv2.imwrite(path,flow[...,:3][...,::-1])
     else:
         if len(flow.shape) == 2:
-          flow = np.repeat(flow[...,None],3,axis=2)
+            flow = np.repeat(flow[...,None],3,axis=2)
         if flow.shape[2] == 2:
-          flow = np.insert(flow,2,0,axis=2)
-        flow = np.clip(flow,-1,1)
-        if flow.min() < 0:
-          flow = ((flow+1)/2 * 255).astype('uint8')
-        else:
-          flow = (flow * 255).astype('uint8')
+            flow = np.insert(flow,2,0,axis=2)
+        if flow.min() < -1:
+           flow = np.clip(flow,-1,1)
+        if flow.max() <= 1:
+           flow = ((flow+1)/2 * 255).astype('uint8')
         if flow.shape[2] ==4:
-          Image.fromarray(flow).save(path)
+           Image.fromarray(flow).save(path)
         else:
           cv2.imwrite(path,flow[...,:3][...,::-1])
 

@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-02 15:18:05
+LastEditTime: 2024-09-05 13:31:41
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -37,7 +37,7 @@ from file_utils import read,mvwrite
 import torch
 from einops import einsum,rearrange
 from plyfile import PlyData, PlyElement
-from fileutil.read_write_model import Camera,write_model,Image
+from conversion_tools.pointcloud.fileutil.read_write_model import Camera,write_model,Image
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
 import OpenEXR
@@ -356,7 +356,7 @@ def eulerAngles2rotationMat(theta, loc = [], format='degree', order = 'ZYX',axis
         ans = RightLeftAxisChange(ans)
     return ans
 
-def get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=9999):
+def get_intrinsic_extrinsic(root,target_w=None,target_h=None,step=1,max_step=9999):
     # root = '/Users/qhong/Desktop/0607/FtGothicCastle_05'
     imgs = jhelp_file(os.path.join(root,'image'))
     oris = jhelp_file(os.path.join(root,'ori'))
@@ -370,8 +370,12 @@ def get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=9999):
         filePath = oris[i]
         o_data,depth = read_exr(filePath)
         w,h = o_data['w'],o_data['h']
-        down_scale_x = w/target_w
-        down_scale_y = h/target_h
+        if target_w is None:
+            down_scale_x = 1
+            down_scale_y = 1
+        else:
+            down_scale_x = w/target_w
+            down_scale_y = h/target_h
         depth /= 100
         depth[np.where(depth>1e5)] = 0
         # Provided Euler angles
@@ -459,10 +463,11 @@ def get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=9999):
         focal_length_y = focal_length_y/down_scale_y
         o_cx = o_cx/down_scale_x
         o_cy = o_cy/down_scale_y
-        depth = cv2.resize(depth,(target_w,target_h))
+        if down_scale_x != 1 or down_scale_y != 1:
+            depth = cv2.resize(depth,(target_w,target_h))
         #prune unvalid depth
         # print(depth.max(),depth.mean())
-        depth[np.where(depth>depth.mean()*2)] = 0
+        # depth[np.where(depth>depth.mean()*2)] = 0
         # cloud point
         #unproject
         # from tc_reader import sample_image_grid,unproject,homogenize_points
@@ -514,9 +519,10 @@ def get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=9999):
         # y *= z
         # point = np.stack((x, y, z), axis=-1).reshape(-1, 3)
 
-        image = read(imgs[i],type='image')
-        rgb = cv2.resize(image,(target_w,target_h))
-
+        rgb = read(imgs[i],type='image')
+        if down_scale_x != 1 or down_scale_y != 1:
+            rgb = cv2.resize(rgb,(target_w,target_h))
+        
         points.append(point.reshape(-1,3))
         rgbs.append(rgb.reshape(-1,3))
         index += 1
@@ -569,16 +575,33 @@ def write_colmap_model(path,cam_infos,image_infos):
     print('writing camera info')
     write_model(cameras, images, None, path,ext='.txt')
 
+def unreal_ply(root,target_w=None,target_h=None):
+    sp = os.path.join(root,'pointcloud')
+    # target_w = 1920
+    # target_h = 1080
+    # target_w = 1920
+    # target_h = 1080
+    image_infos,cam_infos,xyz,rgbs = get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=6666)
+    sparse_path = os.path.join(sp,'sparse/0')
+    mkdir(sparse_path)
+    write_ply(os.path.join(sparse_path , "points3D.ply"), xyz,rgbs)
+    # Write out the images.
+    mkdir(os.path.join(sp , "images"))
+    for cam_info in cam_infos:
+        shutil.copy(cam_info.image_path, os.path.join(sp , "images",os.path.basename(cam_info.image_path)))
+    # Write out the camera parameters.
+    write_colmap_model(sparse_path,cam_infos,image_infos)
+
 if __name__ == "__main__":
     # import open3d as o3d
     # pcd= o3d.geometry.PointCloud()
     # # # 将 NumPy 数组赋值给点云对象
     # pcd.points = o3d.utility.Vector3dVector(points)
     # o3d.visualization.draw_geometries([pcd])
-    root = '/Users/qhong/Desktop/0607/FtGothicCastle_04'
+    root = '/Users/qhong/Desktop/0906'
     sp = os.path.join(root,'colmap')
-    target_w = 1920//6
-    target_h = 1080//6
+    target_w = 1920
+    target_h = 1080
     # target_w = 1920
     # target_h = 1080
     image_infos,cam_infos,xyz,rgbs = get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=66)
