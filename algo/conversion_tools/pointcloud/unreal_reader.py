@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-05 13:31:41
+LastEditTime: 2024-09-05 16:37:38
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -356,7 +356,7 @@ def eulerAngles2rotationMat(theta, loc = [], format='degree', order = 'ZYX',axis
         ans = RightLeftAxisChange(ans)
     return ans
 
-def get_intrinsic_extrinsic(root,target_w=None,target_h=None,step=1,max_step=9999):
+def get_intrinsic_extrinsic(root,down_scale,step=1,max_step=9999):
     # root = '/Users/qhong/Desktop/0607/FtGothicCastle_05'
     imgs = jhelp_file(os.path.join(root,'image'))
     oris = jhelp_file(os.path.join(root,'ori'))
@@ -370,12 +370,12 @@ def get_intrinsic_extrinsic(root,target_w=None,target_h=None,step=1,max_step=999
         filePath = oris[i]
         o_data,depth = read_exr(filePath)
         w,h = o_data['w'],o_data['h']
-        if target_w is None:
+        if down_scale is None:
             down_scale_x = 1
             down_scale_y = 1
         else:
-            down_scale_x = w/target_w
-            down_scale_y = h/target_h
+            down_scale_x = down_scale
+            down_scale_y = down_scale
         depth /= 100
         depth[np.where(depth>1e5)] = 0
         # Provided Euler angles
@@ -464,7 +464,7 @@ def get_intrinsic_extrinsic(root,target_w=None,target_h=None,step=1,max_step=999
         o_cx = o_cx/down_scale_x
         o_cy = o_cy/down_scale_y
         if down_scale_x != 1 or down_scale_y != 1:
-            depth = cv2.resize(depth,(target_w,target_h))
+            depth = cv2.resize(depth,None,fx=1/down_scale_x,fy=1/down_scale_y,interpolation=cv2.INTER_NEAREST)
         #prune unvalid depth
         # print(depth.max(),depth.mean())
         # depth[np.where(depth>depth.mean()*2)] = 0
@@ -521,7 +521,7 @@ def get_intrinsic_extrinsic(root,target_w=None,target_h=None,step=1,max_step=999
 
         rgb = read(imgs[i],type='image')
         if down_scale_x != 1 or down_scale_y != 1:
-            rgb = cv2.resize(rgb,(target_w,target_h))
+            rgb = cv2.resize(rgb,None,fx=1/down_scale_x,fy=1/down_scale_y,interpolation=cv2.INTER_NEAREST)
         
         points.append(point.reshape(-1,3))
         rgbs.append(rgb.reshape(-1,3))
@@ -575,13 +575,13 @@ def write_colmap_model(path,cam_infos,image_infos):
     print('writing camera info')
     write_model(cameras, images, None, path,ext='.txt')
 
-def unreal_ply(root,target_w=None,target_h=None):
+def unreal_ply(root,down_scale):
     sp = os.path.join(root,'pointcloud')
     # target_w = 1920
     # target_h = 1080
     # target_w = 1920
     # target_h = 1080
-    image_infos,cam_infos,xyz,rgbs = get_intrinsic_extrinsic(root,target_w,target_h,step=1,max_step=6666)
+    image_infos,cam_infos,xyz,rgbs = get_intrinsic_extrinsic(root,down_scale,step=1,max_step=6666)
     sparse_path = os.path.join(sp,'sparse/0')
     mkdir(sparse_path)
     write_ply(os.path.join(sparse_path , "points3D.ply"), xyz,rgbs)

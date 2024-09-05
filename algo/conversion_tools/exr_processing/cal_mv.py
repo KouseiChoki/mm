@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-05 13:56:04
+LastEditTime: 2024-09-05 16:32:50
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -67,6 +67,7 @@ def init_param():
     parser.add_argument('--debug', action='store_true', help="Enable debug mode.")
     parser.add_argument('--dump_depth', action='store_true', help="dump world depth.")
     parser.add_argument('--dump_ply', action='store_true', help="dump_ply")
+    parser.add_argument('--down_scale', type=int, default=1)
     parser.add_argument('--depth_only', action='store_true', help="only dump world depth.")
     parser.add_argument('--colormap', action='store_true', help="dump world depth colormap.")
     parser.add_argument('--MRQ', action='store_true', help="movie render queue source")
@@ -823,7 +824,7 @@ if __name__ == '__main__':
             else:
                 process_map(mv_cal_core, data, max_workers= num_of_core,desc='processing:{}'.format(name))
             if args.dump_ply:
-                unreal_ply(save_path)
+                unreal_ply(save_path,args.down_scale)
     elif mode ==2:
         file_names = loop_helper(root)
         assert len(file_names)>0,'error root'
