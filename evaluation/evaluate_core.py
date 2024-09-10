@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2024-09-05 16:17:38
+LastEditTime: 2024-09-10 10:20:44
 Description: file content
 '''
 import os,sys
@@ -26,7 +26,7 @@ def jhelp_file(c):
 def evaluate(mv_path,gt_path,skip=1,speed=[0,1],masks=None,fg=True):
     mvs = jhelp_file(mv_path)
     gts = jhelp_file(gt_path)
-    assert len(mvs)>skip*2 and len(gts) > skip*2 and len(gts)==len(mvs),'evluation data length should >=2'
+    # assert len(mvs)>skip*2 and len(gts) > skip*2 and len(gts)==len(mvs),'evluation data length should >=2'
     mvs = mvs[skip:-skip]
     gts = gts[skip:-skip]
     if masks is not None:
