@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2024-09-14 14:19:31
+LastEditTime: 2024-09-14 14:22:59
 Description: file content
 '''
 import os,sys
@@ -51,12 +51,14 @@ def evaluate(mv_path,gt_path,skip=1,speed=[0,1],masks=None,fg=True):
         masks = jhelp_file(masks)
         masks = masks[skip:-skip]
     epe_all,px1_all,px3_all,px5_all = 0,0,0,0
-    for i in range(len(mvs)):
+    totalnum = len(mvs)
+    for i in range(totalnum):
         mv = read(mvs[i],type='flo')[...,:2]
         # gt = read(gts[i],type='flo')[...,:2]
         gt_ = find_matching_files(mvs[i],gts)
         if gt_ is None or not os.path.isfile(gt_):
             print(f'can not find file:{gt_}')
+            totalnum-=1
             continue
         gt = read(gt_,type='flo')[...,:2]
         if masks is not None:
@@ -75,7 +77,7 @@ def evaluate(mv_path,gt_path,skip=1,speed=[0,1],masks=None,fg=True):
         px1_all += metrics['1px']
         px3_all += metrics['3px']
         px5_all += metrics['5px']
-    return epe_all/len(mvs),px1_all/len(mvs),px3_all/len(mvs),px5_all/len(mvs)
+    return epe_all/totalnum,px1_all/totalnum,px3_all/totalnum,px5_all/totalnum
     
 def evaluate_single_frame(mv,gt,valid,norm=True):
     if norm:
