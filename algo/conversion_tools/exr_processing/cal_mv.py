@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-05 16:32:50
+LastEditTime: 2024-09-13 12:34:25
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -125,12 +125,19 @@ def find_folders_with_subfolder(root_path, keys = [], path_keys = [] ,excs = [] 
             folders_with_subfolder.append(dirpath)
 
     return folders_with_subfolder
-def jhelp(c):
-	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
-def jhelp_folder(c):
-    return list(filter(lambda x:os.path.isdir(x),jhelp(c)))
-def jhelp_file(c):
-    return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
+def extract_number(file_path):
+    file_name = os.path.basename(file_path)  # 获取文件名
+    number = re.findall(r'\d+', file_name)   # 提取文件名中的数字
+    return int(number[0]) if number else 0   # 返回数字用于排序
+def jhelp(c,restrict=True):
+    if restrict:
+        return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c),key=extract_number)))]
+    else:
+	    return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
+def jhelp_folder(c,restrict=True):
+    return list(filter(lambda x:os.path.isdir(x),jhelp(c,restrict)))
+def jhelp_file(c,restrict=True):
+    return list(filter(lambda x:not os.path.isdir(x),jhelp(c,restrict)))
 def prune(c,keyword,mode = 'basename'):
     if mode =='basename':
         res = list(filter(lambda x:keyword.lower() not in os.path.basename(x).lower(),c)) 
@@ -537,7 +544,17 @@ def check_type(exr): #not finished, only check acescg and rec709 now 2024/04/29
     assert dtype.lower() in ['rec709','acescg'],f'not supported algorithm {dtype}'
     return dtype
 
-
+def trans_json():
+    json_cams = []
+    camlist = []
+    if scene_info.test_cameras:
+        camlist.extend(scene_info.test_cameras)
+    if scene_info.train_cameras:
+        camlist.extend(scene_info.train_cameras)
+    for id, cam in enumerate(camlist):
+        json_cams.append(camera_to_JSON(id, cam))
+    with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
+        json.dump(json_cams, file)
 
 def mv_cal_core(datas):
     i,file_name,save_path,img,extra_depth,args = datas

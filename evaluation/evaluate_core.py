@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2024-09-10 10:20:44
+LastEditTime: 2024-09-14 14:19:31
 Description: file content
 '''
 import os,sys
@@ -12,7 +12,7 @@ sys.path.insert(0, cur_path+'/../algo')
 from file_utils import read
 from openpyxl import Workbook
 import datetime
-
+import re
 import numpy as np
 def jhelp(c):
 	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
@@ -21,21 +21,44 @@ def jhelp_folder(c):
 def jhelp_file(c):
     return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
 
+# 提取文件名中的数字序号
+def extract_number_from_filename(file_path):
+    file_name = os.path.basename(file_path)
+    number = re.findall(r'\d+', file_name)
+    return number[-1] if number else None
 
+def find_matching_files(target_file, file_paths):
+    target_number = extract_number_from_filename(target_file)
+    
+    if target_number is None:
+        None
+
+    # 在路径数组中寻找与目标文件相同序号的文件
+    for path in file_paths:
+        number = extract_number_from_filename(path)
+        if number == target_number:
+            return path
+    
+    return None
 
 def evaluate(mv_path,gt_path,skip=1,speed=[0,1],masks=None,fg=True):
     mvs = jhelp_file(mv_path)
     gts = jhelp_file(gt_path)
     # assert len(mvs)>skip*2 and len(gts) > skip*2 and len(gts)==len(mvs),'evluation data length should >=2'
     mvs = mvs[skip:-skip]
-    gts = gts[skip:-skip]
+    # gts = gts[skip:-skip]
     if masks is not None:
         masks = jhelp_file(masks)
         masks = masks[skip:-skip]
     epe_all,px1_all,px3_all,px5_all = 0,0,0,0
     for i in range(len(mvs)):
         mv = read(mvs[i],type='flo')[...,:2]
-        gt = read(gts[i],type='flo')[...,:2]
+        # gt = read(gts[i],type='flo')[...,:2]
+        gt_ = find_matching_files(mvs[i],gts)
+        if gt_ is None or not os.path.isfile(gt_):
+            print(f'can not find file:{gt_}')
+            continue
+        gt = read(gt_,type='flo')[...,:2]
         if masks is not None:
             mask = read(masks[i],type='mask')
             if not fg:
@@ -90,8 +113,8 @@ def mm_evaluate(source_root,gt_root,obj_mode=False,skip=1,fg=True):
         for speed in [[0,0.005],[0.005,0.01],[0.01,1]]:
             s = f's{speed[0]*1000}_{speed[1]*1000}'
             result[f'{scene_name}_mv1_{s}'] = evaluate(f'{scene}/{mv1_name}',f'{gt}/mv1',skip=skip,speed=speed,masks=masks,fg=fg)
-            if os.path.isdir(f'{gt}/mv0'):
-                result[f'{scene_name}_mv0_{s}'] = evaluate(f'{scene}/{mv0_name}',f'{gt}/mv0',skip=skip,speed=speed,masks=masks,fg=fg)
+            # if os.path.isdir(f'{gt}/mv0'):
+                # result[f'{scene_name}_mv0_{s}'] = evaluate(f'{scene}/{mv0_name}',f'{gt}/mv0',skip=skip,speed=speed,masks=masks,fg=fg)
     return result
 
 def esf(text, min_length=10):

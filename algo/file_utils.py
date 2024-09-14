@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-05 13:54:23
+LastEditTime: 2024-09-13 12:35:33
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -65,12 +65,20 @@ _default_channel_names = {
 }
 TAG_CHAR = np.array([202021.25], np.float32)
 
-def jhelp(c):
-	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
-def jhelp_folder(c):
-    return list(filter(lambda x:os.path.isdir(x),jhelp(c)))
-def jhelp_file(c):
-    return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
+def extract_number(file_path):
+    file_name = os.path.basename(file_path)  # 获取文件名
+    number = re.findall(r'\d+', file_name)   # 提取文件名中的数字
+    return int(number[0]) if number else 0   # 返回数字用于排序
+def jhelp(c,restrict=False):
+    if restrict:
+        return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c),key=extract_number)))]
+    else:
+	    return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
+def jhelp_folder(c,restrict=False):
+    return list(filter(lambda x:os.path.isdir(x),jhelp(c,restrict)))
+def jhelp_file(c,restrict=True):
+    return list(filter(lambda x:not os.path.isdir(x),jhelp(c,restrict)))
+    
 def mkdir(path):
     if  not os.path.exists(path):
         os.makedirs(path,exist_ok=True)
