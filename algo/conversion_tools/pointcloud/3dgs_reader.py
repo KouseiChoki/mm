@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-04 15:33:44
+LastEditTime: 2024-09-19 13:16:31
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -465,7 +465,7 @@ if __name__ == '__main__':
         # curname = '{:0>4}'.format(i)
         name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
         name1 = os.path.splitext(os.path.basename(images_prepare[i][-1]))[0]
-        name = f'{curname}_from_{name0}_to_{name1}'
+        name = f'{curname}_from_{name0}_to_{name1}_{args.mask_type}'
         if args.step!=1:
             name += f'_step_{args.step}'
         if args.mask_type!='fg':
