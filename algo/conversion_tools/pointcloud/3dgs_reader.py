@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-19 13:16:31
+LastEditTime: 2024-09-19 13:24:46
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -468,8 +468,7 @@ if __name__ == '__main__':
         name = f'{curname}_from_{name0}_to_{name1}_{args.mask_type}'
         if args.step!=1:
             name += f'_step_{args.step}'
-        if args.mask_type!='fg':
-            name += f'_cur_{args.cur}'
+        name += f'_cur_{args.cur}'
         save_path = os.path.join(path,'..','pointcloud',name)
         ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
 
