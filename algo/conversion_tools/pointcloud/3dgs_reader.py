@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-23 10:37:47
+LastEditTime: 2024-09-23 13:42:37
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -69,7 +69,6 @@ def init_param():
     parser.add_argument('--inverse_depth',action='store_true', help="depth= 1/depth")
     parser.add_argument('--rub', action='store_true', help="dump rub viewmatrix")
     parser.add_argument('--test', action='store_true', help="use test")
-    parser.add_argument('--full_result', action='store_true', help="output full result")
     parser.add_argument('--down_scale',type=int, default=1,help="downscale rate")
     args = parser.parse_args()
     return args
@@ -417,15 +416,12 @@ if __name__ == '__main__':
     curs = []
     for i in range(len(images)):
         cur = args.max_frame//2
-
         tmp = i+(np.arange(args.max_frame)-args.max_frame//2)*args.step
-
         while(tmp.min()<0):
             tmp +=args.step
             cur -= 1
             if cur < 0 or cur >= args.max_frame:
                 raise ValueError('error max framse')
-        
         while(tmp.max()>len(images)-1):
             tmp -=args.step
             cur += 1
@@ -436,15 +432,16 @@ if __name__ == '__main__':
 
         task_indexes.append(tmp)
         curs.append(cur)
-    if not args.full_result:
-        tmp_curs = []
-        tmp_task_indexes = []
-        for i in range(len(curs)):
-            if curs[i] == args.max_frame//2:
-                tmp_curs.append(curs[i])
-                tmp_task_indexes.append(task_indexes[i])
-        curs = tmp_curs
-        task_indexes = tmp_task_indexes
+    # if not args.full_result:
+    # tmp_curs = []
+    # tmp_task_indexes = []
+    # for i in range(len(curs)):
+    #     if curs[i] == args.max_frame//2:
+    #         tmp_curs.append(curs[i])
+    #         tmp_task_indexes.append(task_indexes[i])
+    # curs = tmp_curs
+    # task_indexes = tmp_task_indexes
+
     images_prepare = [[images[ii] for ii in i]for i in task_indexes]
     masks_prepare = [[masks[ii] for ii in i]for i in task_indexes]
     depths_prepare = [[depths[ii] for ii in i]for i in task_indexes]
