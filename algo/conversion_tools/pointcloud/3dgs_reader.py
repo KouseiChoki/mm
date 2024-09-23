@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-19 13:24:46
+LastEditTime: 2024-09-23 10:37:47
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -136,6 +136,7 @@ def get_ply(xyz,rgbs):
     # print('writing plyfile........')
     normals = np.zeros_like(xyz)
     elements = np.empty(xyz.shape[0], dtype=dtype)
+    assert xyz.shape[0] == rgbs.shape[0],'error input, please check your depth data(contains 0) or add --inverse_depth'
     attributes = np.concatenate((xyz, normals, rgbs), axis=1)
     elements[:] = list(map(tuple, attributes))
     vertex_element = PlyElement.describe(elements, "vertex")
