@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:00:36
+LastEditTime: 2024-09-27 13:42:15
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -67,8 +67,8 @@ def run(args,att=None):
     if att:
         cmd +=f' {att}'
     try:
-        os.system(cmd)
-        # pass
+        # os.system(cmd)
+        pass
     except:
         sys.exit('[MM ERROR][main process]main process error')
     else:
@@ -83,6 +83,18 @@ def run(args,att=None):
                 
             if args.scene_change:
                 print('=================================== scene change detection start ===================================== ')
+                ckpt_path = os.path.dirname(os.path.abspath(__file__))+'/checkpoints/'
+                model_name = 'scene_change'
+                if not os.path.isfile(ckpt_path+model_name + '.pth'):
+                    from conversion_tools.algorithm_center import check_and_download_pth_file
+                    download_url = ckpt_path+model_name+'.pth'
+                    md = args.server + '/scene_change'
+                    md += '/' + model_name + '.pth'
+                    print(download_url,md)
+                    flag = check_and_download_pth_file(download_url,md)
+                    if not flag:
+                        raise NotImplementedError(f'[MM ERROR][model]model file not exists:{model_name},please use mmalgo to check')
+        
                 if args.threeD_mode: ##左右眼
                     image,_= pre_treatment_3D(args,args.root,args.image_file)
                 else:

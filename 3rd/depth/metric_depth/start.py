@@ -184,7 +184,7 @@ if __name__ == '__main__':
             else:
                 depth = np.repeat(d[...,None],4,axis=2)
                 if args.inverse_depth:
-                    depth[...,-1] = 1-depth[...,-1]
+                    depth[...,-1] = 1-depth[1...,-1]
             # mvwrite(os.path.join(args.outdir,os.path.basename(task),'mono_depth',os.path.basename(filename[:filename.rfind('.')]) + '.exr'),depth,precision='half')
             
             mvwrite(output_path,depth,precision='half')

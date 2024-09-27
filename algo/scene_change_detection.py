@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:02:48
+LastEditTime: 2024-09-27 13:48:43
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -734,7 +734,7 @@ def scene_change_detect(images):
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
-    pthpath = os.getcwd() + '/checkpoints/secene_change.pth'
+    pthpath = os.getcwd() + '/checkpoints/scene_change.pth'
     pretrained_dict = torch.load(pthpath, map_location=DEVICE)
     pretrained_dict = {k: v for k, v in pretrained_dict['net'].items() if k in model_dict}
     model_dict.update(pretrained_dict)
@@ -754,7 +754,7 @@ def scene_change_detect(images):
                 all_images = np.concatenate((all_images,image[None,...]),axis=0)
             else:
                 all_images = image[None,...]
-        result[seq] = np.where(secene_change_core(all_images,supernet_best_f1,DEVICE)>0.296)[0]+1
+        result[seq] = np.where(scene_change_core(all_images,supernet_best_f1,DEVICE)>0.296)[0]+1
         if len(seq_images) not in result[seq]:
             result[seq] = np.concatenate((result[seq],[len(seq_images)]))
     return result
@@ -763,20 +763,20 @@ def scene_change_detect_video(video_path):
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
-    pthpath = os.path.dirname(os.path.abspath(__file__))+'/../checkpoints/secene_change.pth'
+    pthpath = os.path.dirname(os.path.abspath(__file__))+'/../checkpoints/scene_change.pth'
     pretrained_dict = torch.load(pthpath, map_location=DEVICE)
     pretrained_dict = {k: v for k, v in pretrained_dict['net'].items() if k in model_dict}
     model_dict.update(pretrained_dict)
     supernet_best_f1.load_state_dict(model_dict)
     supernet_best_f1.to(DEVICE).eval()
     frames = get_frames(video_path)
-    trast = secene_change_core(frames,supernet_best_f1,DEVICE)
+    trast = scene_change_core(frames,supernet_best_f1,DEVICE)
     result = np.where(trast>0.296)[0]+1
     return result,trast
 
 
 @torch.no_grad()
-def secene_change_core(all_images,model,DEVICE):
+def scene_change_core(all_images,model,DEVICE):
     batches_images = get_batches(all_images)
     predictions = []
     for batch_ in batches_images:
