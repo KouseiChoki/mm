@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-27 13:42:15
+LastEditTime: 2024-09-30 11:08:12
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -67,8 +67,8 @@ def run(args,att=None):
     if att:
         cmd +=f' {att}'
     try:
-        # os.system(cmd)
-        pass
+        os.system(cmd)
+        # pass
     except:
         sys.exit('[MM ERROR][main process]main process error')
     else:
