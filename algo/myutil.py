@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-09 13:22:08
+LastEditTime: 2024-10-09 13:25:52
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -1098,13 +1098,13 @@ def tp_to_array(timecode):
     time_parts_int = [int(part) for part in time_parts]
     return time_parts_int
 
-def process_edl(edls,name):
+def process_edl(edls,name,fps=24):
     assert len(edls)>2,'error edl file!'
     start_time = tp_to_array(edls[0]['record_in'])
     res = []
     for edl in edls:
         change_time = tp_to_array(edl['record_out'])
-        change_frame = (((change_time[0] - start_time[0])*60 + change_time[1] - start_time[1])*60 +change_time[2] - start_time[2])*24 + change_time[3] - start_time[3]
+        change_frame = (((change_time[0] - start_time[0])*60 + change_time[1] - start_time[1])*60 +change_time[2] - start_time[2])*fps + change_time[3] - start_time[3]
         res.append(change_frame)
     final_res = {}
     final_res[name] = res

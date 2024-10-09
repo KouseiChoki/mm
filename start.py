@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-09 13:11:59
+LastEditTime: 2024-10-09 13:25:59
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -85,7 +85,7 @@ def run(args,att=None):
                 print('=================================== scene change from edl ===================================== ')
                 assert args.enable_single_input_mode_2D,'edl input only support single input mode'
                 edl = read_edl(args.edl)
-                scene_change_result = process_edl(edl,os.path.basename(args.root_2D))
+                scene_change_result = process_edl(edl,os.path.basename(args.root_2D),args.fps)
                 write_txts(args.output,scene_change_result)
                 
             elif args.scene_change:
