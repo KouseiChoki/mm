@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-06-26 12:55:59
+LastEditTime: 2024-10-09 12:02:33
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -261,6 +261,7 @@ def init_param(path):
 
     #output merge
     args.MM9_format = config.getboolean('opticalflow','MM9_format')
+    args.edl = config.get('opticalflow','edl')
     args.clean_source = config.getboolean('opticalflow','clean_source')
     args.scene_change = config.getboolean('opticalflow','scene_change')
 

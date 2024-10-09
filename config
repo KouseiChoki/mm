@@ -9,6 +9,7 @@ frame_step = 1
 # Merge mv0 and mv1
 MM9_format = 0
 
+
 ### Algorithms
 # use mmalgo to check
 algorithm = kousei-v1-230908280
@@ -100,8 +101,10 @@ multi_mask_file = masks
 ##### Merge setting
 # Clean source mv0 and mv1
 clean_source = 0
-# Generate scene_change flag and MDL file
+# auto generate scene_change flag and MDL file
 scene_change = 0
+# edl :input scene_change flag (None if not exist)
+edl = None
 
 ### Test setting
 # Output the restored image from left eye

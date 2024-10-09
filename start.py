@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-30 11:08:12
+LastEditTime: 2024-10-09 13:11:59
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -67,8 +67,8 @@ def run(args,att=None):
     if att:
         cmd +=f' {att}'
     try:
-        os.system(cmd)
-        # pass
+        # os.system(cmd)
+        pass
     except:
         sys.exit('[MM ERROR][main process]main process error')
     else:
@@ -81,7 +81,14 @@ def run(args,att=None):
                 print('virtual depth')
                 virtual_depth_core(args)
                 
-            if args.scene_change:
+            if args.edl is not None and args.edl.lower()!='none':
+                print('=================================== scene change from edl ===================================== ')
+                assert args.enable_single_input_mode_2D,'edl input only support single input mode'
+                edl = read_edl(args.edl)
+                scene_change_result = process_edl(edl,os.path.basename(args.root_2D))
+                write_txts(args.output,scene_change_result)
+                
+            elif args.scene_change:
                 print('=================================== scene change detection start ===================================== ')
                 ckpt_path = os.path.dirname(os.path.abspath(__file__))+'/checkpoints/'
                 model_name = 'scene_change'
@@ -100,7 +107,6 @@ def run(args,att=None):
                 else:
                     image = pre_treatment(args,args.root,args.image_file,single_mode=args.enable_single_input_mode_2D,single_file=args.root_2D)
                 scene_change_result = scene_change_detect(image)
-
                 write_txts(args.output,scene_change_result)
                     
             if args.MM9_format:
