@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-09 10:13:24
+LastEditTime: 2024-10-10 10:13:09
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -139,7 +139,7 @@ if __name__ == '__main__':
         for k, filename in enumerate(filenames):
             print(f'Progress {k+1}/{len(filenames)}: {filename}')
             
-            raw_image = read(filename,type='image')
+            raw_image = read(filename,type='image').to(DEVICE)
             
             depth = depth_anything.infer_image(raw_image, args.input_size)
             # if args.save_numpy:
