@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-10 10:13:09
+LastEditTime: 2024-10-10 10:15:18
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -139,9 +139,9 @@ if __name__ == '__main__':
         for k, filename in enumerate(filenames):
             print(f'Progress {k+1}/{len(filenames)}: {filename}')
             
-            raw_image = read(filename,type='image').to(DEVICE)
+            raw_image = read(filename,type='image')
             
-            depth = depth_anything.infer_image(raw_image, args.input_size)
+            depth = depth_anything.infer_image(raw_image, args.input_size,DEVICE)
             # if args.save_numpy:
             #     output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '_raw_depth_meter.npy')
             #     np.save(output_path, depth)
