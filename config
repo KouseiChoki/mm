@@ -12,11 +12,12 @@ MM9_format = 0
 
 ### Algorithms
 # use mmalgo to check
+# optical flow: farneback,deepflow,simpleflow,sparse_to_dense_flow,pca_flow,rlof
 algorithm = kousei-v1-230908280
 
 ##### Root
 # Data root and output (multiple folder)
-root = /Users/qhong/Desktop/0205mixed/0205
+root = pattern/1k
 output = result/1k
 # The name of image file (None if not exist)
 image_file = image
@@ -77,9 +78,6 @@ bounding_box_mode = 1
 
 
 ##### Another Parameter setting
-# Refine the exr output (mv's batch norm), take average mv and init alpha output, default is 1
-refine = 1
-
 
 ##### Mask setting
 # The name of front mask file, use , to enable multi mask mode, (mask1,mask2,mask3.etc)
@@ -163,13 +161,13 @@ mt_backend = nccl
 empty_cache = 0  
 # Disparity's depth_range (batch norm)
 depth_range = 128
-# Save type, default is exr
+# Save type exr,flo
 savetype = exr
 # Compression method (rle,zips,zip,piz,pxr,none)
 compress_method = piz
 
 # Supported algorithms
-all_algorithm = kousei
+all_algorithm = kousei,farneback,deepflow,simpleflow,sparse_to_dense_flow,pca_flow,rlof
 #use warm start 
 usewarm = 0
 # MM files name

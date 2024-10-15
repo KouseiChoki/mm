@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:02:04
+LastEditTime: 2024-10-15 12:15:56
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -100,7 +100,6 @@ class InputPadderMul:
 @torch.no_grad()
 def optical_flow_algo(imgs,args,model=None,flow_prev=None,rgb = True):
     flow_lr = None
-
     if rgb:
         imgs = [img[...,:3] for img in imgs]
     if args.algorithm in ['farneback','deepflow','disflow','deepflow_cuda']: #to gray
@@ -129,12 +128,12 @@ def optical_flow_algo(imgs,args,model=None,flow_prev=None,rgb = True):
         else:
             raise NotImplementedError
     else:
-        raise NotImplementedError #老代码弃用
+        # raise NotImplementedError #老代码弃用
         pre,cur = imgs[1],imgs[0] #mv1
         opt_mv1,opt_lr_mv1 = optical_flow_algo_one_step(pre,cur,args,model,flow_prev=None)
         pre,cur = imgs[1],imgs[2] #mv0
         opt_mv0,opt_lr_mv0 = optical_flow_algo_one_step(pre,cur,args,model,flow_prev=None)
-        flow = torch.concat((opt_mv0[None,...],opt_mv1[None,...]),axis=0)
+        flow = torch.concat((torch.FloatTensor(opt_mv0)[None,...],torch.FloatTensor(opt_mv1[None,...])),axis=0)
         if args.usewarm:        
             opt_lr_mv0 = forward_interpolate(opt_lr_mv0[0])[None].cpu()
             opt_lr_mv1 = forward_interpolate(opt_lr_mv1[0])[None].cpu()
@@ -146,8 +145,9 @@ def optical_flow_algo(imgs,args,model=None,flow_prev=None,rgb = True):
 
 @torch.no_grad()
 def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
-    torch.manual_seed(int(os.environ['LOCAL_RANK']))
-    np.random.seed(int(os.environ['LOCAL_RANK']))
+    if 'LOCAL_RANK' in os.environ.keys():
+        torch.manual_seed(int(os.environ['LOCAL_RANK']))
+        np.random.seed(int(os.environ['LOCAL_RANK']))
     algo = args.algorithm
     DEVICE = args.DEVICE
     flow_lr = None
@@ -156,11 +156,12 @@ def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
                                             winsize=15,
                                             iterations=3, poly_n=3, poly_sigma=1.2,
                                             flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
+        flow = np.transpose(flow,(2,0,1))
     elif algo == 'deepflow':
         inst = cv2.optflow.createOptFlow_DeepFlow()
         # inst.downscaleFactor = 0.9
         flow = inst.calc(pre, cur, None)
-    
+        flow = np.transpose(flow,(2,0,1))
     elif algo == 'deepflow_cuda':
         # inst = cv2.cuda_BroxOpticalFlow.create(0.2, 50.0, 0.8, 5, 150, 10) 
         # inst = cv2.cuda_BroxOpticalFlow.create(0.2, 50.0, 0.8, 5, 50, 10) 
@@ -176,19 +177,20 @@ def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
         gpu_cur.upload(np.float32(cur)/255.0)
         flow = inst.calc(gpu_prev, gpu_cur, None)
         flow = flow.download()
-
+        flow = np.transpose(flow,(2,0,1))
     elif algo == 'simpleflow':
         flow = cv2.optflow.calcOpticalFlowSF(pre, cur, 2, 2, 4)
-
+        flow = np.transpose(flow,(2,0,1))
     elif algo == 'sparse_to_dense_flow':
         flow = cv2.optflow.calcOpticalFlowSparseToDense(pre, cur)
-
+        flow = np.transpose(flow,(2,0,1))
     elif algo == 'pca_flow':
         inst = cv2.optflow.createOptFlow_PCAFlow()
         flow = inst.calc(pre, cur, None)
-
+        flow = np.transpose(flow,(2,0,1))
     elif algo == 'rlof':
         flow = cv2.optflow.calcOpticalFlowDenseRLOF(pre, cur,None)
+        flow = np.transpose(flow,(2,0,1))
     #388 584  392 584
     elif 'gma' in algo:
         if args.empty_cache:

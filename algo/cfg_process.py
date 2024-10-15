@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-09 12:02:33
+LastEditTime: 2024-10-15 10:48:33
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -145,7 +145,6 @@ def init_param(path):
     args.mt_backend = config.get('opticalflow','mt_backend')
     args.evaluate_epe = config.getboolean('opticalflow','evaluate_epe')
     args.ground_truth_file = config.get('opticalflow','ground_truth_file')
-    args.refine = config.getboolean('opticalflow','refine')
     args.root = config.get('opticalflow','root')
     args.output = config.get('opticalflow','output')
     args.cal_depth = config.getboolean('opticalflow','cal_depth')
@@ -171,6 +170,7 @@ def init_param(path):
 
     #exr
     args.savetype = config.get('opticalflow','savetype')
+    args.refine = True if 'exr' in args.savetype else False
     args.depth_range = config.getint('opticalflow','depth_range')
     # args.mask_mode= config.getboolean('opticalflow','mask_mode')
     args.mask_mode= True if '-mask-' in args.weight_file else False

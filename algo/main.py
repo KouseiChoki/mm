@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:04:56
+LastEditTime: 2024-10-15 11:12:32
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -192,7 +192,7 @@ if len(sys.argv) >1 and not test_mode:
     args.weight_file = sys.argv[1]
     args = adjust_weight(args)
 DEVICE = torch.device("cpu")
-if 'cpu' not in args.gpu:
+if 'cpu' not in args.gpu and args.multi_frame_algo:
     import torch
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True

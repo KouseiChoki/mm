@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-10 09:28:47
+LastEditTime: 2024-10-15 12:04:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -67,6 +67,7 @@ def run(args,att=None):
     if att:
         cmd +=f' {att}'
     try:
+        # print(cmd)
         os.system(cmd)
         # pass
     except:

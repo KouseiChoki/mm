@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-04-24 14:02:27
+LastEditTime: 2024-10-15 12:04:30
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -59,7 +59,7 @@ def get_pairs(indexes,images,append_name_,masks,args,step=1):
     for i in range(len(p_valid)):
         if not p_valid[i]:
             names[i] = None
-    if not args.multi_output or step != 1: #single output mode , only output middle pair mv
+    if not args.multi_output or step != 1 or not args.multi_frame_algo: #single output mode , only output middle pair mv
         tmp = [False] * len(names)
         tmp[args.num_frames//2 - 1] = True #p1 mv0
         tmp[args.num_frames//2 - 1 + args.num_frames -2] = True #cf mv1
@@ -79,11 +79,11 @@ def get_pairs(indexes,images,append_name_,masks,args,step=1):
             if repeat_frame_check(img_stack[i],img_stack[i+1]):
                 valid[i - 1] = False #cf mv0
     #norm
-    if args.color_space.lower() == 'image':
-        for i in range(len(img_stack)):
-            img_stack[i][...,:3] = 2 * (img_stack[i][...,:3] / 255.0) - 1.0
-    else:
-        for i in range(len(img_stack)):
-            img_stack[i][...,:3] = 2 * (img_stack[i][...,:3]) - 1.0
-            
+    if args.multi_frame_algo:
+        if args.color_space.lower() == 'image':
+            for i in range(len(img_stack)):
+                img_stack[i][...,:3] = 2 * (img_stack[i][...,:3] / 255.0) - 1.0
+        else:
+            for i in range(len(img_stack)):
+                img_stack[i][...,:3] = 2 * (img_stack[i][...,:3]) - 1.0
     return img_stack,valid,names
