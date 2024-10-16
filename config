@@ -12,7 +12,7 @@ MM9_format = 0
 
 ### Algorithms
 # use mmalgo to check
-# optical flow: farneback,deepflow,simpleflow,sparse_to_dense_flow,pca_flow,rlof
+# optical flow: farneback,deepflow,simpleflow,stdf,pcaflow,rlof
 algorithm = kousei-v1-230908280
 
 ##### Root
@@ -167,7 +167,7 @@ savetype = exr
 compress_method = piz
 
 # Supported algorithms
-all_algorithm = kousei,farneback,deepflow,simpleflow,sparse_to_dense_flow,pca_flow,rlof
+all_algorithm = kousei,farneback,deepflow,simpleflow,stdf,pcaflow,rlof
 #use warm start 
 usewarm = 0
 # MM files name

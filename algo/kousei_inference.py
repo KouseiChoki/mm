@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-15 12:15:56
+LastEditTime: 2024-10-16 09:52:07
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -181,10 +181,10 @@ def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
     elif algo == 'simpleflow':
         flow = cv2.optflow.calcOpticalFlowSF(pre, cur, 2, 2, 4)
         flow = np.transpose(flow,(2,0,1))
-    elif algo == 'sparse_to_dense_flow':
+    elif algo == 'stdf':
         flow = cv2.optflow.calcOpticalFlowSparseToDense(pre, cur)
         flow = np.transpose(flow,(2,0,1))
-    elif algo == 'pca_flow':
+    elif algo == 'pcaflow':
         inst = cv2.optflow.createOptFlow_PCAFlow()
         flow = inst.calc(pre, cur, None)
         flow = np.transpose(flow,(2,0,1))

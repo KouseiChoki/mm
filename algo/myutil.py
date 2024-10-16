@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-09 13:25:52
+LastEditTime: 2024-10-16 09:53:32
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -275,7 +275,7 @@ def cal_psnr(image,target_image):
     return -psnr
 
 def cpu_algorithm(algorithm):
-    if algorithm.lower() in ['farneback','deepflow','simpleflow','sparse_to_dense_flow','pca_flow','rlof'] or 'cpu'  in algorithm.lower():
+    if algorithm.lower() in ['farneback','deepflow','simpleflow','sparse_to_dense_flow','pca_flow','rlof','stdf','pcaflow'] or 'cpu'  in algorithm.lower():
         return True
     return False
 
