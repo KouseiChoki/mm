@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-16 09:52:07
+LastEditTime: 2024-10-16 10:33:35
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -151,6 +151,9 @@ def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
     algo = args.algorithm
     DEVICE = args.DEVICE
     flow_lr = None
+    if not args.multi_frame_algo:
+        pre = pre.astype('uint8')
+        cur = cur.astype('uint8')
     if algo =='farneback':
         flow = cv2.calcOpticalFlowFarneback(prev=pre, next=cur, flow=None, pyr_scale=0.5, levels=5,
                                             winsize=15,
@@ -182,7 +185,7 @@ def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
         flow = cv2.optflow.calcOpticalFlowSF(pre, cur, 2, 2, 4)
         flow = np.transpose(flow,(2,0,1))
     elif algo == 'stdf':
-        flow = cv2.optflow.calcOpticalFlowSparseToDense(pre, cur)
+        flow = cv2.optflow.calcOpticalFlowSparseToDense(pre.astype('uint8'), cur.astype('uint8'))
         flow = np.transpose(flow,(2,0,1))
     elif algo == 'pcaflow':
         inst = cv2.optflow.createOptFlow_PCAFlow()
