@@ -102,7 +102,8 @@ multi_mask_file = masks
 clean_source = 0
 # Generate scene_change flag and MDL file
 scene_change = 0
-
+# edl :input scene_change flag (None if not exist)
+edl = None
 ### Test setting
 # Output the restored image from left eye
 dump_restored_image = 0
