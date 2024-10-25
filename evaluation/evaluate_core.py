@@ -2,14 +2,14 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2024-09-14 14:22:59
+LastEditTime: 2024-10-25 11:05:32
 Description: file content
 '''
 import os,sys
 cur_path = os.path.dirname(os.path.abspath(__file__))
 from tqdm import tqdm
 sys.path.insert(0, cur_path+'/../algo')
-from file_utils import read
+from file_utils import read,write
 from openpyxl import Workbook
 import datetime
 import re
@@ -41,7 +41,7 @@ def find_matching_files(target_file, file_paths):
     
     return None
 
-def evaluate(mv_path,gt_path,skip=1,speed=[0,1],masks=None,fg=True):
+def evaluate(mv_path,gt_path,dif_path='',skip=1,speed=[0,1],masks=None,fg=True):
     mvs = jhelp_file(mv_path)
     gts = jhelp_file(gt_path)
     # assert len(mvs)>skip*2 and len(gts) > skip*2 and len(gts)==len(mvs),'evluation data length should >=2'
@@ -77,6 +77,10 @@ def evaluate(mv_path,gt_path,skip=1,speed=[0,1],masks=None,fg=True):
         px1_all += metrics['1px']
         px3_all += metrics['3px']
         px5_all += metrics['5px']
+        if len(dif_path)>0:
+            diff = np.abs(mv-gt)
+            write(os.path.join(dif_path,os.path.basename(mvs[i])),diff)
+
     return epe_all/totalnum,px1_all/totalnum,px3_all/totalnum,px5_all/totalnum
     
 def evaluate_single_frame(mv,gt,valid,norm=True):
@@ -114,7 +118,7 @@ def mm_evaluate(source_root,gt_root,obj_mode=False,skip=1,fg=True):
                 mv1_name = f
         for speed in [[0,0.005],[0.005,0.01],[0.01,1]]:
             s = f's{speed[0]*1000}_{speed[1]*1000}'
-            result[f'{scene_name}_mv1_{s}'] = evaluate(f'{scene}/{mv1_name}',f'{gt}/mv1',skip=skip,speed=speed,masks=masks,fg=fg)
+            result[f'{scene_name}_mv1_{s}'] = evaluate(f'{scene}/{mv1_name}',f'{gt}/mv1',f'{scene}/{mv1_name}_diff',skip=skip,speed=speed,masks=masks,fg=fg)
             # if os.path.isdir(f'{gt}/mv0'):
                 # result[f'{scene_name}_mv0_{s}'] = evaluate(f'{scene}/{mv0_name}',f'{gt}/mv0',skip=skip,speed=speed,masks=masks,fg=fg)
     return result
