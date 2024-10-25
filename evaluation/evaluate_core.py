@@ -29,14 +29,13 @@ def extract_number_from_filename(file_path):
 
 def find_matching_files(target_file, file_paths):
     target_number = extract_number_from_filename(target_file)
-    
     if target_number is None:
         None
 
     # 在路径数组中寻找与目标文件相同序号的文件
     for path in file_paths:
         number = extract_number_from_filename(path)
-        if number == target_number:
+        if int(number) == int(target_number):
             return path
     
     return None
@@ -44,6 +43,12 @@ def find_matching_files(target_file, file_paths):
 def evaluate(mv_path,gt_path,dif_path='',skip=1,speed=[0,1],masks=None,fg=True):
     mvs = jhelp_file(mv_path)
     gts = jhelp_file(gt_path)
+    if len(mvs)==0:
+        print('no mv datas, try to find default data')
+        mvs = jhelp_file(os.path.join(cur_path+'/..',mv_path))
+    if len(gts)==0:
+        print('no gt datas, try to find default data')
+        gts = jhelp_file(os.path.join(cur_path+'/..',gt_path))
     # assert len(mvs)>skip*2 and len(gts) > skip*2 and len(gts)==len(mvs),'evluation data length should >=2'
     mvs = mvs[skip:-skip]
     # gts = gts[skip:-skip]

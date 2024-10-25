@@ -1,7 +1,7 @@
 [opticalflow]
 ##### Main
 # Use specified GPU, for example: 0,1,3 or  cpu for CPU mode , mps for m1/m2
-gpu = cpu
+gpu = mps
 # image color space image(rgb), in_rec709(sRGB) or ACESCG
 color_space = image
 # framestep for mv (like 1 for mv0 and mv1; 1,2,3 for mv0-mv6)
