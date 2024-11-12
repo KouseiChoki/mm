@@ -7,7 +7,7 @@ from PIL import Image
 import os
 #import base64
 #from IPython.display import display, HTML, clear_output
-# from diffusion_gen_v5 import PConv2d
+from Conv2dPartial import PConv2d
 
 def NP2aWin(x,wSize): # numpy formated image to attention windows
     # take a B of numpy order tensors partition into attention windows
