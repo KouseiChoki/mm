@@ -7,47 +7,49 @@ from PIL import Image
 import os
 #import base64
 #from IPython.display import display, HTML, clear_output
-from Conv2dPartial import PConv2d
-
-# version 2 changes all view() to reshape()
+# from diffusion_gen_v5 import PConv2d
 
 def NP2aWin(x,wSize): # numpy formated image to attention windows
     # take a B of numpy order tensors partition into attention windows
     B,H,W,C = x.shape
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,H//wSize[0],wSize[0],W//wSize[1],wSize[1],C)
-        x = x.permute(0,1,3,2,4,5).reshape(-1,wSize[0],wSize[1],C).to(device)
+        x = x.to('cpu').view(B,H//wSize[0],wSize[0],W//wSize[1],wSize[1],C)
+        out = x.permute(0,1,3,2,4,5).contiguous().view(-1,wSize[0],wSize[1],C).to(device)
     else:
-        x = x.reshape(B,H//wSize[0],wSize[0],W//wSize[1],wSize[1],C)
-        x = x.permute(0,1,3,2,4,5).reshape(-1,wSize[0],wSize[1],C)
-    return x
+        x = x.view(B,H//wSize[0],wSize[0],W//wSize[1],wSize[1],C)
+        out = x.permute(0,1,3,2,4,5).contiguous().view(-1,wSize[0],wSize[1],C)
+    return out
 def TV2aWin(x,wSize): # torch vision formated image to attention windows
     # take a B of numpy order tensors partition into attention windows
     B,C,H,W = x.shape
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,C,H//wSize[0],wSize[0],W//wSize[1],wSize[1])
-        x = x.permute(0,2,4,1,3,5).reshape(-1,C,wSize[0],wSize[1]).to(device)
+        x = x.to('cpu').view(B,C,H//wSize[0],wSize[0],W//wSize[1],wSize[1])
+        out = x.permute(0,2,4,1,3,5).contiguous().view(-1,C,wSize[0],wSize[1]).to(device)
     else:
-        x = x.reshape(B,C,H//wSize[0],wSize[0],W//wSize[1],wSize[1])
-        x = x.permute(0,2,4,1,3,5).reshape(-1,C,wSize[0],wSize[1])
-    return x
+        x = x.view(B,C,H//wSize[0],wSize[0],W//wSize[1],wSize[1])
+        out = x.permute(0,2,4,1,3,5).contiguous().view(-1,C,wSize[0],wSize[1])
+    return out
 def TV2wToken(x,wSize): # torch vision formated image to attention windows
     # take a B of numpy order tensors partition into attention windows
+    # when spliting a dimension, the 2nd is continuous samples
+    # so the first is folded into the batch to apply attention on the window
     B,C,H,W = x.shape
     Hw = H//wSize[0]
     Ww = W//wSize[1]
     N = wSize[0]*wSize[1]
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,C,Hw,wSize[0],Ww,wSize[1])
-        x = x.permute(0,2,4,3,5,1).reshape(-1,N,C).to(device)
+        x = x.to('cpu').view(B,C,Hw,wSize[0],Ww,wSize[1])
+        out = x.permute(0,2,4,3,5,1).contiguous().view(-1,N,C).to(device)
     else:
-        x = x.reshape(B,C,H//wSize[0],wSize[0],W//wSize[1],wSize[1])
-        x = x.permute(0,2,4,3,5,1).reshape(-1,N,C)
-    return x
+        x = x.view(B,C,H//wSize[0],wSize[0],W//wSize[1],wSize[1])
+        out = x.permute(0,2,4,3,5,1).contiguous().view(-1,N,C)
+    return out
 def Wtoken2TV(x,x_size,wSize):
+    # when spliting a dimension, the 2nd is continuous samples
+    # so the first is folded into the batch to apply attention on the window
     Bw,N,C = x.shape # number of windows*batch, tokens, channels
     H,W = x_size
     Hw = H//wSize[0]
@@ -55,56 +57,44 @@ def Wtoken2TV(x,x_size,wSize):
     B = Bw//Hw//Ww
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,Hw,Ww,wSize[0],wSize[1],C)
-        x = x.permute(0,5,1,3,2,4).reshape(B,C,H,W).to(device) # tensor reshape order of the B
+        x = x.to('cpu').view(B,Hw,Ww,wSize[0],wSize[1],C)
+        x = x.permute(0,5,1,3,2,4).reshape(B,C,H,W).to(device) # tensor view order of the B
     else:
-        x = x.reshape(B,Hw,Ww,wSize[0],wSize[1],C)
-        x = x.permute(0,5,1,3,2,4).reshape(B,C,H,W) # tensor reshape order of the B
+        x = x.view(B,Hw,Ww,wSize[0],wSize[1],C)
+        x = x.permute(0,5,1,3,2,4).reshape(B,C,H,W) # tensor view order of the B
     return x
     
 def TV2pToken(x,pSize): # torch vision formated image to attention windows
     # take a B of numpy order tensors partition into attention windows
+    # when spliting a dimension, the 2nd is continuous samples
+    # so the 2nd is folded into the batch to apply attention on samples that are skipped
     B,C,H,W = x.shape
     device = x.device
     Hp = H//pSize[0]
     Wp = W//pSize[1]
     N = Hp*Wp
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,C,Hp,pSize[0],Wp,pSize[1])
-        x = x.permute(0,3,5,2,4,1).reshape(-1,N,C).to(device)
+        x = x.to('cpu').view(B,C,Hp,pSize[0],Wp,pSize[1])
+        out = x.permute(0,3,5,2,4,1).contiguous().view(-1,N,C).to(device)
     else:
-        x = x.reshape(B,C,Hp,pSize[0],Wp,pSize[1])
-        x = x.permute(0,3,5,2,4,1).reshape(-1,N,C)
-    return x
+        x = x.view(B,C,Hp,pSize[0],Wp,pSize[1])
+        out = x.permute(0,3,5,2,4,1).contiguous().view(-1,N,C)
+    return out
 def Ptoken2TV(x,x_size,pSize):
+    # when spliting a dimension, the 2nd is continuous samples
+    # so the 2nd is folded into the batch to apply attention on samples that are skipped
     Bp,N,C = x.shape # number of windows*batch, tokens, channels
-    H,W = x_size
     Hp = H//pSize[0]
     Wp = W//pSize[1]
     B = Bp//pSize[0]//pSize[1]
-    device = x.device
-    if(device =='mps'):
-        x = x.to('cpu').reshape(B,pSize[0],pSize[1],Hp,Wp,C)
-        x = x.permute(0,5,3,1,4,2).reshape(B,C,H,W).to(device) # tensor reshape order of the B
-    else:
-        x = x.reshape(B,pSize[0],pSize[1],Hp,Wp,C)
-        x = x.permute(0,5,3,1,4,2).reshape(B,C,H,W) # tensor reshape order of the B
-    return x
-
-def Ptoken2wToken(x,x_size,pSize):
-    Bp,N,C = x.shape # number of windows*batch, tokens, channels
     H,W = x_size
-    Hp = H//pSize[0]
-    Wp = W//pSize[1]
-    B = Bp//pSize[0]//pSize[1]
-    Nw = pSize[0]*pSize[1]
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,pSize[0],pSize[1],Hp,Wp,C)
-        x = x.permute(0,3,4,1,2,5).reshape(-1,Nw,C).to(device) # tensor reshape order of the B
+        x = x.to('cpu').view(B,pSize[0],pSize[1],Hp,Wp,C)
+        x = x.permute(0,5,3,1,4,2).reshape(B,C,H,W).to(device) # tensor view order of the B
     else:
-        x = x.reshape(B,pSize[0],pSize[1],Hp,Wp,C)
-        x = x.permute(0,5,3,1,4,2).reshape(-1,Nw,C) # tensor reshape order of the B
+        x = x.view(B,pSize[0],pSize[1],Hp,Wp,C)
+        x = x.permute(0,5,3,1,4,2).reshape(B,C,H,W) # tensor view order of the B
     return x
 
 def AWin2np(x,wSize,H,W): # attention windows to numpy formated image
@@ -112,44 +102,46 @@ def AWin2np(x,wSize,H,W): # attention windows to numpy formated image
     B = int(x.shape[0]/(H*W/wSize[0]/wSize[1]))
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,H//wSize[0],W//wSize[1],wSize[0],wSize[1],-1)
-        x = x.permute(0,1,3,2,4,5).reshape(B,H,W,-1).to(device)
+        x = x.to('cpu').view(B,H//wSize[0],W//wSize[1],wSize[0],wSize[1],-1)
+        out = x.permute(0,1,3,2,4,5).contiguous().view(B,H,W,-1).to(device)
     else:
-        x = x.reshape(B,H//wSize[0],W//wSize[1],wSize[0],wSize[1],-1)
-        x = x.permute(0,1,3,2,4,5).reshape(B,H,W,-1)
-    return x
+        x = x.view(B,H//wSize[0],W//wSize[1],wSize[0],wSize[1],-1)
+        out = x.permute(0,1,3,2,4,5).contiguous().view(B,H,W,-1)
+    return out
 def AWin2TV(x,wSize,H,W): # attention windows to torch vision formated image
     # take a set of attention windows and create a B of numpy style images
     B = int(x.shape[0]/(H*W/wSize[0]/wSize[1]))
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,H//wSize[0],W//wSize[1],-1,wSize[0],wSize[1])
-        x = x.permute(0,3,2,4,3,5).reshape(B,-1,H,W).to(device)
+        x = x.to('cpu').view(B,H//wSize[0],W//wSize[1],-1,wSize[0],wSize[1])
+        out = x.permute(0,3,2,4,3,5).contiguous().view(B,-1,H,W).to(device)
     else:
-        x = x.reshape(B,H//wSize[0],W//wSize[1],wSize[0],wSize[1],-1)
-        x = x.permute(0,3,2,4,3,5).reshape(B,-1,H,W)
-    return x
+        x = x.view(B,H//wSize[0],W//wSize[1],wSize[0],wSize[1],-1)
+        out = x.permute(0,3,2,4,3,5).contiguous().view(B,-1,H,W)
+    return out
 
 def Token2TV(x, x_size): # B of tokenized images to torch vision format
     B,N,C = x.shape # tokenized B
     H,W = x_size
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').permute(0,2,1).reshape(B,C,H,W).to(device) # tensor reshape order of the B
+        x = x.to('cpu').permute(0,2,1).reshape(B,C,H,W).to(device) # tensor view order of the B
     else:
-        x = x.permute(0,2,1).reshape(B,C,H,W)# tensor reshape order of the B
+        x = x.permute(0,2,1).reshape(B,C,H,W)# tensor view order of the B
     return x
 
 def TV2token(x): # B of torch vision images to tokenized format
-    B,C,H,W = x.shape # tensor reshape order of the B
+    B,C,H,W = x.shape # tensor view order of the B
     device = x.device
     if(device =='mps'):
-        x = x.to('cpu').reshape(B,C,-1).transpose(1,2).to(device) # tokenized B
+        x = x.to('cpu').view(B,C,-1).transpose(1,2).to(device) # tokenized B
     else:   
-        x = x.reshape(B,C,-1).transpose(1,2) # tokenized B
+        x = x.view(B,C,-1).transpose(1,2) # tokenized B
     return x
 
 def unshuffle2B(x, r):
+    # when spliting a dimension, the 2nd is continuous samples
+    # so the 2nd is folded into the batch to apply attention on samples that are skipped
     [B, C, H, W] = list(x.size())
     Hr = H//r[0]
     Wr = W//r[1]
@@ -159,6 +151,8 @@ def unshuffle2B(x, r):
     return x
 
 def shuffle2B(x, r):
+    # when spliting a dimension, the 2nd is continuous samples
+    # so the 2nd is folded into the batch to apply attention on samples that are skipped
     [B, C, H, W] = list(x.size())
     x = x.reshape(B//(r[0]*r[1]),r[0],r[1], C, H,W)
     x = x.permute(0, 3, 4, 1, 5, 2)
@@ -314,9 +308,8 @@ class FFN2D(nn.Module):
         self.fc2 = linear_layer(hidden_features, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs)
 
-    def forward(self, x):
+    def forward(self, x, size):
         #x = Token2TV(x,size)
-        x_size = x.shape[-2:]
         y = self.convb(x)
         x = self.conva(x)
         x = TV2token(x)
@@ -329,7 +322,7 @@ class FFN2D(nn.Module):
         x = self.norm(x)
         x = self.fc2(x)
         x = self.drop2(x)
-        x = Token2TV(x,x_size)
+        x = Token2TV(x)
         return x
     
 class FFNM(nn.Module):
@@ -449,11 +442,10 @@ class FFNM2D(nn.Module):
         self.fc2 = linear_layer(hidden_features, out_features, bias=bias)
         self.drop2 = nn.Dropout(drop_probs)
 
-    def forward(self, x,m=None):
+    def forward(self, x, size,m=None):
         #if m is not None:
         #    m = Token2TV(m,size)
         #x = Token2TV(x,size)
-        x_size = x.shape[-2:]
         y, _m = self.convb(x,m)
         x, _m = self.conva(x,m)
         x = TV2token(x)
@@ -466,7 +458,7 @@ class FFNM2D(nn.Module):
         x = self.norm(x)
         x = self.fc2(x)
         x = self.drop2(x)
-        x = Token2TV(x,x_size)
+        x = Token2TV(x)
         return x
 
 class PatchEmbed(nn.Module):

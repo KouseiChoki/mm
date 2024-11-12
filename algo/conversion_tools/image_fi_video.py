@@ -1,8 +1,8 @@
 '''
 Author: Qing Hong
 Date: 2023-01-11 13:13:30
-LastEditors: QingHong
-LastEditTime: 2023-06-15 18:42:11
+LastEditors: Qing Hong
+LastEditTime: 2024-11-06 10:17:40
 Description: file content
 '''
 import cv2
@@ -27,10 +27,10 @@ cap_fps = 24
 # imgs3 = jhelp('/Users/qhong/Downloads/0615_inpainting/inpainting_result/inpaint_MM_512_864')
 
 
-imgs1 = jhelp('/Users/qhong/Downloads/0615_inpainting/inpainting_result/image')
-imgs2 = jhelp('/Users/qhong/Downloads/0615_inpainting/inpainting_result/inpaint')
-imgs3 = jhelp('/Users/qhong/Downloads/0615_inpainting/inpainting_result/inpaint')
-target = '/Users/qhong/Downloads/0615_inpainting/inpainting_result/'
+imgs1 = jhelp('/Users/qhong/Desktop/SR_BSRGAN/aba_r5_0430/1k')
+imgs2 = jhelp('/Users/qhong/Desktop/SR_BSRGAN/aba_r5_0430/1k_results_x2')
+imgs3 = jhelp('/Users/qhong/Desktop/SR_BSRGAN/aba_r5_0430/gt')
+target = '/Users/qhong/Desktop/SR_BSRGAN/aba_r5_0430/'
 # size要和图片的size一样，但是通过img.shape得到图像的参数是（height，width，channel），
 # 可以实现在图片文件夹下查看图片属性，获得图片的分辨率
 # 设置输出视频的参数，如果是灰度图，可以加上 isColor = 0 这个参数
@@ -41,8 +41,9 @@ for index in tqdm(range(len(imgs1))):
     img1 = cv2.imread(imgs1[index])
     img2 = cv2.imread(imgs2[index])
     img3 = cv2.imread(imgs3[index])
-    img2 = cv2.resize(img2,None,fx=2,fy=2)
-    img3 = cv2.resize(img3,None,fx=2,fy=2)
+    img1 = cv2.resize(img1,None,fx=2,fy=2)
+    # img2 = cv2.resize(img2,None,fx=2,fy=2)
+    # img3 = cv2.resize(img3,None,fx=2,fy=2)
     if img1.shape != img2.shape:
          img1 = cv2.resize(img1,(img2.shape[1],img2.shape[0]))
     s = np.concatenate((img1,img2,img3),axis=1)

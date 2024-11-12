@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 import random
 import os
 import glob
+from pathlib import Path
 os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
 import cv2
  
@@ -137,20 +138,39 @@ class inpaint_train_dataset(Dataset):
     def __len__(self):
         return len(self.fileList)
 
+# this a superset of the inpaint_train_dataset
+# illustrates several useful functions for taking an existing
+# file structure and reading multiple files that need to be matched
+# or using a random mask during training based on the parameters
+
 class inpaint_mask_dataset(Dataset):
     def __init__(self, args, imgFolder, maskFolder, imgTransform=None, maskTransform=None):
         self.folderPath = imgFolder
         self.maskPath = maskFolder
-        if args.getRandMask:
-            self.fileList = []
-            for i in range(len(imgFolder)):
+        self.fileList = []
+        self.maskFileList = []
+        #self.fileList = sorted(glob.glob(os.path.join(imgFolder[0], '**/image/*.*'),recursive=True)) # to load all the files in the subfolders
+        for i in range(len(imgFolder)):
+            if args.img_subfolder is None:
                 tempfileList = glob.glob(os.path.join(imgFolder[i], '**/*.*'),recursive=True)
-                self.fileList += tempfileList
-                print(f'[Folder: {imgFolder[i]}] Len: {len(tempfileList)} | cum len: {len(self.fileList)}')
-            self.maskFileList = glob.glob(os.path.join(maskFolder, '*'))
-        else:
-            self.fileList = sorted(glob.glob(os.path.join(imgFolder[0], '*')))
-            self.maskFileList = sorted(glob.glob(os.path.join(maskFolder, '*')))
+            else:
+                tempfileList = glob.glob(os.path.join(imgFolder[i], '**',args.img_subfolder,'*.*'),recursive=True)
+            self.fileList += tempfileList
+            print(f'[imgFolder: {imgFolder[i]}] Len: {len(tempfileList)} | cum len: {len(self.fileList)}')
+        for i in range(len(maskFolder)):
+            if args.mask_subfolder is None:
+                tempfileList = glob.glob(os.path.join(maskFolder[i], '**/*.*'),recursive=True)
+            else:
+                tempfileList = glob.glob(os.path.join(maskFolder[i], '**',args.mask_subfolder,'*.*'),recursive=True)
+            self.maskFileList += tempfileList
+            print(f'[maskFolder: {maskFolder[i]}] Len: {len(tempfileList)} | cum len: {len(self.maskFileList)}')
+        #self.maskFileList = glob.glob(os.path.join(maskFolder, '*'))
+        # sort the files if I'm not getting a random mask for training. The sorting is on the 
+        # absolute path name so as long as the number of files in each subfolder is the same
+        # and they have frame numbers, then you can match the image file with the mask file.
+        if not args.getRandMask:
+            self.fileList = sorted(self.fileList)
+            self.maskFileList = sorted(self.maskFileList)
         self.transform = imgTransform
         self.maskTransform = maskTransform
         self.maskIsPV = args.maskIsPV
@@ -164,6 +184,8 @@ class inpaint_mask_dataset(Dataset):
         imgPath = self.fileList[index]
         imgDirFile = os.path.split(imgPath) # [path to the file, filename.ext]
         imgName = os.path.splitext(imgDirFile[1])
+        parentDir = Path(imgDirFile[0]).parent
+        parentDir = str(parentDir)
         tempPic = cv2.imread(imgPath,6)
         tempPic = tempPic.astype('float32')
         if imgName[1] != '.exr':
@@ -183,7 +205,7 @@ class inpaint_mask_dataset(Dataset):
             tempMask = torch.zeros_like(image)
             for i in range(3):
                 #tempMask[i,:,:] = image[i,:,:].masked_fill(image[i,:,:] == self.chromaKey[i], 2) # so mask value is 2x max image value
-                tempMask[i,:,:] = tempMask[i,:,:].masked_fill(image[i,:,:] == self.chromaKey[i], 2) # so mask value is 2x max image value
+                tempMask[i,:,:] = tempMask[i,:,:].masked_fill(image[i,:,:] == self.chromaKey[2-i], 2) # so mask value is 2x max image value
             mask = tempMask[0:1,:,:] + tempMask[1:2,:,:] + tempMask[2:3,:,:]
             mask = F.threshold(mask,5.5,0)/6 # two channel match max value = 2+2+1 = 5, so 5.5 threshold
             mask = 1-mask #expand mask and change to
@@ -233,7 +255,7 @@ class inpaint_mask_dataset(Dataset):
         #inputStack = (inputStack - 0.5)*2
         #image = (image-0.5)*2
 
-        return image, inputStack, imgName[0]
+        return image, inputStack, imgName[0], parentDir
              
     def __len__(self):
         return len(self.fileList)
