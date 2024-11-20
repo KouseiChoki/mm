@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-08-01 14:16:47
+ # @LastEditTime: 2024-11-20 10:30:33
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -178,6 +178,20 @@ else
         export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/depth/metric_depth/start.py "$@"
     }' >> ~/.zshrc
 fi
+
+# source ~/.zshrc
+if grep -q "mmip()" ~/.zshrc; then
+    echo "命令 'mmip()' 已存在于 ~/.zshrc 中，跳过添加。"
+else
+    # 如果命令不存在，则添加到 ~/.zshrc
+    echo "添加命令 'mmip()' 到 ~/.zshrc。"
+    echo 'mmip(){
+        conda activate mm
+        cd '"$PARENT_DIR"'
+        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/inpaint/diffusion_inpaint_v8b.py "$@"
+    }' >> ~/.zshrc
+fi
+
 echo "patch 3.19note 新版需要手动安装opencolorio,在控制台输入mm,左侧有(mm)的情况下输入pip install opencolorio"
 echo "patch 7.09note 新版需要手动安装plyfile,在控制台输入mm,左侧有(mm)的情况下输入pip install plyfile"
 echo "patch 7.19note 新版mmd需要升级matplotlib,左侧有(mm)的情况下输入pip install matplotlib==3.8.0"
