@@ -14,6 +14,7 @@ from file_utils import write
 import os
 os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
 import cv2
+from file_utils import read,write,jhelp_file
 
 from diffusion_gen_v5 import SimpleDiffusion, get
 from diffusion_gen_v5 import Model
@@ -219,6 +220,7 @@ def get_data(args):
 
 def get_data_single(imgPath,masks,args):
     tempPic = cv2.imread(imgPath,6)
+    tempPic = cv2.resize(tempPic,args.imgSize[::-1])
     tempPic = tempPic.astype('float32')
     if '.exr' not in imgPath:
         if args.imgIs16:
@@ -232,16 +234,18 @@ def get_data_single(imgPath,masks,args):
     else:
         temp = convert_tensor(tempPic)
         image = torch.concat([temp,temp,temp],0)
-    for i in range(len(args.maskSuffix)):
-        tempMask = cv2.imread(masks[i],6)
+    for i in range(len(masks)):
+        tempMask = read(masks[i],type='mask')
+        # tempMask = cv2.imread(masks[i],6)
         tempMask = tempMask.astype('float32')
-        if '.exr' not in imgPath:
-            if args.maskIs16:
-                tempMask = tempMask/65535
-            else:
-                tempMask = tempMask/255
-        if len(tempMask.shape) == 3:
-            tempMask = cv2.cvtColor(tempMask, cv2.COLOR_BGR2GRAY)
+        tempMask = cv2.resize(tempMask,None,fx=0.25,fy=0.25)
+        # if '.exr' not in imgPath:
+        #     if args.maskIs16:
+        #         tempMask = tempMask/65535
+        #     else:
+        #         tempMask = tempMask/255
+        # if len(tempMask.shape) == 3:
+        #     tempMask = cv2.cvtColor(tempMask, cv2.COLOR_BGR2GRAY)
         mask = convert_tensor(tempMask)
         if not args.maskIsPV: # then invert mask so that any pad is considered the mask
             validPix = 1-mask
@@ -250,6 +254,7 @@ def get_data_single(imgPath,masks,args):
         validPix = validPix.clamp(0,1)
         if i == 0:
             preValidPix = validPix
+            imgBpix = validPix
         elif i == 1:
             imgVpix = torch.maximum(preValidPix,validPix)
             preValidPix = F.max_pool2d(preValidPix,3,stride=1,padding=1)
@@ -585,7 +590,8 @@ def show_img(args,mLowRes,mHiRes,image, imgVpix, imgBpix, device,sp):
     if args.saveImg:
         x = torch.clip(x,-1.0,1.0)
         x = invScaleImg(x)
-        write(x[0,:,:,:],sp)
+        x =  np.transpose((x.detach().cpu().numpy()*255).astype('uint8')[0],(1,2,0))
+        write(sp,x)
         #x = torch.pow(x,img_apl_exp)
         #x = invScaleImg(stack[:,0:3,:,:])*stack[:,3:4,:,:] + x*(1-stack[:,3:4,:,:])
         #x = invScaleImg(refImages)
@@ -609,7 +615,7 @@ def show_img(args,mLowRes,mHiRes,image, imgVpix, imgBpix, device,sp):
             #else:
             #    torch.distributed.gather(tensor=mytensor)
 
-    pbar.close()
+    # pbar.close()
     return None     
 
 if __name__ == '__main__':
@@ -619,7 +625,7 @@ if __name__ == '__main__':
     # parser.add_argument('--location', default='home', help='version of checkpt to save(default: OFSRCNN14)')
     parser.add_argument('--root', type=str,required=False, help='data root')
     parser.add_argument('--output', type=str,required=False, help='data output')
-    parser.add_argument('--algo', type=str, default='ddpm_ema_m_mdl512_v8a')
+    # parser.add_argument('--algo', type=str, default='ddpm_ema_m_mdl1k_v9c_base')
     parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
     parser.add_argument('--img_folder_name', type=str, default='image')
     parser.add_argument('--device', type=str, default='mps')
@@ -640,10 +646,10 @@ if __name__ == '__main__':
     parser.add_argument('--mask_folder', default="toNeil_1023/AIpainting_mask", help='folder for masks')
     parser.add_argument('--mask_name', default="1122", help='folder for masks')
     parser.add_argument('--mask_ext', default=".exr", help='leading period to be compatible with extension found via parsing')
-    parser.add_argument('--mask_suffix', default=["_P1","_CF","_F1"],type=list, help='folder for masks')
+    parser.add_argument('--mask_suffix', default=["_P1","_F1"],type=list, help='folder for masks')
     #parser.add_argument('--imgSize', default=(512,512), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    #parser.add_argument('--imgSize', default=(1024,1024), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    parser.add_argument('--imgSize', default=(1088,2048), type=int, nargs=2, help='pixel mulitple image needs to be)')
+    parser.add_argument('--imgSize', default=(1024,2048), type=int, nargs=2, help='pixel mulitple image needs to be)')
+    # parser.add_argument('--imgSize', default=(256,512), type=int, nargs=2, help='pixel mulitple image needs to be)')
     parser.add_argument('--imgIs16', default=False, type=bool, help='load input CNN section (default=False))')
     parser.add_argument('--imgChnl', default=3, type=int, help='number of color channels to use (default=1)')
     #parser.add_argument('--chromaKey', default=None, help='set to None to disable')
@@ -682,22 +688,26 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     fp = os.path.dirname(os.path.abspath(__file__))
-    ckpt_path = os.path.join(fp,'../..','checkpoints',args.algo)
-    if '.pth'not in ckpt_path:
-        ckpt_path+='.pth'
-    args.chk_lowRes_ver = ckpt_path
-    args.chk_HiRes_ver = ckpt_path
-
-    if not os.path.isfile(ckpt_path):
-        download_url = ckpt_path
-        md = args.server
-        md += '/inpaint'
-        md += '/' + args.algo + '.pth'
-        print(download_url,md)
-        flag = check_and_download_pth_file(download_url,md)
-        if not flag:
-            raise NotImplementedError(f'[MM ERROR][model]model file not exists:{args.algo},please use mmalgo to check')
-        # raise NotImplementedError(f'[MM ERROR][model]model file loss!{model_name}')
+    algos = ['ddpm_ema_m_mdl512_v8a','ddpm_ema_m_mdl512_v8a']
+    for i in range(2):
+        algo = algos[i]
+        ckpt_path = os.path.join(fp,'../..','checkpoints',algo)
+        if '.pth'not in ckpt_path:
+            ckpt_path+='.pth'
+        if i ==0:
+            args.chk_lowRes_ver = ckpt_path
+        else:
+            args.chk_HiRes_ver = ckpt_path
+        
+        if not os.path.isfile(ckpt_path):
+            download_url = ckpt_path
+            md = args.server
+            md += '/inpaint'
+            md += '/' + algo + '.pth'
+            print(download_url,md)
+            flag = check_and_download_pth_file(download_url,md)
+            if not flag:
+                raise NotImplementedError(f'[MM ERROR][model]model file not exists:{algo},please use mmalgo to check')
 
     # if args.location == 'home':
     #     args.chk_save_pre='checkpoints/base/ddpm'
@@ -749,18 +759,24 @@ if __name__ == '__main__':
 
 
     for prepare in prepares:
-        filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
-        
+        # filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
+        cur_dir = os.path.dirname(prepare)
+        filenames = jhelp_file(os.path.join(cur_dir,'image'))
+        mask_dir = os.path.join(prepare,'mask')
+        masks = [jhelp_file(os.path.join(cur_dir,'mask'))] if os.path.isdir(os.path.join(cur_dir,'mask')) else [jhelp_file(os.path.join(cur_dir,'mask_CF'))]
+        for mask_suffix in args.mask_suffix:
+            if os.path.isdir(os.path.join(cur_dir,'mask'+mask_suffix)):
+                masks.append(jhelp_file(os.path.join(cur_dir,'mask'+mask_suffix)))
         for k, filename in enumerate(filenames):
             print(f'Progress {k+1}/{len(filenames)}: {filename}')
-            masks = []
-            for mask_suffix in args.mask_suffix:
-                masks.append(image.replace(f'/{args.img_folder_name}/',f'/{mask_suffix}/'))
-                             
             # load the data
-            image, imgVpix, imgGpix = get_data(filename,masks,args)
+            mask = []
+            for m in masks:
+                mask.append(m[k])
+            image, imgVpix, imgGpix = get_data_single(filename,mask,args)
             # show the image
             # convert image to look like a batch of 1 because get_data only returns 3 dim.
+            sp = os.path.join(args.output,os.path.basename(filename)).replace('.exr','.png')
             show_img(args,model_low_res,model_high_res,image.unsqueeze(0), imgVpix.unsqueeze(0), imgGpix.unsqueeze(0), device,sp)
 
-            # --root /Users/qhong/Desktop/test/1/2 --output /Users/qhong/Desktop/test/1/3 --device cpu
+            # --root /Users/qhong/Downloads/aipaiting_1112 --output /Users/qhong/Downloads/aipaiting_1112/output
