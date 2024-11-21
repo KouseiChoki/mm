@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-11-20 10:30:33
+ # @LastEditTime: 2024-11-21 10:16:34
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -188,7 +188,7 @@ else
     echo 'mmip(){
         conda activate mm
         cd '"$PARENT_DIR"'
-        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/inpaint/diffusion_inpaint_v8b.py "$@"
+        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/inpaint/diffusion_inpaint_v1.py "$@"
     }' >> ~/.zshrc
 fi
 
