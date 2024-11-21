@@ -1,47 +1,62 @@
-import time
-#import math
 import torch
-import torch.distributed
-import torchvision.transforms.functional as TF
-import random
-from torch.utils.data import Dataset, DataLoader
-import torch.nn as nn
-import torch.nn.functional as F
-#import torch.optim as optim
-#from torch.optim import lr_scheduler
-#import torch.cuda.amp as amp 
-import numpy as np
 import torchvision
-from torchvision import datasets, models, transforms
-from torchvision.utils import make_grid
-import torch.multiprocessing as mp
-from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
-from torch.autograd import Variable
-import os
-#os.environ['CUDA_VISIBLE_DEVICES'] = '4, 5, 6, 7'
-os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
-import shutil
+from torchvision import transforms
 import matplotlib.pyplot as plt
+import numpy as np
+import torch.nn.functional as F
 from tqdm import tqdm
-#from IPython.display import display
-from PIL import Image
+import random
+import math
 from copy import deepcopy
-from collections import OrderedDict
+from torch.autograd import Variable
+import glob
+from file_utils import write
+import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"]="1"
 import cv2
+from file_utils import read,write,jhelp_file
 
-from diffusion_data_v2 import get_dataset, inverse_transform
-#from diffusion_data import inpaint_train_dataset as inpaint_dataset
-from diffusion_data_v2 import inpaint_mask_dataset as inpaint_dataset
-##from diffusion_data import inpaint_unreal_dataset as inpaint_dataset # train with the unreal dataset
-from diffusion_gen_v5 import SimpleDiffusion, Model, get
-#from lion_opt import Lion
-#from dif_smpl_inpaint import smpl_inpaint
+from diffusion_gen_v5 import SimpleDiffusion, get
+from diffusion_gen_v5 import Model
+import requests
+# this is a simplified version of the code that is used for training and evaluation.
+# it can read multiple mask files so that you can experiment with artifact reduction
+# and harmonization of the image that has been generated from multiple frames
+# for production, you would want to port some of this code over to the diffusion_inpaint_v8b.py
+# and diffusion_data_v2.py so that you can run it on multiple GPU's.
+# show_image => inpaint_v8b
+# get_data => data_v2.py
 
-# this is a good template to use for any AI training. It will run on either mac studio or a multi-GPU
-# cluster without any code changes. Where the code needs to be different, it checks for the number
-# of GPU's being used (world size) to make the appropriate changes
+convert_tensor = transforms.ToTensor()
+def mkdir(path):
+    if  not os.path.exists(path):
+        os.makedirs(path,exist_ok=True)
+def download_file(url, destination):
+    """下载文件，显示进度条"""
+    response = requests.get(url, stream=True,timeout=30)
+    if response.status_code != 200:
+        return False
+    total_size_in_bytes = int(response.headers.get('content-length', 0))
+    block_size = 1024 # 1 Kibibyte
+    progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+    mkdir(os.path.dirname(destination))
+    with open(destination, 'wb') as file:
+        for data in response.iter_content(block_size):
+            progress_bar.update(len(data))
+            file.write(data)
+    progress_bar.close()
+    if total_size_in_bytes != 0 and progress_bar.n != total_size_in_bytes:
+        print("error: connection failed, please retry later。")
+    else:
+        print("finished")
+    return True
+def check_and_download_pth_file(file_path, download_url):
+    flag = False
+    """检查.pth文件是否存在，如果不存在，则从URL下载"""
+    if not os.path.exists(file_path):
+        print(f"file {file_path} not exist, downloading...")
+        flag = download_file(download_url, file_path)
+    return flag
 
 def imshow(inp):
     """Imshow for Tensor."""
@@ -51,16 +66,28 @@ def imshow(inp):
     #plt.title(title)
     plt.show()
 
-# this is getting to be pretty generic, so it can probably move to diffusion utilities
+def imsave(inp,sp):
+    inp = inp.numpy().transpose((1, 2, 0))
+    inp = np.clip(inp, 0, 1)
+    cv2.imwrite(sp,inp)
+
+def mask_rgb(rgbImage, mask):
+    # create 3 channel of the mask
+    mask3chnl = torch.cat([mask,mask,mask], dim=0)
+    # mask is already 3 channel???
+    #return rgbImage*mask3chnl+0.5*(1-mask3chnl)
+    # let's put hole in as black
+    return rgbImage*mask3chnl
+
 def saveImg(image,path,folder,name,ext,bits,transform=None):
     img_dir = os.path.join(path,folder)
     if not os.path.exists(img_dir):
         os.makedirs(img_dir)
         print(f"The new directory {path} is created!")        
-    img_path = os.path.join(img_dir,name + '.' + ext)
+    img_path = os.path.join(img_dir,name + ext)
     if transform is not None:
         image = transform(image)
-    elif not (ext == 'exr'):
+    elif not (ext == '.exr'):
         gain = 2**bits - 1
         image = torch.clamp(image*gain+0.5,0,gain)
         if bits > 8:
@@ -92,8 +119,9 @@ def bgr2rgb_batch(bgrImg):
     output[:, 0, :, :] = bgrImg[:, 2, :, :]
     output[:, 1, :, :] = bgrImg[:, 1, :, :]
     output[:, 2, :, :] = bgrImg[:, 0, :, :]
+    # similarly write output[:, 1, :, :] and output[:, 2, :, :] using formulas from https://en.wikipedia.org/wiki/YCbCr
     return output
-#diffusion is usually trained with image content that is between -1 and 1. This provides the scaling to do that
+
 def scaleImg(img):
     if img.shape[1] > 3:
         tmp = 2*img[:,0:3,:,:]-1
@@ -102,7 +130,6 @@ def scaleImg(img):
         img = 2*img - 1
     return img
 
-# go from image scaled for diffusion to image scaled for display and saving
 def invScaleImg(img):
     if img.shape[1] > 3:
         tmp = (img[:,0:3,:,:]+1.)*0.5
@@ -111,140 +138,159 @@ def invScaleImg(img):
         img = (img+1.)*0.5
     return img
 
-# For diffusion specifically, but also for any training that zero's out channels during training
-# better results are achieved by low pass filtering the weights over time
-# this was changed from a function to a class so that I can have a persistent value
-# of how many times it has been called. This allows quicker convergence if you restart
-# it by first doing the equivalent of a unweighted average before switching to a more
-# IIR low pass filter method
-class update_ema_class:
-    def __init__(self, min_ema, max_ema):
-        self.ema_decay = min_ema # inverse of IIR weight to start the training
-        self.max_ema_decay = max_ema # inverse of min IIR weight during training
+def inverse_transform(tensors,maxVal=255.0):
+    """Convert tensors from [-1., 1.] to [0., 255.]"""
+    return ((tensors.clamp(-1, 1) + 1.0) / 2.0) * maxVal
 
-    @torch.no_grad()
-    def forward(self, ema_model, model, init_ema=False):
-        if init_ema:
-            decay = 0
+def get_data(args):
+    imgPath = os.path.join(args.dataset_root,args.img_folder)
+    imgName = args.img_name
+    imgExt = args.img_ext
+    maskName = args.mask_name
+    maskExt = args.mask_ext
+    maskSuffix = args.mask_suffix
+    imgPath = os.path.join(imgPath,(imgName+imgExt))
+    tempPic = cv2.imread(imgPath,6)
+    tempPic = tempPic.astype('float32')
+    if imgExt != '.exr':
+        if args.imgIs16:
+            tempPic = tempPic/65535
         else:
-            decay = 1-1./self.ema_decay
-        
-        self.ema_decay += 1
-        self.ema_decay = min(self.ema_decay,self.max_ema_decay)
-
-        ema_params = OrderedDict(ema_model.named_parameters())
-        model_params = OrderedDict(model.named_parameters())
-
-        for name, param in model_params.items():
-            # TODO: Consider applying only to params that require_grad to avoid small numerical changes of pos_embed
-            #ema_params[name].mul_(decay).add_(param.data, alpha=1 - decay)
-            ema_params[name] = param.data + decay*(ema_params[name]-param.data) # this will have less precision issues
-
-
-def requires_grad(model, flag=True):
-    """
-    Set requires_grad flag for all parameters in a model.
-    """
-    for p in model.parameters():
-        p.requires_grad = flag
-
-# I'm not sure that the MASTER_PORT value needs to be what is specified
-# because if you use different values, you can actually get two programs to share the GPU on the mac
-def ddp_setup(rank: int, world_size: int, device):
-    """
-    Args:
-        rank: Unique identifier of each process
-       world_size: Total number of processes
-    """
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    if device.type == 'cuda':
-        init_process_group(backend="nccl", rank=rank, world_size=world_size)
+            tempPic = tempPic/255
+    if len(tempPic.shape) == 3:
+        #tempPic = cv2.cvtColor(tempPic, cv2.COLOR_BGR2YCrCb)
+        image = convert_tensor(tempPic)
+        #image = ycrcb2yuv(image,self.cGain) # so that 0 color has CbCr = 0
     else:
-        init_process_group(backend="gloo", rank=rank, world_size=world_size)
-
-def prepare_dataloader(args, worldSize, dataset: Dataset, rng):
-    if args.inPaint or args.saveImg: # then doing evaluation and need to disable shuffling
-        shuffle_data = False # shuffling is not exclusive between GPU's which causes issues at evaluation
-    else:
-        shuffle_data = True
-    if worldSize == 1:
-        outLoader = DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=True, 
-            generator=rng,
-            shuffle=True,
-        )
-    else:
-        outLoader = DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            pin_memory=True, 
-            shuffle=False,
-            sampler=DistributedSampler(dataset,num_replicas=worldSize,shuffle = shuffle_data)
-        )
-    return outLoader
-
-def load_train_objs(args):
-    # called by the train model function which is called by multi-processor
-    # spawn method this loads all the objects and their weights/parameters into memory
-    if args.showImg or args.saveImg:
-        eval_mdl = True
-    else:
-        eval_mdl = False
-    
-    crop_transforms = transforms.Compose([
-        transforms.CenterCrop(args.imgSize), # then random crop
-        ])
-    scale_transforms = transforms.Compose([
-        transforms.Resize(args.imgSize,antialias=True), # resize the smallest edge to this dimension
-        ])
-    
-    train_img_transforms = transforms.Compose([
-        transforms.Resize(args.imgSize[0],antialias=True), # resize the smallest edge to this dimension
-        #transforms.ColorJitter(brightness=[0.25,1],contrast=[0.5,1]), # backgrounds can have much lower brightness/gain than total image
-        transforms.RandomCrop(args.imgSize,pad_if_needed=True), # then random crop
-        transforms.RandomHorizontalFlip(), # for inpainting vertical and 90 degree flip creates unnatural images
-        ])
-
-    train_mask_transforms = transforms.Compose([
-        transforms.Resize(args.imgSize,antialias=True), # resize to CNN input
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomVerticalFlip()
-        ])
-    if eval_mdl:
-        if args.imgScale:
-            image_transforms = scale_transforms
-            mask_transforms = scale_transforms
+        temp = convert_tensor(tempPic)
+        image = torch.concat([temp,temp,temp],0)
+    maskPath = os.path.join(args.dataset_root,args.mask_folder)
+    for i in range(len(maskSuffix)):
+        cMaskPath = os.path.join(maskPath,(maskName+maskSuffix[i]+maskExt))
+        tempMask = cv2.imread(cMaskPath,6)
+        tempMask = tempMask.astype('float32')
+        if maskExt != '.exr':
+            if args.maskIs16:
+                tempMask = tempMask/65535
+            else:
+                tempMask = tempMask/255
+        if len(tempMask.shape) == 3:
+            tempMask = cv2.cvtColor(tempMask, cv2.COLOR_BGR2GRAY)
+        mask = convert_tensor(tempMask)
+        if not args.maskIsPV: # then invert mask so that any pad is considered the mask
+            validPix = 1-mask
         else:
-            image_transforms = crop_transforms
-            mask_transforms = crop_transforms
-    else:
-        image_transforms = train_img_transforms
-        mask_transforms = train_mask_transforms
+            validPix = mask
+        validPix = validPix.clamp(0,1)
+        if i == 0:
+            preValidPix = validPix
+        elif i == 1:
+            imgVpix = torch.maximum(preValidPix,validPix)
+            preValidPix = F.max_pool2d(preValidPix,3,stride=1,padding=1)
+            validPix = F.max_pool2d(validPix,3,stride=1,padding=1)
+            imgBpix = torch.minimum(preValidPix,validPix) # intersection of the two expanded areas could have issues
+            preValidPix = validPix
+        else:
+            imgVpix = torch.maximum(imgVpix , validPix) # essentially, image valid pixels are the union of all the valid pix areas
+            validPix = F.max_pool2d(validPix,3,stride=1,padding=1)
+            tempImgBpix = torch.minimum(preValidPix,validPix) # intersection of the two expanded areas could have issues
+            imgBpix = torch.maximum(tempImgBpix,imgBpix)          
+            preValidPix = validPix
+    if args.chromaKey is not None: # has to be done before any transforms and result is a pixel valid
+        tempMask = torch.zeros_like(image)
+        for i in range(3):
+            #tempMask[i,:,:] = image[i,:,:].masked_fill(image[i,:,:] == self.chromaKey[i], 2) # so mask value is 2x max image value
+            tempMask[i,:,:] = tempMask[i,:,:].masked_fill(image[i,:,:] == args.chromaKey[2-i], 2) # so mask value is 2x max image value
+        mask = tempMask[0:1,:,:] + tempMask[1:2,:,:] + tempMask[2:3,:,:]
+        mask = F.threshold(mask,5.5,0)/6 # two channel match max value = 2+2+1 = 5, so 5.5 threshold
+        imgVpix = 1-mask #expand mask and change to
+        #mask = 1-F.max_pool2d(mask,3,stride=1,padding=1) #expand mask and change to
+        # mask is actually pixel valid so that during transform any padding = 0 is an area to inpaint
 
-    if args.dataset_folder is None:
-        train_dataset = get_dataset(dataset_name=args.dataset_name,imgSize=args.imgSize)
+    # need to crop the data to imgSize, which is really just padding it.
+    crop = transforms.Compose([
+        transforms.CenterCrop(args.imgSize),
+        ])
+
+    image = crop(image)
+    imgVpix = crop(imgVpix)
+    imgBpix = crop(imgBpix)
+
+    return image, imgVpix, imgBpix
+
+def get_data_single(imgPath,masks,args):
+    tempPic = cv2.imread(imgPath,6)
+    tempPic = cv2.resize(tempPic,args.imgSize[::-1])
+    tempPic = tempPic.astype('float32')
+    if '.exr' not in imgPath:
+        if args.imgIs16:
+            tempPic = tempPic/65535
+        else:
+            tempPic = tempPic/255
+    if len(tempPic.shape) == 3:
+        #tempPic = cv2.cvtColor(tempPic, cv2.COLOR_BGR2YCrCb)
+        image = convert_tensor(tempPic)
+        #image = ycrcb2yuv(image,self.cGain) # so that 0 color has CbCr = 0
     else:
-        # This takes the list of the folders and creates a list of absolute paths for 
-        # the dataset program to use.
-        imgTrainFolder = []
-        maskTrainFolder = []
-        for i in range(len(args.dataset_folder)):
-            tempTrainFolder = args.dataset_root + args.dataset_folder[i]
-            imgTrainFolder.append(tempTrainFolder)
-            print(f'[last path: {tempTrainFolder}] All paths: {imgTrainFolder}')
-        imgTrainFolder = imgTrainFolder # don't ask, me: += gives me a list of characters and append adds a level in the heirarchy
-        for i in range(len(args.mask_folder)):
-            tempMaskFolder = args.dataset_root + args.mask_folder[i]
-            maskTrainFolder.append(tempMaskFolder)
-            print(f'[last path: {tempMaskFolder}] All paths: {maskTrainFolder}')
-        maskTrainFolder = maskTrainFolder # don't ask, me: += gives me a list of characters and append adds a level in the heirarchy
-        #maskTrainFolder = args.dataset_root + 'inPaintMask/train/random_masks/'
-        train_dataset = inpaint_dataset(args, imgTrainFolder,maskTrainFolder, imgTransform=image_transforms,maskTransform=mask_transforms)
+        temp = convert_tensor(tempPic)
+        image = torch.concat([temp,temp,temp],0)
+    for i in range(len(masks)):
+        tempMask = read(masks[i],type='mask')
+        # tempMask = cv2.imread(masks[i],6)
+        tempMask = tempMask.astype('float32')
+        tempMask = cv2.resize(tempMask,None,fx=0.25,fy=0.25)
+        # if '.exr' not in imgPath:
+        #     if args.maskIs16:
+        #         tempMask = tempMask/65535
+        #     else:
+        #         tempMask = tempMask/255
+        # if len(tempMask.shape) == 3:
+        #     tempMask = cv2.cvtColor(tempMask, cv2.COLOR_BGR2GRAY)
+        mask = convert_tensor(tempMask)
+        if not args.maskIsPV: # then invert mask so that any pad is considered the mask
+            validPix = 1-mask
+        else:
+            validPix = mask
+        validPix = validPix.clamp(0,1)
+        if i == 0:
+            preValidPix = validPix
+            imgBpix = validPix
+        elif i == 1:
+            imgVpix = torch.maximum(preValidPix,validPix)
+            preValidPix = F.max_pool2d(preValidPix,3,stride=1,padding=1)
+            validPix = F.max_pool2d(validPix,3,stride=1,padding=1)
+            imgBpix = torch.minimum(preValidPix,validPix) # intersection of the two expanded areas could have issues
+            preValidPix = validPix
+        else:
+            imgVpix = torch.maximum(imgVpix , validPix) # essentially, image valid pixels are the union of all the valid pix areas
+            validPix = F.max_pool2d(validPix,3,stride=1,padding=1)
+            tempImgBpix = torch.minimum(preValidPix,validPix) # intersection of the two expanded areas could have issues
+            imgBpix = torch.maximum(tempImgBpix,imgBpix)          
+            preValidPix = validPix
+    if args.chromaKey is not None: # has to be done before any transforms and result is a pixel valid
+        tempMask = torch.zeros_like(image)
+        for i in range(3):
+            #tempMask[i,:,:] = image[i,:,:].masked_fill(image[i,:,:] == self.chromaKey[i], 2) # so mask value is 2x max image value
+            tempMask[i,:,:] = tempMask[i,:,:].masked_fill(image[i,:,:] == args.chromaKey[2-i], 2) # so mask value is 2x max image value
+        mask = tempMask[0:1,:,:] + tempMask[1:2,:,:] + tempMask[2:3,:,:]
+        mask = F.threshold(mask,5.5,0)/6 # two channel match max value = 2+2+1 = 5, so 5.5 threshold
+        imgVpix = 1-mask #expand mask and change to
+        #mask = 1-F.max_pool2d(mask,3,stride=1,padding=1) #expand mask and change to
+        # mask is actually pixel valid so that during transform any padding = 0 is an area to inpaint
+
+    # need to crop the data to imgSize, which is really just padding it.
+    crop = transforms.Compose([
+        transforms.CenterCrop(args.imgSize),
+        ])
+
+    image = crop(image)
+    imgVpix = crop(imgVpix)
+    imgBpix = crop(imgBpix)
+
+    return image, imgVpix, imgBpix
+
+def load_train_objs(args,device):
+
     
     model = Model(base_channels=32,
                 channel_mult=[16,16,16,8,4,2,1],
@@ -259,589 +305,435 @@ def load_train_objs(args):
                 mlp_ratio=4.0,
                 dropout_rate=args.dropout_p,
                 time_emb_dims=512)
-
-    # during eval you always want to use the low pass filtered set of weights
-    # and the show image function allows the use of two different resolutions during
-    # the inpainting, so this just loads the appropriate files based on whether you are
-    # doing qualitative evaluation (show or saving an image) or doing training  
-    if args.loadModel and (not eval_mdl):
-        checkpoint_pre = torch.load(args.chk_load_pre + '_model_' + args.chk_load_ver + '.pth',map_location='cpu',weights_only=True)
-        model.load_state_dict(checkpoint_pre['model_state_dict'], strict=False)
-    elif args.loadEMA or eval_mdl:
-        checkpoint_pre = torch.load(args.chk_load_pre + '_ema_m_' + args.chk_load_ver + '.pth',map_location='cpu',weights_only=True)
-        model.load_state_dict(checkpoint_pre['ema_m_state_dict'], strict=False)
-
+    
+    checkpoint_pre = torch.load(args.chk_lowRes_ver,map_location='cpu',weights_only=True)
+    # checkpoint_pre = torch.load(args.chk_load_pre + '_ema_m_' + args.chk_lowRes_ver + '.pth',map_location='cpu',weights_only=True)
+    model.load_state_dict(checkpoint_pre['ema_m_state_dict'], strict=False)
+    
     ema_m = deepcopy(model)
 
-    if args.loadEMA and (not eval_mdl):
-        checkpoint_pre = torch.load(args.chk_load_pre + '_ema_m_' + args.chk_load_ver + '.pth',map_location='cpu',weights_only=True)
-        ema_m.load_state_dict(checkpoint_pre['ema_m_state_dict'], strict=False)
-    elif eval_mdl:
-        checkpoint_pre = torch.load(args.chk_load_pre + '_ema_m_' + args.chk_load_hd_ver + '.pth',map_location='cpu',weights_only=True)
-        ema_m.load_state_dict(checkpoint_pre['ema_m_state_dict'], strict=False)
+    checkpoint_pre = torch.load(args.chk_HiRes_ver,map_location='cpu',weights_only=True) 
+    # checkpoint_pre = torch.load(args.chk_load_pre + '_ema_m_' + args.chk_HiRes_ver + '.pth',map_location='cpu',weights_only=True)
+    ema_m.load_state_dict(checkpoint_pre['ema_m_state_dict'], strict=False)
 
-    requires_grad(ema_m, False)
-    ema_m.eval()
+    ema_m.eval().to(device)
+    model.eval().to(device)
 
-    if eval_mdl:
-        model.eval()
-    else:
-        model.train()
+    return model, ema_m
 
 
-    if os.path.exists(args.chk_save_pre + '_model_' + args.chk_save_ver + '.pth') and not eval_mdl:
-        # successful load for training, back up because nothing worse than a crash that corrupts the 
-        # checkpoint file
-        shutil.copy(args.chk_save_pre + '_model_' + args.chk_save_ver + '.pth',args.chk_save_pre + '_model_' + args.chk_save_ver + '.bak')
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.imgLR)
-    #optimizer = Lion(model.parameters(), lr=args.imgLR)
-    loss = nn.MSELoss()
-    #gScaler = amp.GradScaler()
-
-    return train_dataset, model, ema_m, optimizer, loss
-
-# this is the main class where everything is done
-class Trainer:
-    def __init__(
-        self,
-        args,
-        img_data: DataLoader,
-        #sd: torch.nn.Module,
-        model: torch.nn.Module,
-        ema_m: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        loss,
-        tDevice: torch.device,
-        world_size
-    ) -> None:
-        self.args = args
-        self.device = tDevice
-        self.world_size = world_size
-        self.img_data = img_data
-        self.optimizer = optimizer
-        self.model = model.to(tDevice)
-        self.ema_m = ema_m.to(tDevice)
-        self.loss = loss
-        self.aLoss = None
-        self.sd = SimpleDiffusion(num_diffusion_timesteps=args.time_steps, device=tDevice)
-        #self.sd1000 = SimpleDiffusion(num_diffusion_timesteps=1000, device=tDevice)
-        #self.sd = sd
-        if world_size > 1:
-            self.model = DDP(model,device_ids=[tDevice.index],find_unused_parameters=True)
-        self.update_ema = update_ema_class(args.min_ema_decay, args.max_ema_decay)
-
-    def _run_batch(self,x0s, ts,lastMB):
-        # implements the ability to accumulate multiple batches before doing back projection
-        # use this to keep the number of images used for back projection constant as memory
-        # constraints and number of GPU changes. Typically use 256 images before back projection
-
-        xts, gt_noise = self.sd.forward_diffusion(x0s, ts)
-
-        pred_noise = self.model(xts, ts)
-        bloss = self.loss(gt_noise,pred_noise)
-        self.aLoss = bloss/self.args.num_batches
-        self.aLoss.backward()
-        if lastMB:
-            self.optimizer.step()
-            self.optimizer.zero_grad()
-            if self.device.index == 0:
-                if self.world_size > 1:
-                    self.update_ema.forward(self.ema_m,self.model.module)
-                else:
-                    self.update_ema.forward(self.ema_m,self.model)
-        
-        loss_value = bloss.detach().item()
- 
-        return loss_value
+def p_sample(sd,x,ats,z,ts,model):
     
-    def _run_epoch(self, epoch):
-        if epoch == 0:
-            print(f'[GPU: {self.device}] Epochs: {self.args.n_epochs} | B_SZ: {self.args.batch_size} | Steps: {len(self.img_data)}')
-        # next three lines for multi-GPU
-        if self.world_size != 1: # then we want to randomize the images sent to each GPU
-            epoch_rnd = random.randint(0,255)
-            self.img_data.sampler.set_epoch(epoch_rnd) # sampler shuffles based on epoch number
-        n_total_steps = len(self.img_data)
-        startTime = time.time()
-        cLoss = 0.0
-        for i, (refImages, inputStacks, imgNames, imgDirs) in enumerate(self.img_data):
-            # format and send images to the GPU
-            refImages = scaleImg(refImages.to(self.device))
-            inputStacks = scaleImg(inputStacks.to(self.device))
-            if self.args.showImg or self.args.saveImg: # then we are doing evaluation, so run show image instead of batch
-                self.show_img(refImages,inputStacks,imgNames,imgDirs)
-                #self.show_img(refImages, inputStacks)
-            else:
-                if (i+1) % self.args.num_batches == 0  or (i + 1 == len(self.img_data)):
-                    lastMB = True
-                else:
-                    lastMB = False
-                ts = torch.randint(low=1, high=self.args.time_steps, size=(refImages.shape[0],), device=self.device) # line
-                loss = self._run_batch(refImages,ts,lastMB) # high res is always trained with critic
-                cLoss += loss
-                
-                if self.device.index == 0 and (i+1) % self.args.save_every == 0:
-                    self._save_checkpoint(self.args.chk_save_pre,self.args.chk_save_ver)
+    predicted_noise = model(x, ats)
 
-                if self.device.index == 0 and (i+1) % self.args.stats_every == 0:
-                    endTime = time.time()
-                    timePerImage = (endTime-startTime)*1000/self.args.stats_every/self.args.batch_size/self.world_size
-                    print(f'Epoch [{epoch+1}/{self.args.n_epochs}]  Step [{i+1}/{n_total_steps}]  Time/image(mS) {timePerImage:.4f} mse_loss: {cLoss/self.args.stats_every:.4f}')
-                    cLoss = 0.0
-                    startTime = time.time()
+    beta_t                            = get(sd.beta, ts)
+    one_by_sqrt_alpha_t               = get(sd.one_by_sqrt_alpha, ts)
+    sqrt_one_minus_alpha_cumulative_t = get(sd.sqrt_one_minus_alpha_cumulative, ts) 
+    x = (
+        one_by_sqrt_alpha_t
+        * (x - (beta_t / sqrt_one_minus_alpha_cumulative_t) * predicted_noise)
+        + torch.sqrt(beta_t) * z
+    )
+    return x
 
-    def _save_checkpoint(self, chk_save_pre, chk_save_ver):
-        if not self.args.loadEMA: # we didn't load the EMA, so let's force the ema to equal the model
-            if self.world_size > 1:
-                self.update_ema.forward(self.ema_m,self.model.module,init_ema=True)
+
+@torch.no_grad()
+def show_img(args,mLowRes,mHiRes,image, imgVpix, imgBpix, device,sp):
+
+    image = image.to(device)
+
+    #img_apl = torch.mean(image,dim=[1,2,3],keepdim=True)
+    #img_apl_exp = torch.log(img_apl)/math.log(0.3)
+    #img_apl_exp = torch.clamp(img_apl_exp,1,3) # if image is too dark, then we apply gamma to lighten up the dark areas
+    #in_img = torch.pow(image,1.0/img_apl_exp)
+    #in_img = scaleImg(in_img)
+    img = scaleImg(image)
+
+    imgVpix = imgVpix.to(device)
+    imgBpix = imgBpix.to(device)
+    batch_size, C, H, W = image.shape
+    imgSave = False
+    # there are some instances of the mask not being quite right so expand by a few pixel
+    #p0s = smpl_inpaint(img*mask,mask,self.args.sizeLayers) # the inference does this step before, so it needs to be part of training too
+    if args.makeMaskBinary:
+        mask = torch.floor(imgVpix) # make sure that it's binary and only valid pixels are marked as such
+    hole = 1-mask
+    for i in range(args.dilateHoleMult):
+        hole = F.max_pool2d(hole,3,stride=1,padding=1)
+    for i in range(args.dilate_art_reduce):
+        imgBpix = F.max_pool2d(imgBpix,3,stride=1,padding=1)
+    init_img = img*mask # this is my raw input, I need this because mask = 0 should be zero and it's -1 if img has a hole
+                        # this shouldn't make a difference as it is always mulitplied by inpaint_mask in the code below
+    start_mask = 1-hole
+    imgGpix = torch.minimum(start_mask,1-imgBpix)
+
+    #p0s = smpl_inpaint(inpaint_mask*img,inpaint_mask,self.args.sizeLayers) # the inference does this step before, so it needs to be part of training too
+    #init_img = inpaint_mask*img + p0s*hole
+    init_img = start_mask*img
+    #mask_img2use = img*img_mask
+    one_ts = torch.ones(batch_size, dtype=torch.long, device=device)
+    #if args.dif_rng_seed == 0 or (not args.inPaint):
+    if not args.inPaint:
+        torch.manual_seed(random.randint(1, 10000))
+    else:
+        torch.manual_seed(args.dif_rng_seed)
+        #z.repeat(batch_size,1,1,1)
+    res_values = [[512,512],[H,W]]
+    start_time_step = [args.start_sample_steps,256]
+    multi_stage = True
+    for res_step in range(2):
+        sd = SimpleDiffusion(num_diffusion_timesteps=args.time_steps, device=device)
+        if not multi_stage:
+            init_img = img
+            inpaint_mask = start_mask
+            init_img = init_img*inpaint_mask
+            ip_model = mHiRes
+            z = torch.randn_like(init_img[0:1,:,:,:])
+            #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
+            z.repeat(batch_size,1,1,1)
+            if not args.inPaint:
+                x = z
             else:
-                self.update_ema.forward(self.ema_m,self.model,init_ema=True)
-            self.args.loadEMA = True # then set it as if we loaded it
-        torch.save({
-            'ema_m_state_dict': self.ema_m.state_dict(),
-            }, chk_save_pre + '_ema_m_' + chk_save_ver + '.pth')
-        if self.world_size > 1:
-            torch.save({
-                'model_state_dict': self.model.module.state_dict(),
-                }, chk_save_pre + '_model_' + chk_save_ver + '.pth')
+                #x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)
+                x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)            
+        elif res_step == 0:
+            init_img = F.interpolate(img,res_values[res_step],mode='bilinear',antialias=False)
+            inpaint_mask = F.interpolate(start_mask,res_values[res_step],mode='bilinear',antialias=False)
+            inpaint_mask = torch.floor(inpaint_mask)
+            init_img = init_img*inpaint_mask
+            ip_model = mLowRes
+            z = torch.randn_like(init_img[0:1,:,:,:])
+            #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
+            z.repeat(batch_size,1,1,1)
+            if not args.inPaint:
+                x = z
+            else:
+                #x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)
+                x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)
         else:
-            torch.save({
-                'model_state_dict': self.model.state_dict(),
-                }, chk_save_pre + '_model_' + chk_save_ver + '.pth')
+            z = torch.randn_like(img[0:1,:,:,:])
+            #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
+            z.repeat(batch_size,1,1,1)
+            x = F.interpolate(x,res_values[res_step],mode='bilinear',antialias=False)
+            #x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)
+            x, _gtn = sd.forward_diffusion(x,one_ts*(start_time_step[res_step]-1),noise2use=z)
+            init_img = img
+            inpaint_mask = start_mask
+            ip_model = mHiRes
 
-    def p_sample(self,sd,x,ats,z,ts,model): # this is the denoising step of the diffusion network
-        
-        predicted_noise = model(x, ats)
-        
-        beta_t                            = get(sd.beta, ts)
-        one_by_sqrt_alpha_t               = get(sd.one_by_sqrt_alpha, ts)
-        sqrt_one_minus_alpha_cumulative_t = get(sd.sqrt_one_minus_alpha_cumulative, ts) 
-        x = (
-            one_by_sqrt_alpha_t
-            * (x - (beta_t / sqrt_one_minus_alpha_cumulative_t) * predicted_noise)
-            + torch.sqrt(beta_t) * z
-        )
-        return x
-
-    @torch.no_grad()
-    def show_img(self,ref_img,stack,imgNames,imgDirs):
-        mask = stack[:,3:4,:,:]
-        img = stack[:,0:3,:,:].detach().clone()
-        batch_size, C, H, W = img.shape
-
-        if self.args.makeMaskBinary:
-            mask = torch.floor(mask) # make sure that it's binary and only valid pixels are marked as such
-        hole = 1-mask
-        for i in range(self.args.dilateHoleMult):
-            hole = F.max_pool2d(hole,3,stride=1,padding=1)
-        #for i in range(args.dilate_art_reduce):
-        #    imgBpix = F.max_pool2d(imgBpix,3,stride=1,padding=1)
-        mask_img = img*mask # this is my raw input, I need this because mask = 0 should be zero and it's -1 if img has a hole
-                            # this shouldn't make a difference as it is always mulitplied by inpaint_mask in the code below
-        start_mask = 1-hole
-        #imgGpix = torch.minimum(start_mask,1-imgBpix)
-
-        #p0s = smpl_inpaint(inpaint_mask*img,inpaint_mask,self.args.sizeLayers) # the inference does this step before, so it needs to be part of training too
-        #init_img = inpaint_mask*img + p0s*hole
-        init_img = start_mask*img
-        #mask_img2use = img*img_mask
-        one_ts = torch.ones(batch_size, dtype=torch.long, device=self.device)
-        #if args.dif_rng_seed == 0 or (not args.inPaint):
-        if not self.args.inPaint:
-            torch.manual_seed(random.randint(1, 10000))
-        else:
-            torch.manual_seed(self.args.dif_rng_seed)
-            #z.repeat(batch_size,1,1,1)
-        res_values = [[512,512],[H,W]]
-        start_time_step = [self.args.start_sample_steps,256]
-        multi_stage = False
-        for res_step in range(2):
-            sd = SimpleDiffusion(num_diffusion_timesteps=self.args.time_steps, device=self.device)
-            if not multi_stage:
-                init_img = img
-                inpaint_mask = start_mask
-                init_img = init_img*inpaint_mask
-                ip_model = self.ema_m
-                z = torch.randn_like(init_img[0:1,:,:,:])
-                #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
-                z.repeat(batch_size,1,1,1)
-                if not self.args.inPaint:
-                    x = z
+        time_step = start_time_step[res_step]
+        show_index = 0
+        if device.index == 0:
+            pbar = tqdm(total=start_time_step[res_step]-2)
+        sd_ver = 0
+        repeat_count = 0
+        variable_steps = True
+        #sd = SimpleDiffusion(num_diffusion_timesteps=1024, device=device)
+        step_size = 1
+        steps_back = 20
+        repeat = 0
+        min_t = 0
+        while time_step > 1: # needs to be > 1 so that indexing to get betas works below
+            if time_step < args.start_art_reduce and res_step > 0:
+                inpaint_mask = imgGpix
+            if variable_steps:
+                if time_step > 768:
+                    if sd_ver == 0:
+                        #step_size = 8
+                        step_size = 8
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        sd_ver = 1
+                        #steps_back = 16 # first is 1000->500
+                        steps_back = 8
+                        repeat = 3
+                        min_t = 0
+                elif time_step > 512:
+                    if sd_ver <= 1:
+                        #step_size = 4
+                        step_size = 8
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        sd_ver = 2
+                        #steps_back = 8 # first is 500 -> 250 - 20%
+                        #steps_back = 12 # first is 500 -> 250 - 20%
+                        steps_back = 16 # first is 500 -> 250 - 20%
+                        repeat = 3
+                        min_t = 0
+                elif time_step > 256:
+                    if sd_ver <= 2:
+                        #step_size = 4
+                        step_size = 4
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        sd_ver = 3
+                        steps_back = 16 # first is 150/5 = 20 
+                        repeat = 0
+                        min_t = 0
+                elif time_step > 128:
+                    if sd_ver <= 3:
+                        step_size = 4
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        sd_ver = 4
+                        steps_back = 8 #100->50
+                        repeat = 0
+                        min_t = 0
+                elif time_step > 64:
+                    if sd_ver <= 4:
+                        step_size = 4
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        sd_ver = 5
+                        steps_back = 4
+                        repeat = 0
+                        min_t = 0
+                elif time_step > 32:
+                    if sd_ver <= 5:
+                        step_size = 2
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        sd_ver = 5
+                        steps_back = 2
+                        repeat = 0
+                        min_t = 0
                 else:
-                    #x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)
-                    x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)            
-            elif res_step == 0:
-                init_img = F.interpolate(img,res_values[res_step],mode='bilinear',antialias=False)
-                inpaint_mask = F.interpolate(start_mask,res_values[res_step],mode='bilinear',antialias=False)
-                inpaint_mask = torch.floor(inpaint_mask)
-                init_img = init_img*inpaint_mask
-                ip_model = self.model
-                z = torch.randn_like(init_img[0:1,:,:,:])
-                #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
-                z.repeat(batch_size,1,1,1)
-                if not self.args.inPaint:
-                    x = z
-                else:
-                    x, _gtn = sd.forward_diffusion(init_img,one_ts*(start_time_step[res_step]-1),noise2use=z)
-            else:
-                z = torch.randn_like(img[0:1,:,:,:])
-                #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
-                z.repeat(batch_size,1,1,1)
-                x = F.interpolate(x,res_values[res_step],mode='bilinear',antialias=False)
-                x, _gtn = sd.forward_diffusion(x,one_ts*(start_time_step[res_step]-1),noise2use=z)
-                init_img = img
-                inpaint_mask = start_mask
-                ip_model = self.ema_m
+                    if sd_ver <= 6:
+                        step_size = 1
+                        steps_back = 1
+                        sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=device)
+                        repeat = 0
+                        sd_ver = 6
 
-            time_step = start_time_step[res_step] 
-            show_index = 0
-            if self.device.index == 0:
-                pbar = tqdm(total=start_time_step[res_step]-2)
-            sd_ver = 0
-            repeat_count = 0
-            variable_steps = True
-            sd = SimpleDiffusion(num_diffusion_timesteps=1024, device=self.device)
-            step_size = 1
-            steps_back = 20
-            repeat = 0
-            min_t = 0
-            while time_step > 1: # needs to be > 1 so that indexing to get betas works below
-                #if time_step < self.args.start_art_reduce and res_step > 0:
-                #    inpaint_mask = imgGpix
-                # based on the time step you can change how much repetition you do to harmonize the
-                # generated diffusion image with the surround image
-                # step size is how many time steps you increment each time 1024/step_size is how many steps it would take
-                # to generate a random image using diffusion
-                # steps_back is the number of steps you go forward before going backward
-                # repeat is how often you do that before subtracting 1 from steps back (that is decrementing the time_step value with step_size)
-                # min_t is the min time that you allow the process to use (modifies steps_back)
-                if variable_steps:
-                    if time_step > 768: #range 1024->769
-                        if sd_ver == 0:
-                            #step_size = 8
-                            step_size = 8
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            sd_ver = 1
-                            #steps_back = 16 # first is 1000->500
-                            steps_back = 8
-                            repeat = 0
-                            min_t = 0
-                    elif time_step > 512:
-                        if sd_ver <= 1:
-                            #step_size = 4
-                            step_size = 4
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            sd_ver = 2
-                            #steps_back = 8 # first is 500 -> 250 - 20%
-                            #steps_back = 12 # first is 500 -> 250 - 20%
-                            steps_back = 16 # first is 500 -> 250 - 20%
-                            repeat = 3
-                            min_t = 0
-                    elif time_step > 256:
-                        if sd_ver <= 2:
-                            #step_size = 4
-                            step_size = 4
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            sd_ver = 3
-                            steps_back = 16 # first is 150/5 = 20 
-                            repeat = 0
-                            min_t = 0
-                    elif time_step > 128:
-                        if sd_ver <= 3:
-                            step_size = 4
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            sd_ver = 4
-                            steps_back = 8 #100->50
-                            repeat = 0
-                            min_t = 0
-                    elif time_step > 64:
-                        if sd_ver <= 4:
-                            step_size = 4
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            sd_ver = 5
-                            steps_back = 4
-                            repeat = 0
-                            min_t = 0
-                    elif time_step > 32:
-                        if sd_ver <= 5:
-                            step_size = 2
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            sd_ver = 5
-                            steps_back = 2
-                            repeat = 0
-                            min_t = 0
-                    else:
-                        if sd_ver <= 6:
-                            step_size = 1
-                            steps_back = 1
-                            sd = SimpleDiffusion(num_diffusion_timesteps=1024//step_size, device=self.device)
-                            repeat = 0
-                            sd_ver = 6
-
-                adj_time_step = (time_step-min_t)//step_size # time value based on the step size
-                #ts = one_ts * adj_time_step * step_size # the model restore has to be in the 0:999 range
-                ts = one_ts * time_step # convert scaler to tensor because during training each image can have a different time_step
-                
-                num_steps = min(adj_time_step,steps_back)
-
-                #if self.args.steps_back_range[0] >= time_step and self.args.steps_back_range[1] <= time_step:
-                #    num_steps = min(adj_time_step,self.args.steps_back)
-                #else:
-                #    num_steps = min(adj_time_step,1)
-                if not self.args.inPaint: # just generate a random image
-                    z = torch.randn_like(x[0:1,:,:,:]) if adj_time_step > 1 else torch.zeros_like(x)
-                    z.repeat(batch_size,1,1,1)
-                    # one is subtracted from the time values below because of the indexing requirements
-                    x = self.p_sample(sd,x,(ts-1),z,one_ts*(adj_time_step-1),ip_model)
-                elif num_steps > 0:
-                    for i in range(num_steps):
-                        z = torch.randn_like(x[0:1,:,:,:]) if adj_time_step > 1 else torch.zeros_like(x)
-                        # if you want to move the inpaint results to match the background, use torch.roll() here
-                        # and after any randn call
-                        z.repeat(batch_size,1,1,1)
-                        adj_time = adj_time_step - i# 
-                        ts = one_ts * (adj_time * step_size)
-                        x = self.p_sample(sd,x,(ts-1),z,one_ts*(adj_time-1),ip_model)
-                        #adj_time_step = adj_time*t_scale
-                        if adj_time > 0:
-                            # use same noise for all the steps
-                            #kwnImg, gt_noise = self.sd.forward_diffusion(mask_img,one_ts*(adj_time-1))
-                            #z = torch.randn_like(mask_img2use[0:1,:,:,:])
-                            #z.repeat(batch_size,1,1,1)
-                            kwnImg, _gtn = sd.forward_diffusion(init_img,one_ts*(adj_time-1),noise2use=z) ### do I really need to adj time???
-                        else:
-                            kwnImg = init_img.detach().clone()
-                        # then blend with what the original should be
-                        x = kwnImg*inpaint_mask + x*(1-inpaint_mask) # this coiuld be zero, but there are more diffusion steps
-                        #x = kwnImg
-                    # going forward in time one less than going backward
-                    if repeat_count == repeat:
-                        num_steps -= 1
-                        repeat_count = 0
-                    else:
-                        repeat_count += 1
-                    num_steps = max(0,num_steps)
-                    for j in reversed(range(num_steps)):
-                        # this portion adds back noise to go backward
-                        #ts += t_scale # increment ts to next output position
-                        #beta_t = get(self.sd.beta, one_ts*(adj_time-1))
-                        beta_t = get(sd.beta, one_ts*(adj_time-1))
-                        z = torch.randn_like(init_img[0:1,:,:,:])
-                        z.repeat(batch_size,1,1,1)
-                        #x = x*torch.sqrt(1-beta_t) + beta_t*z
-                        x = x*torch.sqrt(1-beta_t) + torch.sqrt(beta_t)*z # in the repaint code it's sqrt, in paper it's not.
-                        #kwnImg, gt_noise = self.sd.forward_diffusion(mask_img,one_ts*adj_time)
-                        #x = kwnImg*img_mask + x*nimg_mask
-                        adj_time += 1
-                        #x = kwnImg
-                    #x, gt_noise = self.sd.forward_diffusion(x,one_ts*max(0,(num_steps)))
-                    #x, gt_noise = self.sd.forward_diffusion(x,one_ts*max(0,(time_step-2)))
-                    #kwnImg, gt_noise = self.sd.forward_diffusion(x,one_ts*max(0,time_step-2))
-                    #x = kwnImg*img_mask + x*nimg_mask
-                else:
-                    x = self.p_sample(sd,x,ts,z,one_ts*0,ip_model)
-                    #x = kwnImg*mask + x*(1-mask) # use the original mask because this is the last step
-                    x = kwnImg*inpaint_mask + x*(1-inpaint_mask) # this is safer and can always apply original mask later
-                if time_step <= self.args.show_time_steps[show_index]:
-                    #write the images using the show_time_step in the file name
-                    #fake_data = self.vae.decode(x.detach().clone() / 0.18215).sample
-                    #fake_data = mImg[:,0:3,:,:]*img_mask + fake_data*(1-img_mask)
-                    #temp = kwnImg*mask + x*(1-mask)
-                    fake_data = torch.clip(invScaleImg(x),0,1)
-                    outputs = fake_data.to('cpu')
-                    outputs = bgr2rgb_batch(outputs)
-                    inputs = bgr2rgb_batch(invScaleImg(init_img)).to('cpu')
-                    refImages = bgr2rgb_batch(invScaleImg(ref_img)).to('cpu')
-                    # reorganize the data to display: first row content, second,depth, third vpix
-                    #RGBvPix = 1-torch.cat([inputStack[:,3:4,:,:],inputStack[:,3:4,:,:],inputStack[:,3:4,:,:]],1)
-                    debugImg = torch.cat([inputs,outputs,refImages],0)
-                    img_out = torchvision.utils.make_grid(debugImg,nrow=self.args.batch_size,normalize=False)
-                    #hr_out = torchvision.utils.make_grid(img_inputs[hr_img])
-                    imshow(img_out)
-                    show_index += 1
-                if repeat_count == 0:
-                    time_step -= step_size
-                    if self.device.index == 0:
-                        pbar.update(step_size)
-        if self.args.saveImg:
-            x = torch.clip(x,-1.0,1.0)
-            x = invScaleImg(x)
-            #x = torch.pow(x,img_apl_exp)
-            #x = invScaleImg(stack[:,0:3,:,:])*stack[:,3:4,:,:] + x*(1-stack[:,3:4,:,:])
-            x = invScaleImg(stack[:,0:3,:,:])*mask + x*(1-mask)
-            mask_img = inverse_transform(mask_img,1)
-            img = inverse_transform(img,1)
-            for i in range(len(imgNames)):
-                if self.args.img_subfolder is None:
-                    savePath = self.args.saveImg_path
-                else:
-                    savePath = imgDirs[i]
-                if self.args.saveInput_folder is not None:
-                    saveImg(mask_img[i,:,:,:],savePath,self.args.saveInput_folder,imgNames[i],self.args.saveExt,self.args.saveImgBPC)
-                if self.args.saveOutput_folder is not None:
-                    saveImg(x[i,:,:,:],savePath,self.args.saveOutput_folder,imgNames[i],self.args.saveExt,self.args.saveImgBPC)
-                if self.args.saveRef_folder is not None:
-                    saveImg(img[i,:,:,:],savePath,self.args.saveRef_folder,imgNames[i],self.args.saveExt,self.args.saveImgBPC)
-        if self.device.index == 0:
-            pbar.close()
-        return None  
-
-    def train(self):
-        for epoch in range(self.args.n_epochs):
-            torch.cuda.empty_cache()
-            #gc.collect()
+            adj_time_step = (time_step-min_t)//step_size
+            #ts = one_ts * adj_time_step * step_size # the model restore has to be in the 0:999 range
+            ts = one_ts * time_step # the model restore has to be in the 0:999 range
             
-            # Algorithm 1: Training
-            self._run_epoch(epoch=epoch)
-            torch.distributed.barrier() # wait for all the processes to finish the epoch
-            if self.device.index == 0:
-                self._save_checkpoint(self.args.chk_save_pre,self.args.chk_save_ver)
+            num_steps = min(adj_time_step,steps_back)
 
-def train_model(rank: int, world_size: int, args, device):
-    myRNG = torch.Generator()
-    if args.dif_rng_seed != 0:
-        myRNG.manual_seed(args.dif_rng_seed)
-    new_device = torch.device(device.type,rank) # this creates the device such that cuda and mps look the same
-    ddp_setup(rank, world_size, new_device) # for multi-GPU
-    train_dataset, model, ema_m, optimizer, loss = load_train_objs(args)
-    trainLoader = prepare_dataloader(args, world_size, train_dataset, myRNG)
-    trainer = Trainer(
-            args,
-            trainLoader,
-            model,
-            ema_m,
-            optimizer,
-            loss,
-            new_device,
-            world_size)
-    trainer.train()
-    destroy_process_group()
+            #if self.args.steps_back_range[0] >= time_step and self.args.steps_back_range[1] <= time_step:
+            #    num_steps = min(adj_time_step,self.args.steps_back)
+            #else:
+            #    num_steps = min(adj_time_step,1)
+            if not args.inPaint:
+                z = torch.randn_like(x[0:1,:,:,:]) if adj_time_step > 1 else torch.zeros_like(x)
+                z.repeat(batch_size,1,1,1)
+                ts = one_ts * (adj_time * step_size)
+                x = p_sample(sd,x,ts-1,z,one_ts*(adj_time_step-1),ip_model)
+            elif num_steps >= 0:
+                for i in range(num_steps):
+                    z = torch.randn_like(x[0:1,:,:,:]) if adj_time_step > 1 else torch.zeros_like(x)
+                    #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
+                    z.repeat(batch_size,1,1,1)
+                    adj_time = adj_time_step - i# 
+                    #ts = one_ts * (adj_time * step_size + step_size -1)
+                    ts = one_ts * (adj_time * step_size)
+                    x = p_sample(sd,x,(ts-1),z,one_ts*(adj_time-1),ip_model)
+                    #adj_time_step = adj_time*t_scale
+                    if adj_time > 0:
+                        # use same noise for all the steps
+                        #kwnImg, gt_noise = self.sd.forward_diffusion(mask_img,one_ts*(adj_time-1))
+                        #z = torch.randn_like(mask_img2use[0:1,:,:,:])
+                        #z.repeat(batch_size,1,1,1)
+                        #kwnImg, _gtn = sd.forward_diffusion(init_img,one_ts*(adj_time-1),noise2use=z) # this was the original, but I don't think I need to subtract 1
+                        kwnImg, _gtn = sd.forward_diffusion(init_img,one_ts*(adj_time-1),noise2use=z) # this is correct!!! proved experimentally 10/30/2024
+                    else:
+                        kwnImg = init_img.detach().clone()
+                    # then blend with what the original should be
+                    x = kwnImg*inpaint_mask + x*(1-inpaint_mask) # this coiuld be zero, but there are more diffusion steps
+                    #x = kwnImg
+                # going forward in time one less than going backward
+                if repeat_count == repeat:
+                    num_steps -= 1
+                    repeat_count = 0
+                else:
+                    repeat_count += 1
+                num_steps = max(0,num_steps)
+                for j in reversed(range(num_steps)):
+                    #ts += t_scale # increment ts to next output position
+                    #beta_t = get(self.sd.beta, one_ts*(adj_time-1))
+                    beta_t = get(sd.beta, one_ts*(adj_time-1))
+                    z = torch.randn_like(init_img[0:1,:,:,:])
+                    #z = torch.roll(z,[yOff,xOff],dims=[-2,-1]) # shifting the noise to match the shift in the background
+                    z.repeat(batch_size,1,1,1)
+                    #x = x*torch.sqrt(1-beta_t) + beta_t*z
+                    x = x*torch.sqrt(1-beta_t) + torch.sqrt(beta_t)*z # in the repaint code it's sqrt, in paper it's not.
+                    #kwnImg, gt_noise = self.sd.forward_diffusion(mask_img,one_ts*adj_time)
+                    #x = kwnImg*img_mask + x*nimg_mask
+                    adj_time += 1
+                    #x = kwnImg
+                #x, gt_noise = self.sd.forward_diffusion(x,one_ts*max(0,(num_steps)))
+                #x, gt_noise = self.sd.forward_diffusion(x,one_ts*max(0,(time_step-2)))
+                #kwnImg, gt_noise = self.sd.forward_diffusion(x,one_ts*max(0,time_step-2))
+                #x = kwnImg*img_mask + x*nimg_mask
+            else:
+                x = p_sample(sd,x,ts,z,one_ts*0,ip_model)
+                #x = kwnImg*mask + x*(1-mask) # use the original mask because this is the last step
+                x = kwnImg*inpaint_mask + x*(1-inpaint_mask) # this is safer and can always apply original mask later
+            if time_step <= args.show_time_steps[show_index] and args.showImg:
+                #write the images using the show_time_step in the file name
+                #fake_data = self.vae.decode(x.detach().clone() / 0.18215).sample
+                #fake_data = mImg[:,0:3,:,:]*img_mask + fake_data*(1-img_mask)
+                fake_data = torch.clip(invScaleImg(x),0,1)
+                # undo the gamma adjustment and then merge with the original
+                #fake_data = torch.pow(fake_data,img_apl_exp)
+                #fake_data = image*mask + fake_data*(1-mask)
+                outputs = fake_data.to('cpu')
+                outputs = bgr2rgb_batch(outputs)
+                inputs = bgr2rgb_batch(invScaleImg(init_img)).to('cpu')
+                #refImages = bgr2rgb_batch(invScaleImg(ref)).to('cpu')
+                # reorganize the data to display: first row content, second,depth, third vpix
+                #RGBvPix = 1-torch.cat([inputStack[:,3:4,:,:],inputStack[:,3:4,:,:],inputStack[:,3:4,:,:]],1)
+                debugImg = torch.cat([inputs,outputs],0)
+                img_out = torchvision.utils.make_grid(debugImg,nrow=batch_size,normalize=False)
+                #hr_out = torchvision.utils.make_grid(img_inputs[hr_img])
+                # imshow(img_out)
+                show_index += 1
+            if repeat_count == 0:
+                time_step -= step_size
+                if device.index == 0:
+                    pbar.update(step_size)
+    if args.saveImg:
+        x = torch.clip(x,-1.0,1.0)
+        x = invScaleImg(x)
+        x =  np.transpose((x.detach().cpu().numpy()*255).astype('uint8')[0],(1,2,0))
+        write(sp,x)
+        #x = torch.pow(x,img_apl_exp)
+        #x = invScaleImg(stack[:,0:3,:,:])*stack[:,3:4,:,:] + x*(1-stack[:,3:4,:,:])
+        #x = invScaleImg(refImages)
+        #mask_img = inverse_transform(mask_img,1)
+        #img = inverse_transform(img,1)
+        #for i in range(len(args.img_name)):
+            #if args.img_subfolder is None:
+        # savePath = args.saveImg_path
+        #     #else:
+        #     #    savePath = imgDirs[i]
+        # if args.saveOutput_folder is not None:
+        #     saveImg(x[i,:,:,:],savePath,args.saveOutput_folder,args.img_name,args.saveExt,args.saveImgBPC)
+        #if last_batch:
+        #    print(f'last batch {self.device}')
+            #mytensor = torch.tensor([torch.distributed.get_rank()], dtype=torch.int32,device=self.device.type)
+            ##tensors need to be dense and cuda for gather
+            #if torch.distributed.get_rank() == 0:
+            #    gpu_list =  [mytensor.clone() for _ in range(torch.distributed.get_world_size())]
+            #    torch.distributed.gather(tensor=mytensor,gather_list=gpu_list)
+            #    print(f'GPUs used:{gpu_list}')
+            #else:
+            #    torch.distributed.gather(tensor=mytensor)
+
+    # pbar.close()
+    return None     
 
 if __name__ == '__main__':
-    if(torch.cuda.is_available()):
-        device = torch.device('cuda',0)
-    elif(torch.backends.mps.is_available()):
-        device = torch.device('mps',0)
-        #device = torch.device('cpu',0) # debug on CPU so I don't slow down training
-    else:
-        device = torch.device('cpu')
-
     
     import argparse
     parser = argparse.ArgumentParser(description='simple distributed training job')
-    parser.add_argument('--location', default='home', help='location of GPU used: home, truecut overide path settings (default: home)')
-    parser.add_argument('--max_wSize', default=4, type=int, help='max number of GPUs to use (default: 4)')
-    parser.add_argument('--visableCUDA', default = '0,1,2,3,4,5,6,7', help='string with list of GPUs (eg 4, 5, 6, 7)')
-    parser.add_argument('--n_epochs', default=500, type=int, help='Total epochs to train the model (default: 1)')
-    parser.add_argument('--save_every', default=1024, type=int, help='How often to save a snapshot (default: 200)')
-    parser.add_argument('--stats_every', default=64, type=int, help='How often to print statistics (default: 50)')
-    parser.add_argument('--batch_size', default=32, type=int, help='Input batch size on each device (default: 1)')
-    parser.add_argument('--num_batches', default=8, type=int, help='number of batches to accumulate before backward (default: 10)')
-    parser.add_argument('--chk_save_pre', default='checkPoint/ddpm', help='version of checkpt to save(default: OFSRCNN14)')
-    parser.add_argument('--chk_load_pre', default='checkPoint/ddpm', help='version of checkpt to save(default: OFSRCNN14)')
-    parser.add_argument('--chk_save_ver', default='mdl1024_v8a', help='version of checkpt to save(default: v7sa)')
-    parser.add_argument('--chk_load_ver', default='mdl512_v8a', help='version of checkpt to save(default: v7sa)')
-    parser.add_argument('--chk_load_hd_ver', default='mdl1024_v8a', help='version of checkpt to load')
-    parser.add_argument('--loadModel', default=False, type=bool, help='load CNN model (default=True))')
-    parser.add_argument('--loadEMA', default=True, type=bool, help='load EMA CNN model (default=True))')
-    parser.add_argument('--min_ema_decay', default=256, type=float, help='decay rate for ema model, default is equivalent of adding 1e-4')
-    parser.add_argument('--max_ema_decay', default=8196, type=float, help='decay rate for ema model, default is equivalent of adding 1e-4')
-    parser.add_argument('--imgLR', default=4e-5, type=float, help='MV learning rate (default: 5e-6)')
-    parser.add_argument('--num_workers', default=2, type=int, help='number of dataloader processes(default: 0)')
+    # parser.add_argument('--location', default='home', help='version of checkpt to save(default: OFSRCNN14)')
+    parser.add_argument('--root', type=str,required=False, help='data root')
+    parser.add_argument('--output', type=str,required=False, help='data output')
+    # parser.add_argument('--algo', type=str, default='ddpm_ema_m_mdl1k_v9c_base')
+    parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
+    parser.add_argument('--img_folder_name', type=str, default='image')
+    parser.add_argument('--device', type=str, default='mps')
+    
+
+    # parser.add_argument('--chk_load_pre', default='checkPoint/ddpm', help='version of checkpt to save(default: OFSRCNN14)')
+    # parser.add_argument('--chk_lowRes_ver', default='mdl512_v8a', help='version of checkpt to load')
+    # parser.add_argument('--chk_HiRes_ver', default='mdl512_v8a', help='version of checkpt to load')
     
     parser.add_argument('--time_steps', default=1024, type=int, help='number of diffusion time steps (default: 1024)')
-    parser.add_argument('--dropout_p', default=.0625, type=float, help='number of random layers to drop (default: 0.0625)')
-    parser.add_argument('--dif_rng_seed',default=0, type=int, help='seed to use for diffusion inference 0=>rand seed for all other(default: 0)')
-    parser.add_argument('--dataset_name', default='flowers', help='version of checkpt to save(default: OFSRCNN14)')
-    parser.add_argument('--dataset_root', default='dummy', help='path to dataset folder when location is not home or truecut')
-    #parser.add_argument('--dataset_folder', default=["external/R5"],type=list, help='root folder for datasets (default: /Volumes/neil_SSD/datasets/)')
-    #parser.add_argument('--mask_folder', default='inPaintMask/train/random_masks', help='folder for masks')
-    #parser.add_argument('--dataset_folder', default=["RPresult_JA130/Right"],type=list, help='root folder for datasets (default: /Volumes/neil_SSD/datasets/)')
-    #parser.add_argument('--mask_folder', default='RPresult_JA130/Right', help='folder for masks')
-    #parser.add_argument('--dataset_folder', default=["aba_r5_3220/Source_Left/source"],type=list, help='root folder for dataset')
-    #parser.add_argument('--mask_folder', default='aba_r5_3220/fg_r5_3220/mask_fg', help='folder for masks')
-    #parser.add_argument('--dataset_folder', default=["imagenet-1k/train","raw_celeba/img_celeba","DIV2K/images","AIM500/original","woodall"],type=list, help='root folder for datasets (default: /Volumes/neil_SSD/datasets/)')
-    parser.add_argument('--dataset_folder', default=["imagenet-1k/train","raw_celeba/img_celeba"],type=list, help='root folder for datasets (default: /Volumes/neil_SSD/datasets/)')
-    parser.add_argument('--mask_folder', default=["inPaintMask/train/random_masks/"], help='folder for masks')
-    parser.add_argument('--img_subfolder', default=None, help='sub folder for masks, None = search all sub folders')
-    parser.add_argument('--mask_subfolder', default=None, help='folder for masks, None = search all sub folders')
-    parser.add_argument('--sizeMult', default=64, type=int, help='pixel mulitple image needs to be)')
-    parser.add_argument('--sizeLayers', default=6, type=int, help='log2 of sizeMult')
-    #parser.add_argument('--imgSize', default=(512,1024), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    #parser.add_argument('--imgSize', default=(1024,1024), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    #parser.add_argument('--imgSize', default=(1152,2176), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    parser.add_argument('--imgSize', default=(512,512), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    #parser.add_argument('--imgSize', default=(1024,2048), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    #parser.add_argument('--imgSize', default=(512,1024), type=int, nargs=2, help='pixel mulitple image needs to be)')
-    parser.add_argument('--imgScale', default=True, type=bool, help='optionally scale image before center crop')
-    parser.add_argument('--imgIs16', default=False, type=bool, help='image is 16 bits/color (default=True)')
-    parser.add_argument('--imgChnl', default=3, type=int, help='number of color channels to use (default=3)')
-
-    parser.add_argument('--maskIsPV', default=False, type=bool, help='high value is pixel valid (default: False)')
+    parser.add_argument('--dropout_p', default=.125, type=float, help='number of diffusion time steps (default: 1000)')
+    #parser.add_argument('--time_emb_mult', default=4, type=int, help='number of diffusion time steps (default: 1000)')
+    #parser.add_argument('--dif_rng_seed',default=0, type=int, help='rng seed for diffustion, 0=>rand seed (default: 0)')
+    parser.add_argument('--dif_rng_seed',default=4713, type=int, help='rng seed for diffustion, 0=>rand seed (default: 0)')
+    parser.add_argument('--img_folder', default="toNeil_1023/render_out_1023_JM3",help='root folder for datasets (default: /Volumes/neil_SSD/datasets/)')
+    parser.add_argument('--img_name', default="Out_1122",help='root folder for datasets (default: /Volumes/neil_SSD/datasets/)')
+    parser.add_argument('--img_ext', default=".exr",help='leading period to be compatible with extension found via parsing')
+    parser.add_argument('--mask_folder', default="toNeil_1023/AIpainting_mask", help='folder for masks')
+    parser.add_argument('--mask_name', default="1122", help='folder for masks')
+    parser.add_argument('--mask_ext', default=".exr", help='leading period to be compatible with extension found via parsing')
+    parser.add_argument('--mask_suffix', default=["_P1","_F1"],type=list, help='folder for masks')
+    #parser.add_argument('--imgSize', default=(512,512), type=int, nargs=2, help='pixel mulitple image needs to be)')
+    parser.add_argument('--imgSize', default=(1024,2048), type=int, nargs=2, help='pixel mulitple image needs to be)')
+    # parser.add_argument('--imgSize', default=(256,512), type=int, nargs=2, help='pixel mulitple image needs to be)')
+    parser.add_argument('--imgIs16', default=False, type=bool, help='load input CNN section (default=False))')
+    parser.add_argument('--imgChnl', default=3, type=int, help='number of color channels to use (default=1)')
+    #parser.add_argument('--chromaKey', default=None, help='set to None to disable')
+    parser.add_argument('--chromaKey', default=[0,0,0], help='set to None to disable')
+    parser.add_argument('--maskIsPV', default=True, type=bool, help='high value is pixel valid (default: False)')
     parser.add_argument('--maskIs16', default=False, type=bool, help='mask is 16 bit (default: False)')
-    parser.add_argument('--chromaKey', default=None, help='set to None to disable otherwise 3 value tuple range 0:1')
-    parser.add_argument('--getRandMask', default=True, type=bool, help='get a random mask and not masks paired with image')
-    parser.add_argument('--makeMaskBinary', default=True, type=bool, help='only 100% valid pixels marked as valid pixels')
+    #parser.add_argument('--getRandMask', default=False, type=bool, help='get a random mask and not masks paired with image')
+    parser.add_argument('--makeMaskBinary', default=True, type=bool, help='use mask information for training or inference')
     parser.add_argument('--dilateHoleMult',default=1,type=int,help='number of times to do 3x3 max operation on hole')
-    parser.add_argument('--inMaskG', default=512., type=float, help='mask gain value (default: 512)')
-    #parser.add_argument('--maskOff', default=[0.375,0], type=float, nargs=2, help='mask offset only [0] is used(default: [0.375,0])')
 
+    parser.add_argument('--start_art_reduce',default=256,type=int,help='number of times to do 3x3 max operation on hole')
+    parser.add_argument('--dilate_art_reduce',default=1,type=int,help='number of times to do 3x3 max operation on hole')
     parser.add_argument('--showImg', default=True, type=bool, help='display a batch of images (default=False)')
-    parser.add_argument('--inPaint', default=True, type=bool, help='do inpainting instead of normal diffusion (default=True)')
-    #parser.add_argument('--steps_back', default = 25, type=int, help='number of steps forward in time when gen image')
-    #parser.add_argument('--steps_back_range', default =[1024,1], nargs=2, type=int, help='range for going back and forth in time')
+    parser.add_argument('--inPaint', default=True, type=bool, help='display a batch of images (default=False)')
+    parser.add_argument('--steps_back', default = 8, type=int, help='number of steps forward in time when gen image')
+    parser.add_argument('--steps_back_range', default =[1024,1], nargs=2, type=int, help='range for going back and forth in time')
     
     parser.add_argument('--start_sample_steps', default =1024,type=int, help='starting time step for generating image')
+    #parser.add_argument('--num_sample_steps', default =1000, type=int, help='number of steps in generating an image')
     #parser.add_argument('--show_time_steps', default=[999,800,500,249,128,64,32,16,8,4,2,1,0], type=int, help='time steps to show progress')
-    parser.add_argument('--show_time_steps', default=[1023,512,256,128,64,32,4,2,1,0], nargs='*', type=int, help='time steps to show progress, set to zero to skip')
+    parser.add_argument('--num_sample_steps', default =256, type=int, help='number of steps in generating an image')
+    #parser.add_argument('--show_time_steps', default=[1023,768,512,256,128,64,4,2,1,0], nargs='*', type=int, help='time steps to show progress, set to zero to skip')
+    #parser.add_argument('--show_time_steps', default=[1023,768,512,256,128,64,4,2,1,0], nargs='*', type=int, help='time steps to show progress, set to zero to skip')
     #parser.add_argument('--show_time_steps', default=[1023,4,2,1,0], nargs='*', type=int, help='time steps to show progress, set to zero to skip')
-    #parser.add_argument('--show_time_steps', default=[0], nargs='*', type=int, help='time steps to show progress, set to zero to skip')
-    parser.add_argument('--showImg_num', default=2, type=int, help='number of images to generate if showImg is true')
+    parser.add_argument('--show_time_steps', default=[0], nargs='*', type=int, help='time steps to show progress, set to zero to skip')
+    parser.add_argument('--showImg_num', default=2, type=int, help='number of images to generate')
 
-    parser.add_argument('--saveImg', default=False, type=bool, help='save a batch of images (default=False)')
-    parser.add_argument('--saveAs8bit', default=False, type=bool, help='save as an 8 bit/color image, ignored for exr (default is true)')
-    parser.add_argument('--saveImg_path', default='images', help='folder where images are save')
-    parser.add_argument('--saveExt', default='tif', help='type of image to save (default: jpg)')
-    parser.add_argument('--saveInput_folder', default=None, help='subfolder for input image (defult=Input)')
-    parser.add_argument('--saveOutput_folder', default='Output', help='subfolder for output image (defult=Output)')
-    parser.add_argument('--saveRef_folder', default=None, help='subfolder for reference image (defult=Reference)')
-
+    parser.add_argument('--saveImg', default=True, type=bool, help='save a batch of images (default=False)')
+    parser.add_argument('--saveImg_path', default='Output4713f_16_16_8', help='version of checkpt to save(default: v7sa)')
+    parser.add_argument('--saveImgBPC', default = 16, type=int, help='number of bits per color channel, ignored for exr extension')
+    parser.add_argument('--saveExt', default='.exr', help='folder for reference image (None=>dont save)')
+    parser.add_argument('--saveInput_folder', default='Input', help='folder for input image (None=>dont save)')
+    parser.add_argument('--saveOutput_folder', default='Output', help='folder for output image (None=>dont save)')
+    parser.add_argument('--saveRef_folder', default='Reference', help='folder for reference image (None=>dont save)')
+    
+    
     args = parser.parse_args()
+    fp = os.path.dirname(os.path.abspath(__file__))
+    algos = ['ddpm_ema_m_mdl512_v8a','ddpm_ema_m_mdl512_v8a']
+    for i in range(2):
+        algo = algos[i]
+        ckpt_path = os.path.join(fp,'../..','checkpoints',algo)
+        if '.pth'not in ckpt_path:
+            ckpt_path+='.pth'
+        if i ==0:
+            args.chk_lowRes_ver = ckpt_path
+        else:
+            args.chk_HiRes_ver = ckpt_path
+        
+        if not os.path.isfile(ckpt_path):
+            download_url = ckpt_path
+            md = args.server
+            md += '/inpaint'
+            md += '/' + algo + '.pth'
+            print(download_url,md)
+            flag = check_and_download_pth_file(download_url,md)
+            if not flag:
+                raise NotImplementedError(f'[MM ERROR][model]model file not exists:{algo},please use mmalgo to check')
 
-    if args.location == 'home':
-        args.chk_save_pre='checkpoints/base/ddpm'
-        args.chk_load_pre='checkpoints/base/ddpm'
-        args.dataset_root='/Volumes/neil_SSD/datasets/'
-        args.saveImg_path = 'images'
-    elif args.location =='truecut':
-        args.chk_save_pre='/tt/ssd0/checkPoint/ddpm'
-        args.chk_load_pre='/tt/ssd0/checkPoint/ddpm'
-        args.dataset_root='/tt/ssd0/datasets/'
-        args.saveImg_path = '/tt/ssd0/neil/images'
+    # if args.location == 'home':
+    #     args.chk_save_pre='checkpoints/base/ddpm'
+    #     args.chk_load_pre='checkpoints/base/ddpm'
+    #     args.dataset_root='/Volumes/neil_SSD/datasets/'
+    # elif args.location =='truecut':
+    #     args.chk_save_pre='/tt/ssd0/checkPoint/ddpm'
+    #     args.chk_load_pre='/tt/ssd0/checkPoint/ddpm'
+    #     args.dataset_root='/tt/ssd0/datasets/'
+    # elif args.location =='custom':
+    #     args.chk_save_pre='checkpoints/base/ddpm'
+    #     args.chk_load_pre='checkpoints/base/ddpm'
+    #     args.dataset_root='~/Desktop/'
 
-    if args.showImg:
-        args.max_wSize = 1
-        args.batch_size = args.showImg_num
-    else:
-        if args.saveImg:
-            args.show_time_steps = [0]      
-        #args.time_steps = args.num_sample_steps
+    # if(torch.cuda.is_available()):
+    #     device = torch.device('cuda',0)
+    # elif(torch.backends.mps.is_available()):
+    #     device = torch.device('mps',0)
+    #     #device = torch.device('cpu',0) # debug on CPU so I don't slow down training
+    # else:
+    #     device = torch.device('cpu')
 
-    if args.showImg or args.saveImg:
-        args.n_epochs = 1
-
-    if device.type == 'cuda':
-    #if device.is_cuda():
-        world_size = min(args.max_wSize,torch.cuda.device_count())
-        if args.visableCUDA is not None:
-            os.environ['CUDA_VISIBLE_DEVICES'] = args.visableCUDA
-    else:
-        world_size = 1
-    #train_model(CHECK_PT_SAVE,NUM_EPOCHS,B_SZ)
-    if device.type != 'cuda':
+    device = args.device
+    assert device in ['cpu','mps','cuda']
+    if device != 'cuda':
         os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-
 
     # Set random seed for reproducibility
     #os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
@@ -854,6 +746,37 @@ if __name__ == '__main__':
     random.seed(manualSeed)
     torch.manual_seed(manualSeed)
 
-    #inputDebug()
+    # load the models
+    model_low_res, model_high_res = load_train_objs(args,device)
 
-    mp.spawn(train_model, args=(world_size, args, device), nprocs=world_size)
+    if args.img_folder_name is not None:
+        prepares = []
+        for dirpath, dirnames, filenames in os.walk(args.root):
+            if args.img_folder_name in dirnames:
+                prepares.append(os.path.join(dirpath,args.img_folder_name))
+    else:
+        prepares = [args.root]
+
+
+    for prepare in prepares:
+        # filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
+        cur_dir = os.path.dirname(prepare)
+        filenames = jhelp_file(os.path.join(cur_dir,'image'))
+        mask_dir = os.path.join(prepare,'mask')
+        masks = [jhelp_file(os.path.join(cur_dir,'mask'))] if os.path.isdir(os.path.join(cur_dir,'mask')) else [jhelp_file(os.path.join(cur_dir,'mask_CF'))]
+        for mask_suffix in args.mask_suffix:
+            if os.path.isdir(os.path.join(cur_dir,'mask'+mask_suffix)):
+                masks.append(jhelp_file(os.path.join(cur_dir,'mask'+mask_suffix)))
+        for k, filename in enumerate(filenames):
+            print(f'Progress {k+1}/{len(filenames)}: {filename}')
+            # load the data
+            mask = []
+            for m in masks:
+                mask.append(m[k])
+            image, imgVpix, imgGpix = get_data_single(filename,mask,args)
+            # show the image
+            # convert image to look like a batch of 1 because get_data only returns 3 dim.
+            sp = os.path.join(args.output,os.path.basename(filename)).replace('.exr','.png')
+            show_img(args,model_low_res,model_high_res,image.unsqueeze(0), imgVpix.unsqueeze(0), imgGpix.unsqueeze(0), device,sp)
+
+            # --root /Users/qhong/Downloads/aipaiting_1112 --output /Users/qhong/Downloads/aipaiting_1112/output
