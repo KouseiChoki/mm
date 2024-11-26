@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-30 12:23:16
+LastEditTime: 2024-11-26 13:30:01
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -185,6 +185,8 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     points,rgbs = [],[]
     tmp_points,tmp_rgbs = [],[]
     fg_ply_data = None
+    if ins['h']<=0 or ins['w']<=0:
+        ins['h'],ins['w'] = read(images[0]).shape[:2]
     for i in range(nums): 
         w,h = int(ins['w']),int(ins['h'])
         etmp,c2w,rub = cal_qvec(ext[i])
@@ -379,12 +381,18 @@ if __name__ == '__main__':
             for tmp in tmps:
                 shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
         path = os.path.join(args.root,'raw')
-    intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
-    extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
-    # data = read_rtf(rtf)
-    # lines = data.strip().split('\n')
-    # rows = [list(map(float, line.split())) for line in lines[1:]]
-    #prune data
+
+    if len(gofind(jhelp_file(path),'.fbx'))>0:
+        from fbx2json import fbx_reader
+        fbx_file = gofind(jhelp_file(path),'.fbx')[0]
+        ext_,focal_length = fbx_reader(fbx_file)
+        instrinsics = {}
+        instrinsics['w'],instrinsics['h'],instrinsics['fx'],instrinsics['fy'] = 0,0,focal_length,focal_length
+    else:
+        intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
+        extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
+        instrinsics = read_intrinsic(intrinsic_file)
+        ext_ = read_extrinsics(extrinsic_file)
     try:
         image_folder = gofind(jhelp_folder(path),'images')[0]
         mask_folder = gofind(jhelp_folder(path),'masks')[0]
@@ -398,7 +406,6 @@ if __name__ == '__main__':
     if args.mask_type != 'nomask':
         assert len(masks)>0,'can not find mask file!'
     
-    ext_ = read_extrinsics(extrinsic_file)
     if len(images) <= args.max_frame:
         images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
         masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]]
@@ -448,7 +455,7 @@ if __name__ == '__main__':
     extrinsics_ = read_extrinsics(extrinsic_file)
     extrinsics = [[extrinsics_[ii] for ii in i]for i in task_indexes]
     #需要判断重复元素 --root /Users/qhong/Desktop/avatar_data/2039 --max_frame 5 --step 2  --inverse_depth  --mask_type fg 
-    instrinsics = read_intrinsic(intrinsic_file)
+    
     source_ext = []
     source_ins = []
     for ext in ext_:

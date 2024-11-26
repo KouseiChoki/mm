@@ -246,4 +246,5 @@ def main():
 
 if __name__ == "__main__":
     # main()
-    fbx2json('/Users/qhong/Documents/1117test/MM/motionmodel/algo/conversion_tools/pointcloud/testdata/test.fbx')
+    fbx2json('/Users/qhong/Downloads/UE_pattern_1113 1.fbx')
+    # fbx2json('/Users/qhong/Documents/1117test/MM/mm/algo/conversion_tools/pointcloud/testdata/r5_3220_scene_camera_0621.fbx')
