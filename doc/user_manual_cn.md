@@ -109,7 +109,7 @@ threshold取值为0-1，对于前景mask的情况下，0代表外圈，1代表�
 通过执行mmupdate或bash tools/shortcut_zsh.sh 安装快捷方式(bash终端执行shortcut_bp.sh)
 
 
-# mmexrreader
+# mmexrreader(python algo/conversion_tools/exr_processing/cal_mv.py)
 作用：对unreal导出的exr文件计算mv和depth等信息并进行导出
 
 ## 参数说明
@@ -234,7 +234,7 @@ threshold取值为0-1，对于前景mask的情况下，0代表外圈，1代表�
 
 
 
-# mmevaluate
+# mmevaluate (python algo/conversion_tools/MM_evaluate.py)
 作用：评估mm模型
 
 
@@ -246,7 +246,7 @@ threshold取值为0-1，对于前景mask的情况下，0代表外圈，1代表�
 如需更改评估数据输入输出地址，请修改 mm/evaluation/config_evaluation 中的root和output
 
 
-# mmply
+# mmply (python algo/conversion_tools/pointcloud/cal_ply.py)
 作用: 根据unreal输入源生成ply点云文件以及colmap格式内外参信息
 
 ## 参数说明
@@ -344,7 +344,7 @@ threshold取值为0-1，对于前景mask的情况下，0代表外圈，1代表�
 
 
 
-# mmip
+# mmip (export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/inpaint/diffusion_inpaint_v1.py)
 作用：配置inpainting任务
 
 ## 参数说明
