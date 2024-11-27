@@ -305,7 +305,7 @@ def fbx2json(fn):
     fn_json = "%s.json" % os.path.splitext(fn)[0]
     print("Writing: %r " % fn_json, end="")
     fbx_root_elem, fbx_version = parse(fn, use_namedtuple=True)
-    print("(Version %d) ..." % fbx_version)
+    print("(FBX Version is %d) ..." % fbx_version)
 
     with open(fn_json, 'w', encoding="ascii", errors='xmlcharrefreplace') as f:
         fw = f.write
@@ -356,7 +356,7 @@ def fbx_reader(fn,sp=None):
     match = re.findall(pattern, data)
     focal_length = match[-1]
     final_res = [[results[0][i],results[1][i],results[2][i],results[3][i],results[4][i],results[5][i]]for i in range(len(results[0]))]
-    return final_res,focal_length
+    return final_res,float(focal_length)
 # ----------------------------------------------------------------------------
 # Command Line
 

@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-11-26 13:30:01
+LastEditTime: 2024-11-27 10:15:39
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -58,7 +58,7 @@ def init_param():
     parser.add_argument('--root',  help="your data path", required=True)
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
-    parser.add_argument('--max_frame',type=int, default=999,help="max generated frames")
+    parser.add_argument('--max_frame',type=int, default=3,help="max generated frames")
     parser.add_argument('--baseline_distance', type=float, default=0,help="baseline_distance")
     parser.add_argument('--f', action='store_true', help="force run")
     parser.add_argument('--mask_type', type=str,default='nomask', help="bg or mix",choices=['nomask','bg','mix'])
@@ -186,7 +186,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     tmp_points,tmp_rgbs = [],[]
     fg_ply_data = None
     if ins['h']<=0 or ins['w']<=0:
-        ins['h'],ins['w'] = read(images[0]).shape[:2]
+        ins['h'],ins['w'] = read(images[0],type='image').shape[:2]
     for i in range(nums): 
         w,h = int(ins['w']),int(ins['h'])
         etmp,c2w,rub = cal_qvec(ext[i])
@@ -448,12 +448,6 @@ if __name__ == '__main__':
     #         tmp_task_indexes.append(task_indexes[i])
     # curs = tmp_curs
     # task_indexes = tmp_task_indexes
-
-    images_prepare = [[images[ii] for ii in i]for i in task_indexes]
-    masks_prepare = [[masks[ii] for ii in i]for i in task_indexes]
-    depths_prepare = [[depths[ii] for ii in i]for i in task_indexes]
-    extrinsics_ = read_extrinsics(extrinsic_file)
-    extrinsics = [[extrinsics_[ii] for ii in i]for i in task_indexes]
     #需要判断重复元素 --root /Users/qhong/Desktop/avatar_data/2039 --max_frame 5 --step 2  --inverse_depth  --mask_type fg 
     
     source_ext = []
