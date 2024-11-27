@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-11-27 10:43:02
+LastEditTime: 2024-11-27 15:28:26
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -163,7 +163,22 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
     return points_world
 
-def cal_qvec(data):
+# def cal_qvec(data):
+#     rx,ry,rz,tx,ty,tz = data
+#     rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
+#     c2w = np.eye(4,4)
+#     if args.baseline_distance!=0:
+#         tx += args.baseline_distance
+#     c2w[:3,:3] = rotation_matrix
+#     c2w[:3,-1] = [tx,ty,tz]
+#     rub = c2w.copy() if args.rub else None
+#     w2c = np.linalg.inv(c2w)
+#     qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
+#     tvec0,tvec1,tvec2 = w2c[:3, 3]
+#     return np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),c2w,rub
+
+
+def cal_qvec_rub_to_rdf(data):
     rx,ry,rz,tx,ty,tz = data
     rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
     c2w = np.eye(4,4)
@@ -185,11 +200,11 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     points,rgbs = [],[]
     tmp_points,tmp_rgbs = [],[]
     fg_ply_data = None
-    if ins['h']<=0 or ins['w']<=0:
-        ins['h'],ins['w'] = read(images[0],type='image').shape[:2]
     for i in range(nums): 
         w,h = int(ins['w']),int(ins['h'])
-        etmp,c2w,rub = cal_qvec(ext[i])
+        # etmp,c2w,rub = cal_qvec_unreal_to_rdf(ext[i])
+        etmp,c2w,rub = cal_qvec_rub_to_rdf(ext[i])
+        
         image_info = ImageInfo(uid=index,extrinsic=etmp,rub=rub)
         image_infos.append(image_info)
         cam_info = CameraInfo(uid=index, fx=ins['fx'],fy=ins['fy'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=w, height=h,model="PINHOLE")
@@ -312,28 +327,29 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     # if args.baseline_distance==0:
     if ply_data is not None:
         ply_data.write(ply_path)
-    if args.judder_angle!= -1:
-        print('writing ja file')
-        image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
-        sp += f'_ja_{args.judder_angle}'
-        shutil.rmtree(sp,ignore_errors=True)
-        sparse_path = os.path.join(sp,'sparse/0')
-        mkdir(sparse_path)
-        # Write out the images.
-        mkdir(os.path.join(sp , "images"))
-        for image in images:
-            shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
-        mkdir(os.path.join(sp , "masks"))
-        for mask in masks:
-            shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
-        # if mask_folder is not None:
-        #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
-        # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
-        write_colmap_model(sparse_path,cam_infos,image_infos,step=args.step)
-        # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
-        # if args.baseline_distance==0:
-        if ply_data is not None:
-            ply_data.write(ply_path)
+    
+    # if args.judder_angle is not None and args.judder_angle!= -1:
+    #     print('writing ja file')
+    #     image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
+    #     sp += f'_ja_{args.judder_angle}'
+    #     shutil.rmtree(sp,ignore_errors=True)
+    #     sparse_path = os.path.join(sp,'sparse/0')
+    #     mkdir(sparse_path)
+    #     # Write out the images.
+    #     mkdir(os.path.join(sp , "images"))
+    #     for image in images:
+    #         shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
+    #     mkdir(os.path.join(sp , "masks"))
+    #     for mask in masks:
+    #         shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
+    #     # if mask_folder is not None:
+    #     #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
+    #     # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
+    #     write_colmap_model(sparse_path,cam_infos,image_infos,step=args.step)
+    #     # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
+    #     # if args.baseline_distance==0:
+    #     if ply_data is not None:
+    #         ply_data.write(ply_path)
     
 def read_intrinsic(intrinsic_file):
     res = {}
@@ -382,17 +398,6 @@ if __name__ == '__main__':
                 shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
         path = os.path.join(args.root,'raw')
 
-    if len(gofind(jhelp_file(path),'.fbx'))>0:
-        from fbx2json import fbx_reader
-        fbx_file = gofind(jhelp_file(path),'.fbx')[0]
-        ext_,focal_length = fbx_reader(fbx_file)
-        instrinsics = {}
-        instrinsics['w'],instrinsics['h'],instrinsics['fx'],instrinsics['fy'] = 0,0,focal_length,focal_length
-    else:
-        intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
-        extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
-        instrinsics = read_intrinsic(intrinsic_file)
-        ext_ = read_extrinsics(extrinsic_file)
     try:
         image_folder = gofind(jhelp_folder(path),'images')[0]
         mask_folder = gofind(jhelp_folder(path),'masks')[0]
@@ -406,6 +411,21 @@ if __name__ == '__main__':
     if args.mask_type != 'nomask':
         assert len(masks)>0,'can not find mask file!'
     
+    if len(gofind(jhelp_file(path),'.fbx'))>0:
+        from fbx2json import fbx_reader
+        instrinsics = {}
+        instrinsics['h'],instrinsics['w'] = read(images[0],type='image').shape[:2]
+        fbx_file = gofind(jhelp_file(path),'.fbx')[0]
+        ext_,[fw,fh] = fbx_reader(fbx_file)
+        focal_length_x = instrinsics['w']  * fw
+        focal_length_y = instrinsics['h']  * fh
+        instrinsics['fx'],instrinsics['fy'] = focal_length_x,focal_length_y
+    else:
+        intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
+        extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
+        instrinsics = read_intrinsic(intrinsic_file)
+        ext_ = read_extrinsics(extrinsic_file)
+
     if len(images) <= args.max_frame:
         images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
         masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]]
@@ -450,13 +470,13 @@ if __name__ == '__main__':
     # task_indexes = tmp_task_indexes
     #需要判断重复元素 --root /Users/qhong/Desktop/avatar_data/2039 --max_frame 5 --step 2  --inverse_depth  --mask_type fg 
     
-    source_ext = []
-    source_ins = []
-    for ext in ext_:
-        tmp,_,_ = cal_qvec(ext)
-        source_ext.append(tmp)
-        source_ins.append(instrinsics)
-    source_ext = np.stack(source_ext)
+    # source_ext = []
+    # source_ins = []
+    # for ext in ext_:
+    #     tmp,_,_ = cal_qvec(ext)
+    #     source_ext.append(tmp)
+    #     source_ins.append(instrinsics)
+    # source_ext = np.stack(source_ext)
     
     for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
         args.cur = curs[i]
@@ -471,14 +491,14 @@ if __name__ == '__main__':
         save_path = os.path.join(path,'..','pointcloud',name)
         ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
 
-        if i < len(images_prepare):
-            if i == len(images_prepare)-1:
-                image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None)]
-                cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE")]
-            else:
-                image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None),ImageInfo(uid=i+1,extrinsic=source_ext[i+1],rub=None)]
-                cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE"),CameraInfo(uid=i+1, fx=float(source_ins[i+1]['fx']),fy=float(source_ins[i+1]['fy']),cx=int(source_ins[i+1]['w'])/2.0 ,cy=int(source_ins[i+1]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i+1]['w']), height=int(source_ins[i+1]['h']),model="PINHOLE")]
-            write_colmap_model(os.path.join(save_path,'sparse/0'),cam_infos,image_infos,'.jatxt')
+        # if i < len(images_prepare):
+        #     if i == len(images_prepare)-1:
+        #         image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None)]
+        #         cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE")]
+        #     else:
+        #         image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None),ImageInfo(uid=i+1,extrinsic=source_ext[i+1],rub=None)]
+        #         cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE"),CameraInfo(uid=i+1, fx=float(source_ins[i+1]['fx']),fy=float(source_ins[i+1]['fy']),cx=int(source_ins[i+1]['w'])/2.0 ,cy=int(source_ins[i+1]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i+1]['w']), height=int(source_ins[i+1]['h']),model="PINHOLE")]
+        #     write_colmap_model(os.path.join(save_path,'sparse/0'),cam_infos,image_infos,'.jatxt')
 
         # HEADER = (f'extra information for judder_angle renders,cf={str(i)}')
         # np.savetxt(os.path.join(save_path,'sparse/0/ja_images.txt'),source_ext[i:i+2],header=HEADER)

@@ -296,13 +296,20 @@ def fbx_reader(fn,sp=None):
         array = [list(map(float, group.split(','))) for group in array_str.split('], [')]
         results.append(array[0])
 
-    # 获取焦距
-    pattern = r'"FocalLength".*?(\d+\.\d+)'
-    # 查找匹配
-    match = re.findall(pattern, data)
-    focal_length = match[-1]
-    final_res = [[results[0][i],results[1][i],results[2][i],results[3][i],results[4][i],results[5][i]]for i in range(len(results[0]))]
-    return final_res,float(focal_length)
+    # 获取sw,sh
+    pattern_sensor_w = r'"FilmWidth".*?(\d+\.\d+)'
+    pattern_sensor_h = r'"FilmHeight".*?(\d+\.\d+)'
+    pattern_fl = r'"FocalLength".*?(\d+\.\d+)'
+    # 查找匹配 英寸-> 毫米 *25.4
+    match = re.findall(pattern_sensor_w, data)
+    sw = float(match[-1]) *25.4 
+    match = re.findall(pattern_sensor_h, data)
+    sh = float(match[-1]) *25.4
+    match = re.findall(pattern_fl, data)
+    fl = float(match[-1])
+    final_res = [[results[3][i],results[4][i],results[5][i],results[0][i]/100,results[1][i]/100,results[2][i]/100]for i in range(len(results[0]))]
+
+    return final_res,[fl/sw,fl/sh]
 # ----------------------------------------------------------------------------
 # Command Line
 
