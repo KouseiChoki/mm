@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-11-27 10:15:39
+LastEditTime: 2024-11-27 10:43:02
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -58,7 +58,7 @@ def init_param():
     parser.add_argument('--root',  help="your data path", required=True)
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
-    parser.add_argument('--max_frame',type=int, default=3,help="max generated frames")
+    parser.add_argument('--max_frame',type=int, default=5,help="max generated frames")
     parser.add_argument('--baseline_distance', type=float, default=0,help="baseline_distance")
     parser.add_argument('--f', action='store_true', help="force run")
     parser.add_argument('--mask_type', type=str,default='nomask', help="bg or mix",choices=['nomask','bg','mix'])
