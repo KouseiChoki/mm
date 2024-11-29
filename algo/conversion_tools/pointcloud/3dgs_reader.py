@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-11-27 15:28:26
+LastEditTime: 2024-11-29 16:03:46
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -180,12 +180,16 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
 
 def cal_qvec_rub_to_rdf(data):
     rx,ry,rz,tx,ty,tz = data
-    rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
+    rotation_matrix = R.from_euler('YXZ', [rx,ry,rz],degrees=True).as_matrix()
     c2w = np.eye(4,4)
     if args.baseline_distance!=0:
         tx += args.baseline_distance
     c2w[:3,:3] = rotation_matrix
     c2w[:3,-1] = [tx,ty,tz]
+    ##customs for gongxians code
+    # c2w[:2,:] *= -1
+    # c2w[:3,-1] = [tz,-tx,ty]
+    # end
     rub = c2w.copy() if args.rub else None
     c2w[:,1:3] *= -1
     w2c = np.linalg.inv(c2w)
@@ -399,9 +403,17 @@ if __name__ == '__main__':
         path = os.path.join(args.root,'raw')
 
     try:
-        image_folder = gofind(jhelp_folder(path),'images')[0]
-        mask_folder = gofind(jhelp_folder(path),'masks')[0]
-        depth_folder = gofind(jhelp_folder(path),'depths')[0]
+        image_folder = os.path.join(path,'image')
+        if not os.path.isdir(image_folder):
+            image_folder = os.path.join(path,'images')
+
+        mask_folder = os.path.join(path,'masks')
+        if not os.path.isdir(mask_folder):
+            mask_folder = os.path.join(path,'Mask')
+
+        depth_folder =  os.path.join(path,'depths')
+        if not os.path.isdir(depth_folder):
+            depth_folder = os.path.join(path,'world_depth')
         images = jhelp_file(image_folder)
         masks = jhelp_file(mask_folder)
         depths  = jhelp_file(depth_folder)

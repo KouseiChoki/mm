@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-13 12:34:25
+LastEditTime: 2024-11-29 14:36:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -642,7 +642,7 @@ def mv_cal_core(datas):
         mvwrite(os.path.join(save_path,'Mask',os.path.basename(img)),np.repeat(mask[...,None],4,axis=2))
     
 
-    if args.dump_depth:
+    if args.dump_depth or args.dump_ply:
         depth = depth
         # depth = depth_vis(depth)
         depth /= 100

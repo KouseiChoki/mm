@@ -307,7 +307,8 @@ def fbx_reader(fn,sp=None):
     sh = float(match[-1]) *25.4
     match = re.findall(pattern_fl, data)
     fl = float(match[-1])
-    final_res = [[results[3][i],results[4][i],results[5][i],results[0][i]/100,results[1][i]/100,results[2][i]/100]for i in range(len(results[0]))]
+    center = 1
+    final_res = [[results[3][i],results[4][i],results[5][i],results[0][i]/center,results[1][i]/center,results[2][i]/center]for i in range(len(results[0]))]
 
     return final_res,[fl/sw,fl/sh]
 # ----------------------------------------------------------------------------
