@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-11-29 16:03:46
+LastEditTime: 2024-12-06 10:15:59
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -163,19 +163,19 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
     return points_world
 
-# def cal_qvec(data):
-#     rx,ry,rz,tx,ty,tz = data
-#     rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
-#     c2w = np.eye(4,4)
-#     if args.baseline_distance!=0:
-#         tx += args.baseline_distance
-#     c2w[:3,:3] = rotation_matrix
-#     c2w[:3,-1] = [tx,ty,tz]
-#     rub = c2w.copy() if args.rub else None
-#     w2c = np.linalg.inv(c2w)
-#     qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
-#     tvec0,tvec1,tvec2 = w2c[:3, 3]
-#     return np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),c2w,rub
+def cal_qvec(data):
+    rx,ry,rz,tx,ty,tz = data
+    rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
+    c2w = np.eye(4,4)
+    if args.baseline_distance!=0:
+        tx += args.baseline_distance
+    c2w[:3,:3] = rotation_matrix
+    c2w[:3,-1] = [tx,ty,tz]
+    rub = c2w.copy() if args.rub else None
+    w2c = np.linalg.inv(c2w)
+    qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
+    tvec0,tvec1,tvec2 = w2c[:3, 3]
+    return np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),c2w,rub
 
 
 def cal_qvec_rub_to_rdf(data):
@@ -207,8 +207,10 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     for i in range(nums): 
         w,h = int(ins['w']),int(ins['h'])
         # etmp,c2w,rub = cal_qvec_unreal_to_rdf(ext[i])
-        etmp,c2w,rub = cal_qvec_rub_to_rdf(ext[i])
-        
+        if args.fbx:
+            etmp,c2w,rub = cal_qvec_rub_to_rdf(ext[i])
+        else:
+            etmp,c2w,rub = cal_qvec(ext[i])
         image_info = ImageInfo(uid=index,extrinsic=etmp,rub=rub)
         image_infos.append(image_info)
         cam_info = CameraInfo(uid=index, fx=ins['fx'],fy=ins['fy'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=w, height=h,model="PINHOLE")
@@ -432,11 +434,13 @@ if __name__ == '__main__':
         focal_length_x = instrinsics['w']  * fw
         focal_length_y = instrinsics['h']  * fh
         instrinsics['fx'],instrinsics['fy'] = focal_length_x,focal_length_y
+        args.fbx=True
     else:
         intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
         extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
         instrinsics = read_intrinsic(intrinsic_file)
         ext_ = read_extrinsics(extrinsic_file)
+        args.fbx=False
 
     if len(images) <= args.max_frame:
         images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
