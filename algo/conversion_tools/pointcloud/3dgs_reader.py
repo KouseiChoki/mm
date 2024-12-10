@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-06 10:15:59
+LastEditTime: 2024-12-10 16:25:36
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -319,8 +319,9 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     for image in images:
         shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
     mkdir(os.path.join(sp , "masks"))
-    for mask in masks:
-        shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
+    if masks is not None:
+        for mask in masks:
+            shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
     # if mask_folder is not None:
     #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
     # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
@@ -378,7 +379,7 @@ def read_txt(file_path):
 
 def sliding_window(sequence, window_size,window_step,pad=0,pad_step=0):
     """Generate a sliding window over a sequence."""
-    window_size -=2
+    # window_size -=2
     res = []
     for i in range(0, len(sequence), window_step):
         window = sequence[i:i+window_size]
@@ -417,11 +418,10 @@ if __name__ == '__main__':
         if not os.path.isdir(depth_folder):
             depth_folder = os.path.join(path,'world_depth')
         images = jhelp_file(image_folder)
-        masks = jhelp_file(mask_folder)
+        masks = jhelp_file(mask_folder) if os.path.isdir(mask_folder) else None
         depths  = jhelp_file(depth_folder)
     except:
         raise ImportError('error input folder, need IMAGES and DEPTHS (MASKS) folder!')
-    assert len(images)==len(masks) and len(images)==len(depths),f'error input number of image/mask/depth,{len(images)},{len(masks)},{len(depths)}'
     if args.mask_type != 'nomask':
         assert len(masks)>0,'can not find mask file!'
     
@@ -444,12 +444,12 @@ if __name__ == '__main__':
 
     if len(images) <= args.max_frame:
         images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
-        masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]]
+        masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]] if masks is not None else None
         depths_prepare = [[depths[i] for i in range(0,len(depths),args.step)]]
         extrinsics = [ext_]
     else:
         images_prepare = sliding_window(images,args.max_frame,args.step)
-        masks_prepare = sliding_window(masks,args.max_frame,args.step)
+        masks_prepare = sliding_window(masks,args.max_frame,args.step) if masks is not None else None
         depths_prepare = sliding_window(depths,args.max_frame,args.step)
         extrinsics = sliding_window(ext_,args.max_frame,args.step)
         # extrinsics = sliding_window(ext_,min(ext_,len(args.max_frame)*args.step-args.step+1))
@@ -505,7 +505,8 @@ if __name__ == '__main__':
             name += f'_step_{args.step}'
         name += f'_cur_{args.cur}'
         save_path = os.path.join(path,'..','pointcloud',name)
-        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,masks_prepare[i])
+        m = masks_prepare[i] if masks is not None else None
+        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,m)
 
         # if i < len(images_prepare):
         #     if i == len(images_prepare)-1:
