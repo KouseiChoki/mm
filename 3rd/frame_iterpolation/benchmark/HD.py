@@ -14,9 +14,6 @@ from yuv_frame_io import YUV_Read,YUV_Write
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
-    if torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = Model()
 model.load_model('train_log')

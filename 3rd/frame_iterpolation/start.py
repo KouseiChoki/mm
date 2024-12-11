@@ -79,9 +79,6 @@ if not args.img is None:
 if torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
-    if torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if args.output is None:
     args.output = args.video.replace('.mp4','_FI.mp4') if args.video is not None else args.img+'_FI'
