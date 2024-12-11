@@ -1,3 +1,31 @@
+'''
+Author: Qing Hong
+FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
+LastEditors: Qing Hong
+LastEditTime: 2024-12-11 17:20:55
+Description: 
+         ▄              ▄
+        ▌▒█           ▄▀▒▌     
+        ▌▒▒▀▄       ▄▀▒▒▒▐
+       ▐▄▀▒▒▀▀▀▀▄▄▄▀▒▒▒▒▒▐     ,-----------------.
+     ▄▄▀▒▒▒▒▒▒▒▒▒▒▒█▒▒▄█▒▐     (Wow,kousei's code)
+   ▄▀▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▐     `-,---------------' 
+  ▐▒▒▒▄▄▄▒▒▒▒▒▒▒▒▒▒▒▒▒▀▄▒▒▌  _.-'   ,----------.
+  ▌▒▒▐▄█▀▒▒▒▒▄▀█▄▒▒▒▒▒▒▒█▒▐         (surabashii)
+ ▐▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▒▒▒▒▒▒▒▀▄▌        `-,--------' 
+ ▌▒▀▄██▄▒▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌      _.-'
+ ▌▀▐▄█▄█▌▄▒▀▒▒▒▒▒▒░░░░░░▒▒▒▐ _.-'
+▐▒▀▐▀▐▀▒▒▄▄▒▄▒▒▒▒▒░░░░░░▒▒▒▒▌
+▐▒▒▒▀▀▄▄▒▒▒▄▒▒▒▒▒▒░░░░░░▒▒▒▐
+ ▌▒▒▒▒▒▒▀▀▀▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌
+ ▐▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▐
+  ▀▄▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▄▒▒▒▒▌
+    ▀▄▒▒▒▒▒▒▒▒▒▒▄▄▄▀▒▒▒▒▄▀
+      ▀▄▄▄▄▄▄▀▀▀▒▒▒▒▒▄▄▀
+         ▒▒▒▒▒▒▒▒▒▒▀▀
+When I wrote this, only God and I understood what I was doing
+Now, God only knows
+'''
 import torch
 import torch.nn as nn
 import numpy as np
@@ -13,7 +41,10 @@ from model.loss import *
 from model.laplacian import *
 from model.refine import *
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
 class Model:
     def __init__(self, local_rank=-1, arbitrary=False):

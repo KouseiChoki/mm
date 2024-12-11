@@ -112,7 +112,7 @@ except:
     model.load_model(args.modelDir, -1)
     print("Loaded ArXiv-RIFE model")
 model.eval()
-model.device()
+model.to(device)
 
 if not args.video is None:
     videoCapture = cv2.VideoCapture(args.video)
