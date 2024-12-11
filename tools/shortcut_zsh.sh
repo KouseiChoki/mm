@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-12-11 17:04:07
+ # @LastEditTime: 2024-12-11 17:30:16
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -200,7 +200,8 @@ else
     echo 'mmfi(){
         conda activate mm
         cd '"$PARENT_DIR"'
-        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/frame_iterpolation/start.py "$@"
+        cd 3rd/frame_iterpolation
+        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python start.py "$@"
     }' >> ~/.zshrc
 fi
 
