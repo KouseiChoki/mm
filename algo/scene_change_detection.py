@@ -731,7 +731,10 @@ def get_frames(fn, width=48, height=27):
 def scene_change_detect(images):
     torch.manual_seed(1234)
     np.random.seed(1234)
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
     pthpath = os.getcwd() + '/checkpoints/scene_change.pth'
@@ -760,7 +763,10 @@ def scene_change_detect(images):
     return result
 
 def scene_change_detect_video(video_path):
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
     pthpath = os.path.dirname(os.path.abspath(__file__))+'/../checkpoints/scene_change.pth'

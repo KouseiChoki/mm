@@ -199,7 +199,10 @@ if 'cpu' not in args.gpu and args.multi_frame_algo:
     cudnn.deterministic = True
     if 'mps' not in args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         DEVICE = torch.device('mps')
 args.model = args.weight_file
