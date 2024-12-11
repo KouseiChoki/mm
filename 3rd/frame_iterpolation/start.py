@@ -77,7 +77,7 @@ assert args.scale in [0.25, 0.5, 1.0, 2.0, 4.0]
 if not args.img is None:
     args.png = True
 if torch.backends.mps.is_available():
-    DEVICE = 'mps'
+    device = torch.device("mps")
 else:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if args.output is None:
