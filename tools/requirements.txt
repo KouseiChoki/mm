@@ -17,3 +17,5 @@ openexr-tools
 colour-science
 bs4
 opencolorio
+sk-video
+moviepy

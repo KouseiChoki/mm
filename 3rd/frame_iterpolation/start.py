@@ -76,8 +76,12 @@ if args.UHD and args.scale==1.0:
 assert args.scale in [0.25, 0.5, 1.0, 2.0, 4.0]
 if not args.img is None:
     args.png = True
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.backends.mps.is_available():
+    DEVICE = 'mps'
+else:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if args.output is None:
+    args.output = args.video.replace('.mp4','_FI.mp4') if args.video is not None else args.img+'_FI'
 torch.set_grad_enabled(False)
 if torch.cuda.is_available():
     torch.backends.cudnn.enabled = True

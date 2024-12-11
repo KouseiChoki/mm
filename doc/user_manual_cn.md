@@ -361,3 +361,26 @@ threshold取值为0-1，对于前景mask的情况下，0代表外圈，1代表�
 - **是否必需**: 是
 - **示例**: `--output YOUR_PATH`
 
+
+# mmfi (export PYTORCH_ENABLE_MPS_FALLBACK=1 && python 3rd/frame_iterpolation/start.py)
+作用：配置inpainting任务
+
+## 参数说明
+
+### 1. `--video`
+- **说明**: 输入文件如果为video的路径。
+- **类型**: 字符串
+- **是否必需**: 是
+- **示例**: `--video YOUR_PATH`
+- 
+### 1. `--img`
+- **说明**: 输入文件如果是图片的路径。
+- **类型**: 字符串
+- **是否必需**: 是
+- **示例**: `--img YOUR_PATH`
+
+### 1. `--output`
+- **说明**: 输出路径(若有)。
+- **类型**: 字符串
+- **是否必需**: 否
+- **示例**: `--output YOUR_PATH`
