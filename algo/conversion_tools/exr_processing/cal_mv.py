@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-11-29 14:36:49
+LastEditTime: 2024-12-12 11:13:33
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -79,6 +79,7 @@ def init_param():
     parser.add_argument('--step',type=int, default=1,help="for bg mv only")
     parser.add_argument('--core', type=int, default=4)
     parser.add_argument('--check_mode',action='store_true', help="check invalid data")
+    parser.add_argument('--exrformat',action='store_true', help="check invalid data")
     args = parser.parse_args()
     if args.depth_only or args.colormap:
         args.dump_depth = True
@@ -481,14 +482,12 @@ def depth_vis(depth):
     # depth /= max_value
     return normalized_depth_values
 
-def hdr_to_rgb(hdr_image):
-    # 对HDR图像进行色调映射
-    # tonemap = cv2.createTonemapReinhard(1.0, 0, 0, 0)
-    # ldr_image = tonemap.process(np.ascontiguousarray(hdr_image.copy()[...,:3]))
-    
-    # 将[0, 1]范围的图像转换为[0, 255]
-    ldr_image_8bit = np.clip(hdr_image * 255, 0, 255).astype('uint8')
-    ldr_image = adjust_gamma(ldr_image_8bit)
+def hdr_to_rgb(hdr_image,exrformat=False):
+    if exrformat:
+        ldr_image = adjust_gamma_exr(hdr_image)
+    else:
+        ldr_image_8bit = np.clip(hdr_image * 255, 0, 255).astype('uint8')
+        ldr_image = adjust_gamma(ldr_image_8bit)
     # 保存转换后的图像
     return ldr_image[...,:3]
 
@@ -500,6 +499,35 @@ def adjust_gamma(image, gamma=2.4):
     
     # 应用gamma校正使用查找表
     return cv2.LUT(image, table)
+
+def adjust_gamma_exr(image, gamma=2.4):
+    """
+    对 32 位浮点输入图像应用伽马调整。
+    
+    参数:
+        image: 输入图像，支持 32 位浮点格式。
+        gamma: 伽马值，默认 2.4。
+        
+    返回:
+        调整后的图像。
+    """
+    # 计算伽马逆
+    invGamma = 1.0 / gamma
+
+    # 如果图像没有归一化到 [0, 1]，先归一化
+    if image.dtype != np.float32:
+        image = image.astype(np.float32) / 255.0
+    
+    # 应用伽马校正
+    adjusted = np.power(image, invGamma)
+
+    # 如果需要，可以将结果恢复到原始范围
+    return adjusted
+
+# def adjust_gamma_exr(image, gamma=2.4):
+#     from skimage import exposure
+#     adjusted_img = exposure.adjust_gamma(image, gamma)
+#     return adjusted_img
 
 def curv_read(img):
     hdr_image = read(img,type='image')
@@ -633,10 +661,16 @@ def mv_cal_core(datas):
     else:
         raise ValueError(f'not supported color space:{dtype}')
     #ldr
-    image = hdr_to_rgb(hdr_image)[...,:3]
-    image_path = os.path.join(save_path,'image',os.path.basename(img)).replace('.exr','.png')
-    if not os.path.isfile(image_path) and args.onlymv:
-        mvwrite(image_path,image)
+    if not args.exrformat:
+        image = hdr_to_rgb(hdr_image)
+        image_path = os.path.join(save_path,'image',os.path.basename(img)).replace('.exr','.png')
+        if not os.path.isfile(image_path) and args.onlymv:
+            mvwrite(image_path,image)
+    else:
+        image = hdr_to_rgb(hdr_image,exrformat=True)
+        image_path = os.path.join(save_path,'image',os.path.basename(img))
+        if not os.path.isfile(image_path) and args.onlymv:
+            mvwrite(image_path,image)
     #mask
     if mask is not None:
         mvwrite(os.path.join(save_path,'Mask',os.path.basename(img)),np.repeat(mask[...,None],4,axis=2))
