@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-04 14:57:49
+LastEditTime: 2024-12-13 17:51:07
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -33,7 +33,7 @@ from typing import NamedTuple
 import cv2
 import shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../../')
-from file_utils import read,mvwrite
+from file_utils import read,mvwrite,write
 import torch
 from einops import einsum,rearrange
 from plyfile import PlyData, PlyElement
@@ -41,6 +41,10 @@ from fileutil.read_write_model import Camera,write_model,Image,rotmat2qvec
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
 from dataclasses import dataclass
+from scipy.integrate import cumtrapz
+#G
+G = 9.81
+
 @dataclass
 class CameraInfo():
     uid: int
@@ -86,7 +90,7 @@ def check_chardet(file):
     return encoding
 
 
-def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics):
+def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=None):
     h, w = depth_image.shape
     i, j = np.meshgrid(np.arange(w), np.arange(h), indexing='xy')
     # 相机内参
@@ -100,6 +104,8 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics):
     # 将点组合成[N, 3]的点云
     points_camera = np.stack((x, y, z), axis=-1).reshape(-1, 3)
     # 去除非法点
+    if mask is not None:
+        points_camera = points_camera[mask]
     points_camera = points_camera[points_camera[:, 2] != 0]
     # 将点云从相机坐标系转换到世界坐标系
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
@@ -186,20 +192,52 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
     down_scale_x = down_scale
     down_scale_y = down_scale
     cam_infos,image_infos,points,rgbs = [],[],[],[]
-    for i in tqdm(range(0,nums,step),desc=f'reading {os.path.basename(root)}'):
+    intrinsic,extrinsic,extra = read_metas(metas)
+    for i in tqdm(range(1,nums,step),desc=f'reading {os.path.basename(root)}'):
         #image
         if index>=max_step:
             break
         image_file = videos[i]
         image = read_rgba(image_file,w,h,np.half) if '.rgba' in os.path.basename(image_file) else read(image_file,type='image')
         rgb = image.astype('float32')/255
-        meta_file = metas[i]
-        intrinsic,extrinsic = read_metas(meta_file)
-        tx,ty,tz = extrinsic[:3,-1]/10
-        #  x x -tx
+        intrinsic,extrinsic,extra = read_metas(metas[i])
+        _,_,pre_extra = read_metas(metas[i-1])
+        delta_t = extra['timestep']-pre_extra['timestep']
+        linear_accelerations = (extra['acceleration'] - extra['gravity'])*G
+        # 时间间隔
+        timestamps = np.diff(delta_t)
+        # 计算速度 (通过累积积分)
+        velocities = cumtrapz(linear_accelerations, timestamps, axis=0, initial=0)
+
+        # 计算位移 (再次累积积分)
+        displacements = cumtrapz(velocities, timestamps, axis=0, initial=0)*-1
+        extrinsic[:3,-1] = displacements
+        if i==1:
+            initial_xyz = extrinsic[:3,-1].copy()
+        extrinsic[:3,-1]-=initial_xyz
+        # extrinsic[2,-1]*=-1
+        extrinsic[:3,-1]/=10
+        # extrinsic[:,1]*=-1
+        # extrinsic[:,0]*=-1
+        # drb to rdf
+        flip_yz = np.eye(4)
+        flip_yz[1, 1] = -1
+        flip_yz[2, 2] = -1
+        extrinsic = np.matmul(extrinsic, flip_yz)
+        # extrinsic[:,[2,0]] =  extrinsic[:,[0,2]] #对的
+        # extrinsic[:,[2,0,1]] =  extrinsic[:,[0,1,2]]
+        # extrinsic[:,1] *= -1
+        # extrinsic[:,0]*=-1
+        # extrinsic[0,2] *= -1
+        # extrinsic[1,1] = 1
+        # extrinsic[2,2] = 1
+        tx,ty,tz = extrinsic[:3,-1]
+        print(tx,ty,tz)
+        # y x z
+        extrinsic[:3,-1] =[tx,ty,tz]
         # print(extrinsic)
-        extrinsic[:3,-1] = [0,0,-tx] #down 2
-        print(extrinsic[:3,-1])
+        # extrinsic[:3,-1] = [0,0,-tx] #down 2
+        # print(extrinsic[:3,-1])
         #extrinsic #np.set_printoptions(precision=3, suppress=True)
         w2c = np.linalg.inv(extrinsic)
         # w2c,extrinsic = extrinsic,w2c
@@ -211,6 +249,8 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
         focal_length_y = intrinsic[1,1] #fy
         o_cx = intrinsic[0,2]
         o_cy = intrinsic[1,2]
+        # o_cx = w/2.0
+        # o_cy = h/2.0
         cam_info = CameraInfo(uid=index, fx=focal_length_x,fy=focal_length_y,cx=o_cx,cy=o_cy,image_name=os.path.basename(image_file).replace('.png',''),image_path = image_file, width=w, height=h,model=model)
         cam_infos.append(cam_info)
         #downscale
@@ -222,6 +262,7 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
         target_h = h//down_scale_y
         depth_file = depths[i]
         depth = read_depths(depth_file,target_w,target_h)
+        write(videos[i].replace('/video','/depth_exr').replace('.rgba','.exr'),depth)
         # depth = cv2.resize(depth,(target_w,target_h),interpolation=cv2.INTER_NEAREST) 苹果相机不用6倍下采样 本身就是
         #内参做了归一化
         intrinsics = np.array([[focal_length_x,0,o_cx],[0,focal_length_y,o_cy],[0,0,1]])
@@ -260,6 +301,7 @@ def tc_reader(root,save_path,step,max_step=99999,save_as_rgb=True):
             mvwrite(os.path.join(cam_info.image_path , sp , "images",cam_info.image_name)+'.png',image)
         else:
             shutil.copy(cam_info.image_path, os.path.join(cam_info.image_path , sp , "images",cam_info.image_full_name))
+    
     # Write out the camera parameters.
     write_colmap_model(sparse_path,cam_infos,image_infos)
     
@@ -290,19 +332,38 @@ def read_rgba(file,w,h,dtype):
     # Image.fromarray(img_data_8bit)
     return img_data_8bit
         
-def read_metas(file):
-    # file = '/Users/qhong/Desktop/0624/output/meta/3632FF65-0F14-4A05-8ABF-DD6226F934AB_00000004.txt'
-    with open(file,'r',encoding='utf-8') as f:
-            lines = f.readlines()
-    intrinsic_matrix = None
-    extrinsic_matrix = None
-    # Read through the file to find the matrices
-    for i, line in enumerate(lines):
-        if '[intrinsic]' in line:
-            intrinsic_matrix = np.array([float(x) for x in lines[i+1].split()]).reshape((3, 3))
-        elif '[view matrix]' in line:
-            extrinsic_matrix = np.array([float(x) for x in (lines[i+1]).split()]).reshape((4, 4)).transpose()
-    return intrinsic_matrix,extrinsic_matrix
+def read_metas(files):
+    ints,exts,ts,gr,ac = [],[],[],[],[]
+    for file in files:
+        # file = '/Users/qhong/Desktop/0624/output/meta/3632FF65-0F14-4A05-8ABF-DD6226F934AB_00000004.txt'
+        with open(file,'r',encoding='utf-8') as f:
+                lines = f.readlines()
+        # Read through the file to find the matrices
+        for i, line in enumerate(lines):
+            if '[intrinsic]' in line:
+                ints.append(np.array([float(x) for x in lines[i+1].split()]).reshape((3, 3)))
+            elif '[view matrix]' in line:
+                exts.append(np.array([float(x) for x in (lines[i+1]).split()]).reshape((4, 4)).transpose())
+            elif '[accelerationTime]' in line:
+                ts.append(float(lines[i+1]))
+            elif '[gravity]' in line:
+                gr.append(np.array([float(x) for x in lines[i+1].split()]))
+            elif '[userAcceleration]' in line:
+                ac.append(np.array([float(x) for x in lines[i+1].split()]))
+    ints = np.stack(ints)[1:]
+    exts = np.stack(ints)[1:]
+    ts = np.stack(ts)
+    gr = np.stack(gr)[1:]
+    ac = np.stack(ac)[1:]
+    # 去除重力影响
+    linear_accelerations = ac - gr
+    # 时间间隔
+    time_deltas = np.diff(ts)
+    # 计算速度 (通过累积积分)
+    velocities = cumtrapz(linear_accelerations, time_deltas, axis=0, initial=0)
+    # 计算位移 (再次累积积分)
+    displacements = cumtrapz(velocities, time_deltas, axis=0, initial=0)
+    return ints,exts
 
 def write_colmap_model(path,cam_infos,image_infos):
     # Define the cameras (intrinsics).
@@ -320,15 +381,17 @@ def write_colmap_model(path,cam_infos,image_infos):
 
 if __name__ == "__main__":
     import open3d as o3d
-    root = '/Users/qhong/Desktop/0704/down2'
+    
+    root = sys.argv[1]
+    # root = '/Users/qhong/Desktop/1212/tc_left'
     sp = root+'_result'
-    tc_reader(root,sp,step=20,max_step=999,save_as_rgb=True)
-    pcd = o3d.io.read_point_cloud(f'{sp}/pointcloud/sparse/0/points3D.ply')
-    # 创建坐标系
-    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
-    # pcd = o3d.io.read_point_cloud('/Users/qhong/Downloads/points3D(4).ply')
-    colors = pcd.colors
-    # print("前几个点的颜色信息:")
-    # for i in range(min(10, len(colors))):  # 打印前10个点的颜色信息
-    #     print(f"点 {i} 颜色: {colors[i]}")
-    o3d.visualization.draw_geometries([pcd,axis])
+    tc_reader(root,sp,step=10,max_step=999,save_as_rgb=True)
+    # pcd = o3d.io.read_point_cloud(f'{sp}/pointcloud/sparse/0/points3D.ply')
+    # # 创建坐标系
+    # axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+    # # pcd = o3d.io.read_point_cloud('/Users/qhong/Downloads/points3D(4).ply')
+    # colors = pcd.colors
+    # # print("前几个点的颜色信息:")
+    # # for i in range(min(10, len(colors))):  # 打印前10个点的颜色信息
+    # #     print(f"点 {i} 颜色: {colors[i]}")
+    # o3d.visualization.draw_geometries([pcd,axis])

@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-10 16:25:36
+LastEditTime: 2024-12-12 11:22:27
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -55,7 +55,7 @@ def gofind(c,keywords,mode = 'basename'):
 
 def init_param():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root',  help="your data path", required=True)
+    parser.add_argument('--root','--path',  help="your data path", required=True)
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
     parser.add_argument('--max_frame',type=int, default=5,help="max generated frames")

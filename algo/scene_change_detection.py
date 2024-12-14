@@ -732,9 +732,9 @@ def scene_change_detect(images):
     torch.manual_seed(1234)
     np.random.seed(1234)
     if torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("mps")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
     pthpath = os.getcwd() + '/checkpoints/scene_change.pth'
