@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 13:36:40
+LastEditTime: 2024-12-16 14:18:58
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -172,6 +172,7 @@ def cal_qvec(data):
     c2w[:3,:3] = rotation_matrix
     c2w[:3,-1] = [tx,ty,tz]
     rub = c2w.copy() if args.rub else None
+    c2w[:,1:3] *= -1
     w2c = np.linalg.inv(c2w)
     qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
     tvec0,tvec1,tvec2 = w2c[:3, 3]
