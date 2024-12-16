@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 11:51:31
+LastEditTime: 2024-12-16 11:53:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -442,7 +442,7 @@ if __name__ == '__main__':
         ext_ = read_extrinsics(extrinsic_file)
         args.fbx=False
 
-    if len(images) >= args.max_frame:
+    if len(images) <= args.max_frame:
         images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
         masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]] if masks is not None else None
         depths_prepare = [[depths[i] for i in range(0,len(depths),args.step)]]
