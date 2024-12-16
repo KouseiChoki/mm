@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 11:53:49
+LastEditTime: 2024-12-16 13:36:40
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -377,18 +377,17 @@ def read_txt(file_path):
         data.append(components)
     return data
 
-def sliding_window(sequence, window_size,window_step,pad=0,pad_step=0):
+def sliding_window(sequence, window_size=3,window_step=1,step=1,pad=0,pad_step=0):
     """Generate a sliding window over a sequence."""
-    # window_size -=2
     res = []
-    for i in range(0, len(sequence), window_step):
-        window = sequence[i:i+window_size]
-        if len(window) < window_size:
-            window = sequence[-window_size:]
-        if pad>0:
-            for _ in range(pad):
-                window = np.hstack((window[0]-pad_step,window,window[-1]+pad_step))
-        res.append(window)
+    index = 0
+    while True:
+        choose = [index + step * i for i in range(window_size)]
+        if choose[-1]>=len(sequence):
+            break
+        tmp = [sequence[c] for c in choose]
+        res.append(tmp)
+        index += window_step
     return res
 
 if __name__ == '__main__':
@@ -442,18 +441,6 @@ if __name__ == '__main__':
         ext_ = read_extrinsics(extrinsic_file)
         args.fbx=False
 
-    if len(images) <= args.max_frame:
-        images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
-        masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]] if masks is not None else None
-        depths_prepare = [[depths[i] for i in range(0,len(depths),args.step)]]
-        extrinsics = [ext_]
-    else:
-        images_prepare = sliding_window(images,args.max_frame,args.step)
-        masks_prepare = sliding_window(masks,args.max_frame,args.step) if masks is not None else None
-        depths_prepare = sliding_window(depths,args.max_frame,args.step)
-        extrinsics = sliding_window(ext_,args.max_frame,args.step)
-        # extrinsics = sliding_window(ext_,min(ext_,len(args.max_frame)*args.step-args.step+1))
-
     task_indexes = np.arange(args.start_frame,args.start_frame+args.max_frame)
     task_indexes = []
     curs = []
@@ -464,17 +451,34 @@ if __name__ == '__main__':
             tmp +=args.step
             cur -= 1
             if cur < 0 or cur >= args.max_frame:
-                raise ValueError('error max framse')
+                raise ValueError('error max frames')
         while(tmp.max()>len(images)-1):
             tmp -=args.step
             cur += 1
             if cur < 0 or cur >= args.max_frame:
-                raise ValueError('error max framse')
+                raise ValueError('error max frames')
         
         tmp = [np.clip(k,0,len(images)-1) for k in tmp]
-
         task_indexes.append(tmp)
         curs.append(cur)
+
+    
+    if len(images) <= args.max_frame:
+        args.step = 1
+        images_prepare = [[images[i] for i in range(0,len(images))]]
+        masks_prepare = [[masks[i] for i in range(0,len(masks))]] if masks is not None else None
+        depths_prepare = [[depths[i] for i in range(0,len(depths))]]
+        extrinsics = [ext_]
+    else:
+        # images_prepare = sliding_window(images,args.max_frame,step=args.step)
+        # masks_prepare = sliding_window(masks,args.max_frame,step=args.step) if masks is not None else None
+        # depths_prepare = sliding_window(depths,args.max_frame,step=args.step)
+        # extrinsics = sliding_window(ext_,args.max_frame,step=args.step)
+        images_prepare = [[images[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
+        masks_prepare = [[masks[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))] if masks is not None else None
+        depths_prepare = [[depths[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
+        extrinsics = [[ext_[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
+        # extrinsics = sliding_window(ext_,min(ext_,len(args.max_frame)*args.step-args.step+1))
     # if not args.full_result:
     # tmp_curs = []
     # tmp_task_indexes = []
