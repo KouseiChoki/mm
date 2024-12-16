@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 11:42:00
+LastEditTime: 2024-12-16 14:05:56
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -232,7 +232,7 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
         tx,ty,tz = extrinsic[:3,-1]
         print(tx,ty,tz)
         # y x z
-        extrinsic[:3,-1] =[0,0,0]
+        extrinsic[:3,-1] =[0,0,tz]
         # print(extrinsic)
         # extrinsic[:3,-1] = [0,0,-tx] #down 2
         # print(extrinsic[:3,-1])
