@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 14:05:56
+LastEditTime: 2024-12-16 14:28:57
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -232,7 +232,7 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
         tx,ty,tz = extrinsic[:3,-1]
         print(tx,ty,tz)
         # y x z
-        extrinsic[:3,-1] =[0,0,tz]
+        extrinsic[:3,-1] =[0,0,0]
         # print(extrinsic)
         # extrinsic[:3,-1] = [0,0,-tx] #down 2
         # print(extrinsic[:3,-1])
@@ -393,7 +393,9 @@ if __name__ == "__main__":
     import open3d as o3d
     
     root = sys.argv[1]
-    # root = '/Users/qhong/Desktop/1212/tc_left'
+    root = '/Users/qhong/Desktop/1213'
+    if os.path.isdir(os.path.join(root,'raw')):
+        root = os.path.join(root,'raw')
     sp = root+'_result'
     tc_reader(root,sp,step=5,max_step=999,save_as_rgb=True)
     # pcd = o3d.io.read_point_cloud(f'{sp}/pointcloud/sparse/0/points3D.ply')

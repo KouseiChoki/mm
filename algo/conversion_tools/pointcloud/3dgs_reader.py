@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 14:18:58
+LastEditTime: 2024-12-16 14:41:22
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -319,8 +319,8 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     mkdir(os.path.join(sp , "images"))
     for image in images:
         shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
-    mkdir(os.path.join(sp , "masks"))
     if masks is not None:
+        mkdir(os.path.join(sp , "masks"))
         for mask in masks:
             shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
     # if mask_folder is not None:
