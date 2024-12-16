@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-13 17:51:07
+LastEditTime: 2024-12-16 11:42:00
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -29,7 +29,7 @@ Now, God only knows
 import os,sys
 import numpy as np
 import math
-from typing import NamedTuple
+import re
 import cv2
 import shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../../')
@@ -73,12 +73,19 @@ def mkdir(path):
     if  not os.path.exists(path):
         os.makedirs(path,exist_ok=True)
 
-def jhelp(c):
-	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
-def jhelp_folder(c):
-    return list(filter(lambda x:os.path.isdir(x),jhelp(c)))
-def jhelp_file(c):
-    return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
+def extract_number(file_path):
+    file_name = os.path.basename(file_path)  # 获取文件名
+    number = re.findall(r'\d+', file_name)   # 提取文件名中的数字
+    return int(number[-1]) if number else 0   # 返回数字用于排序
+def jhelp(c,restrict=False):
+    if restrict:
+        return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c),key=extract_number)))]
+    else:
+	    return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
+def jhelp_folder(c,restrict=False):
+    return list(filter(lambda x:os.path.isdir(x),jhelp(c,restrict)))
+def jhelp_file(c,restrict=True):
+    return list(filter(lambda x:not os.path.isdir(x),jhelp(c,restrict)))
 
 def check_chardet(file):
     import chardet
@@ -182,9 +189,9 @@ def extract_euler_angles_from_view_matrix(view_matrix):
 
 def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=99999,model='SIMPLE_PINHOLE'):
     # root = '/Users/qhong/Desktop/0624/output'
-    depths = jhelp_file(os.path.join(root,'depth'))
-    metas = jhelp_file(os.path.join(root,'meta'))
-    videos = jhelp_file(os.path.join(root,'video'))
+    depths = jhelp_file(os.path.join(root,'depth'),restrict=True)
+    metas = jhelp_file(os.path.join(root,'meta'),restrict=True)
+    videos = jhelp_file(os.path.join(root,'video'),restrict=True)
     assert len(depths)==len(metas)==len(videos),'data error,please check your image or depth,metas'
     nums = len(metas)
     # nums = 5 #for test
@@ -192,31 +199,22 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
     down_scale_x = down_scale
     down_scale_y = down_scale
     cam_infos,image_infos,points,rgbs = [],[],[],[]
-    intrinsic,extrinsic,extra = read_metas(metas)
-    for i in tqdm(range(1,nums,step),desc=f'reading {os.path.basename(root)}'):
+    data = read_metas(metas)
+    for i in tqdm(range(0,len(data[0]),step),desc=f'reading {os.path.basename(root)}'):
         #image
         if index>=max_step:
             break
         image_file = videos[i]
         image = read_rgba(image_file,w,h,np.half) if '.rgba' in os.path.basename(image_file) else read(image_file,type='image')
         rgb = image.astype('float32')/255
-        intrinsic,extrinsic,extra = read_metas(metas[i])
-        _,_,pre_extra = read_metas(metas[i-1])
-        delta_t = extra['timestep']-pre_extra['timestep']
-        linear_accelerations = (extra['acceleration'] - extra['gravity'])*G
-        # 时间间隔
-        timestamps = np.diff(delta_t)
-        # 计算速度 (通过累积积分)
-        velocities = cumtrapz(linear_accelerations, timestamps, axis=0, initial=0)
-
-        # 计算位移 (再次累积积分)
-        displacements = cumtrapz(velocities, timestamps, axis=0, initial=0)*-1
-        extrinsic[:3,-1] = displacements
-        if i==1:
-            initial_xyz = extrinsic[:3,-1].copy()
-        extrinsic[:3,-1]-=initial_xyz
+        intrinsic,extrinsic,T = data[0][i],data[1][i],data[2][i]
+        # print(T)
+        extrinsic[:3,-1] = -T
+        # if i==0:
+        #     initial_xyz = extrinsic[:3,-1].copy()
+        # extrinsic[:3,-1]-=initial_xyz
         # extrinsic[2,-1]*=-1
-        extrinsic[:3,-1]/=10
+        # extrinsic[:3,-1]/=10
         # extrinsic[:,1]*=-1
         # extrinsic[:,0]*=-1
         # drb to rdf
@@ -234,7 +232,7 @@ def get_camdata_from_tcdump(root,w=1920,h=1080,down_scale=6,step=1,max_step=9999
         tx,ty,tz = extrinsic[:3,-1]
         print(tx,ty,tz)
         # y x z
-        extrinsic[:3,-1] =[tx,ty,tz]
+        extrinsic[:3,-1] =[0,0,0]
         # print(extrinsic)
         # extrinsic[:3,-1] = [0,0,-tx] #down 2
         # print(extrinsic[:3,-1])
@@ -350,20 +348,32 @@ def read_metas(files):
                 gr.append(np.array([float(x) for x in lines[i+1].split()]))
             elif '[userAcceleration]' in line:
                 ac.append(np.array([float(x) for x in lines[i+1].split()]))
-    ints = np.stack(ints)[1:]
-    exts = np.stack(ints)[1:]
+    ints = np.stack(ints)
+    exts = np.stack(exts)
     ts = np.stack(ts)
-    gr = np.stack(gr)[1:]
-    ac = np.stack(ac)[1:]
+    gr = np.stack(gr)
+    ac = np.stack(ac)
     # 去除重力影响
-    linear_accelerations = ac - gr
+    accelerations = ac * G
     # 时间间隔
     time_deltas = np.diff(ts)
     # 计算速度 (通过累积积分)
-    velocities = cumtrapz(linear_accelerations, time_deltas, axis=0, initial=0)
-    # 计算位移 (再次累积积分)
-    displacements = cumtrapz(velocities, time_deltas, axis=0, initial=0)
-    return ints,exts
+    # velocities = cumtrapz(accelerations, time_deltas, axis=0, initial=0)
+    # # 计算位移 (再次累积积分)
+    # displacements = cumtrapz(velocities, time_deltas, axis=0, initial=0)
+
+    velocities = np.zeros((len(accelerations),3))  # 速度数组
+    displacements = np.zeros((len(accelerations),3))  # 位移数组
+
+    # 数值积分：计算速度
+    for i in range(1, len(accelerations)):
+        velocities[i] = velocities[i - 1] + (accelerations[i - 1] + accelerations[i]) / 2 * time_deltas[i - 1]
+
+    # 数值积分：计算位移
+    for i in range(1, len(accelerations)):
+        displacements[i] = displacements[i - 1] + (velocities[i - 1] + velocities[i]) / 2 * time_deltas[i - 1]
+
+    return ints,exts,displacements
 
 def write_colmap_model(path,cam_infos,image_infos):
     # Define the cameras (intrinsics).
@@ -385,7 +395,7 @@ if __name__ == "__main__":
     root = sys.argv[1]
     # root = '/Users/qhong/Desktop/1212/tc_left'
     sp = root+'_result'
-    tc_reader(root,sp,step=10,max_step=999,save_as_rgb=True)
+    tc_reader(root,sp,step=5,max_step=999,save_as_rgb=True)
     # pcd = o3d.io.read_point_cloud(f'{sp}/pointcloud/sparse/0/points3D.ply')
     # # 创建坐标系
     # axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])

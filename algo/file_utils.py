@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-15 11:29:14
+LastEditTime: 2024-12-16 10:45:58
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -68,7 +68,7 @@ TAG_CHAR = np.array([202021.25], np.float32)
 def extract_number(file_path):
     file_name = os.path.basename(file_path)  # 获取文件名
     number = re.findall(r'\d+', file_name)   # 提取文件名中的数字
-    return int(number[0]) if number else 0   # 返回数字用于排序
+    return int(number[-1]) if number else 0   # 返回数字用于排序
 def jhelp(c,restrict=False):
     if restrict:
         return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c),key=extract_number)))]
