@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 14:28:57
+LastEditTime: 2024-12-16 15:32:06
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -331,6 +331,7 @@ def read_rgba(file,w,h,dtype):
     return img_data_8bit
         
 def read_metas(files):
+    files = jhelp_file(os.path.join('/Users/qhong/Desktop/1216/left/meta'),restrict=True)
     ints,exts,ts,gr,ac = [],[],[],[],[]
     for file in files:
         # file = '/Users/qhong/Desktop/0624/output/meta/3632FF65-0F14-4A05-8ABF-DD6226F934AB_00000004.txt'
@@ -354,9 +355,11 @@ def read_metas(files):
     gr = np.stack(gr)
     ac = np.stack(ac)
     # 去除重力影响
-    accelerations = ac * G
+    accelerations = (ac+gr) * G
+    accelerations[:,0] += G
     # 时间间隔
     time_deltas = np.diff(ts)
+    
     # 计算速度 (通过累积积分)
     # velocities = cumtrapz(accelerations, time_deltas, axis=0, initial=0)
     # # 计算位移 (再次累积积分)
@@ -367,12 +370,13 @@ def read_metas(files):
 
     # 数值积分：计算速度
     for i in range(1, len(accelerations)):
-        velocities[i] = velocities[i - 1] + (accelerations[i - 1] + accelerations[i]) / 2 * time_deltas[i - 1]
-
+        # velocities[i] = velocities[i - 1] + (accelerations[i - 1] + accelerations[i]) / 2 * time_deltas[i - 1]
+        velocities[i] = velocities[i - 1] + accelerations[i - 1] * time_deltas[i - 1]
     # 数值积分：计算位移
     for i in range(1, len(accelerations)):
         displacements[i] = displacements[i - 1] + (velocities[i - 1] + velocities[i]) / 2 * time_deltas[i - 1]
-
+    draw_acc(velocities,ts)
+    # draw_acc(velocities,ts)
     return ints,exts,displacements
 
 def write_colmap_model(path,cam_infos,image_infos):
@@ -389,6 +393,26 @@ def write_colmap_model(path,cam_infos,image_infos):
     mkdir(path)
     write_model(cameras, images, None, path,ext='.txt')
 
+def draw_acc(data,time_deltas):
+    import matplotlib.pyplot as plt
+    x,y,z = data[:,0],data[:,1],data[:,2]
+    t = time_deltas
+    # x,y,z 各方向に対する加速度、時間リスト
+    # for a in data:
+    #     x.append(a['x']); y.append(a['y'])
+    #     z.append(a['z']); t.append(a['at'])
+
+    plt.scatter(t,x,c="r"); plt.plot(t,x,c="r")
+    plt.scatter(t,y,c="g"); plt.plot(t,y,c="g")
+    plt.scatter(t,z,c="b"); plt.plot(t,z,c="b")
+
+    plt.title("Accelerometer data", fontsize=20)
+    plt.xlabel('Time (s)', fontsize=16)
+    plt.ylabel('Acclerometer (m/s^2)', fontsize=16)
+    plt.tick_params(labelsize=12)
+    plt.grid()
+    plt.figure(figsize=[8,4])
+    plt.show()
 if __name__ == "__main__":
     import open3d as o3d
     

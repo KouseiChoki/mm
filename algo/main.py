@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-15 11:12:32
+LastEditTime: 2024-12-17 10:17:42
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -199,10 +199,6 @@ if 'cpu' not in args.gpu and args.multi_frame_algo:
     cudnn.deterministic = True
     if 'mps' not in args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-        if torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         DEVICE = torch.device('mps')
 args.model = args.weight_file

@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-27 13:48:43
+LastEditTime: 2024-12-17 10:18:36
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -732,9 +732,9 @@ def scene_change_detect(images):
     torch.manual_seed(1234)
     np.random.seed(1234)
     if torch.backends.mps.is_available():
-        device = torch.device("mps")
+        DEVICE = torch.device("mps")
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
     pthpath = os.getcwd() + '/checkpoints/scene_change.pth'
@@ -764,9 +764,9 @@ def scene_change_detect(images):
 
 def scene_change_detect_video(video_path):
     if torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        DEVICE = torch.device("mps")
+    else:
+        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     supernet_best_f1 = TransNetV2Supernet()
     model_dict = supernet_best_f1.state_dict()
     pthpath = os.path.dirname(os.path.abspath(__file__))+'/../checkpoints/scene_change.pth'
