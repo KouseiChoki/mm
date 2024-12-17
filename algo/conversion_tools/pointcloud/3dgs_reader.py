@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 16:17:29
+LastEditTime: 2024-12-17 10:56:51
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -181,13 +181,13 @@ def cal_qvec(data):
 
 def cal_qvec_rub_to_rdf(data):
     rx,ry,rz,tx,ty,tz = data
-    rotation_matrix = R.from_euler('ZYX', [rx,ry,rz],degrees=True).as_matrix()
+    rotation_matrix = R.from_euler('YXZ', [rx,ry,rz],degrees=True).as_matrix()
     c2w = np.eye(4,4)
     if args.baseline_distance!=0:
         tx += args.baseline_distance
     c2w[:3,:3] = rotation_matrix
-    print(tx,ty,tz)
-    c2w[:3,-1] = [0,0,0]
+    # print(tx,ty,tz)
+    c2w[:3,-1] = [tx,ty,tz]
     ##customs for gongxians code
     # c2w[:2,:] *= -1
     # c2w[:3,-1] = [tz,-tx,ty]
