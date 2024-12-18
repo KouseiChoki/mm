@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-18 12:08:24
+LastEditTime: 2024-12-18 12:09:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -466,7 +466,8 @@ if __name__ == '__main__':
         curs.append(cur)
 
     if len(args.custom)>1:
-        custom = [i-1 for i in args.custom]
+        # custom = [i-1 for i in args.custom]
+        custom = args.custom
         sorted_arr_with_indices = sorted(enumerate(custom), key=lambda x: x[1])
         sorted_arr = [x[1] for x in sorted_arr_with_indices]
         task_indexes = [sorted_arr]
