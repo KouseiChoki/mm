@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-17 10:56:51
+LastEditTime: 2024-12-18 12:08:24
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -70,6 +70,7 @@ def init_param():
     parser.add_argument('--rub', action='store_true', help="dump rub viewmatrix")
     parser.add_argument('--test', action='store_true', help="use test")
     parser.add_argument('--down_scale',type=int, default=1,help="downscale rate")
+    parser.add_argument('--custom',nargs="+",type=int, default=[0],help="custom input mode, like 2,4,5(key frame is first value:2)")
     args = parser.parse_args()
     return args
 
@@ -464,6 +465,13 @@ if __name__ == '__main__':
         task_indexes.append(tmp)
         curs.append(cur)
 
+    if len(args.custom)>1:
+        custom = [i-1 for i in args.custom]
+        sorted_arr_with_indices = sorted(enumerate(custom), key=lambda x: x[1])
+        sorted_arr = [x[1] for x in sorted_arr_with_indices]
+        task_indexes = [sorted_arr]
+        original_positions = {original_idx: sorted_idx for sorted_idx, (original_idx, _) in enumerate(sorted_arr_with_indices)}
+        curs = [original_positions[0]]
     
     if len(images) <= args.max_frame:
         args.step = 1
