@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-01-06 16:43:45
+LastEditTime: 2024-12-25 14:37:00
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -26,7 +26,6 @@ Description:
 When I wrote this, only God and I understood what I was doing
 Now, God only knows
 '''
-import open3d as o3d
 import numpy as np
 import os,sys,shutil
 from tqdm import tqdm
@@ -38,7 +37,6 @@ from fileutil.read_write_model import Camera,write_model,Image
 from file_utils import mvwrite,read
 from myutil import mask_adjust,write_txt
 import argparse
-MAX_DEPTH = 1e4
 IMG_DATA = ['.png','.tiff','.tif','.exr','.jpg']
 def prune(c,keyword,mode = 'basename'):
     if mode =='basename':
@@ -57,10 +55,10 @@ def gofind(c,keywords,mode = 'basename'):
 
 def init_param():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root','--path',  help="your data path", required=True)
+    parser.add_argument('--root',  help="your data path", required=True)
     parser.add_argument('--step',type=int, default=1,help="frame step")
     parser.add_argument('--start_frame',type=int, default=0,help="start frame")
-    parser.add_argument('--max_frame',type=int, default=5,help="max generated frames")
+    parser.add_argument('--max_frame',type=int, default=999,help="max generated frames")
     parser.add_argument('--baseline_distance', type=float, default=0,help="baseline_distance")
     parser.add_argument('--f', action='store_true', help="force run")
     parser.add_argument('--mask_type', type=str,default='nomask', help="bg or mix",choices=['nomask','bg','mix'])
@@ -72,7 +70,6 @@ def init_param():
     parser.add_argument('--rub', action='store_true', help="dump rub viewmatrix")
     parser.add_argument('--test', action='store_true', help="use test")
     parser.add_argument('--down_scale',type=int, default=1,help="downscale rate")
-    parser.add_argument('--custom',nargs="+",type=int, default=[0],help="custom input mode, like 2,4,5(key frame is first value:2)")
     args = parser.parse_args()
     return args
 
@@ -121,7 +118,6 @@ def read_rtf(file_path):
 #     write_model(cameras, images, None, path,ext='.txt')
 #     i +=1
 
-
 # print(image_infos)
 def get_ply(xyz,rgbs):
     #create pointcloud
@@ -146,25 +142,6 @@ def get_ply(xyz,rgbs):
     ply_data = PlyData([vertex_element])
     return ply_data
 
-
-def generate_point_cloud(rgb_,depth_,int,T_WC):
-    
-    """
-    Converts depth maps to point clouds and merges them all into one global point cloud.
-    flags: command line arguments
-    data: dict with keys ['intrinsics', 'poses']
-    returns: [open3d.geometry.PointCloud]
-    """
-    intrinsics = o3d.camera.PinholeCameraIntrinsic(width=depth_.shape[1], height=depth_.shape[0], fx=int[0, 0],
-        fy=int[1, 1], cx=int[0, 2], cy=int[1, 2])
-    T_WC = np.linalg.inv(T_WC)
-
-    rgb = o3d.geometry.Image(rgb_)
-    depth = o3d.geometry.Image(depth_)
-    rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-    rgb, depth,depth_scale=1.0, depth_trunc=MAX_DEPTH, convert_rgb_to_intensity=False)
-    return o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics, extrinsic=T_WC)
-
 def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=None):
     h, w = depth_image.shape
     i, j = np.meshgrid(np.arange(w), np.arange(h), indexing='xy')
@@ -186,57 +163,17 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
     return points_world
 
-# def cal_qvec(data):
-#     rx,ry,rz,tx,ty,tz = data
-#     rotation_matrix = R.from_euler('zyx', [rx,ry,rz],degrees=True).as_matrix()
-#     c2w = np.eye(4,4)
-#     if args.baseline_distance!=0:
-#         tx += args.baseline_distance
-#     c2w[:3,:3] = rotation_matrix
-#     translation_vector = [tx,ty,tz]
-
-#     c2w[:3,-1] = translation_vector
-#     c2w = np.linalg.inv(c2w)
-#     # c2w[:3,-1] = -rotation_matrix @ translation_vector
-#     # print(tx,ty,tz)
-#     rub = c2w.copy() if args.rub else None
-#     w2c = np.linalg.inv(c2w)
-#     qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
-#     tvec0,tvec1,tvec2 = w2c[:3, 3]
-#     return np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),c2w,rub
-
 def cal_qvec(data):
-    from scipy.spatial.transform import Rotation as R
     rx,ry,rz,tx,ty,tz = data
-    rotation_matrix = R.from_euler('YXZ', [rx,ry,rz],degrees=True).as_matrix()
-    c2w = np.eye(4,4)
-    c2w[:3,:3] = rotation_matrix
-    translation_vector = [tx,ty,tz]
-    c2w[:3,-1] = translation_vector
-     # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
-    c2w[:3, 1:3] *= -1
-    # get the world-to-camera transform and set R, T
-    w2c = np.linalg.inv(c2w)
-    R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
-    T = w2c[:3, 3]
-    return R,T
-
-def cal_qvec_rub_to_rdf(data):
-    rx,ry,rz,tx,ty,tz = data
-    rotation_matrix = R.from_euler('xyz', [rx,ry,rz],degrees=True).as_matrix()
+    rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
     c2w = np.eye(4,4)
     if args.baseline_distance!=0:
         tx += args.baseline_distance
     c2w[:3,:3] = rotation_matrix
-    translation_vector = [tx,ty,tz]
-    print(tx,ty,tz)
-    c2w[:3,-1] = translation_vector
-     # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
-    c2w[:3, 1:3] *= -1
-    # get the world-to-camera transform and set R, T
+    c2w[:3,-1] = [tx,ty,tz]
     rub = c2w.copy() if args.rub else None
+    c2w[:,1:3] *= -1
     w2c = np.linalg.inv(c2w)
-    # c2w[:3,-1] = w2c[:3,-1]
     qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
     tvec0,tvec1,tvec2 = w2c[:3, 3]
     return np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),c2w,rub
@@ -250,11 +187,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     fg_ply_data = None
     for i in range(nums): 
         w,h = int(ins['w']),int(ins['h'])
-        # etmp,c2w,rub = cal_qvec_unreal_to_rdf(ext[i])
-        if args.fbx:
-            etmp,c2w,rub = cal_qvec_rub_to_rdf(ext[i])
-        else:
-            etmp,c2w,rub = cal_qvec(ext[i])
+        etmp,c2w,rub = cal_qvec(ext[i])
         image_info = ImageInfo(uid=index,extrinsic=etmp,rub=rub)
         image_infos.append(image_info)
         cam_info = CameraInfo(uid=index, fx=ins['fx'],fy=ins['fy'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=w, height=h,model="PINHOLE")
@@ -308,20 +241,14 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
                 tmp_points = generate_point_cloud_from_depth(depth,intrinsics,c2w,tmp_condition)
         else:
             point = generate_point_cloud_from_depth(depth,intrinsics,c2w)
-            # tmp = generate_point_cloud_from_depth(rgb,depth,intrinsics,c2w)
-            # point = np.asarray(tmp.points)
-            # rgb = np.asarray(tmp.colors)
         if point is not None:
-            point = point.reshape(-1,3)[depth.reshape(-1)<MAX_DEPTH]
             points.append(point.reshape(-1,3))
         if rgb is not None:
-            rgb = rgb.reshape(-1,3)[depth.reshape(-1)<MAX_DEPTH]
             rgbs.append(rgb.reshape(-1,3))
         index += 1
     xyz = np.concatenate(points)
     rgbs = np.concatenate(rgbs)
     ply_data = get_ply(xyz,rgbs)
-    print(xyz.shape,rgbs.shape)
     if len(tmp_points)>0:
         # xyz = np.array(tmp_points)
         # rgbs = np.array(tmp_rgbs)
@@ -368,10 +295,9 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     mkdir(os.path.join(sp , "images"))
     for image in images:
         shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
-    if masks is not None:
-        mkdir(os.path.join(sp , "masks"))
-        for mask in masks:
-            shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
+    mkdir(os.path.join(sp , "masks"))
+    # for mask in masks:
+    #     shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
     # if mask_folder is not None:
     #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
     # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
@@ -384,29 +310,28 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     # if args.baseline_distance==0:
     if ply_data is not None:
         ply_data.write(ply_path)
-    
-    # if args.judder_angle is not None and args.judder_angle!= -1:
-    #     print('writing ja file')
-    #     image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
-    #     sp += f'_ja_{args.judder_angle}'
-    #     shutil.rmtree(sp,ignore_errors=True)
-    #     sparse_path = os.path.join(sp,'sparse/0')
-    #     mkdir(sparse_path)
-    #     # Write out the images.
-    #     mkdir(os.path.join(sp , "images"))
-    #     for image in images:
-    #         shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
-    #     mkdir(os.path.join(sp , "masks"))
-    #     for mask in masks:
-    #         shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
-    #     # if mask_folder is not None:
-    #     #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
-    #     # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
-    #     write_colmap_model(sparse_path,cam_infos,image_infos,step=args.step)
-    #     # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
-    #     # if args.baseline_distance==0:
-    #     if ply_data is not None:
-    #         ply_data.write(ply_path)
+    if args.judder_angle!= -1:
+        print('writing ja file')
+        image_infos,cam_infos = ja_ajust(image_infos,cam_infos,args.judder_angle)
+        sp += f'_ja_{args.judder_angle}'
+        shutil.rmtree(sp,ignore_errors=True)
+        sparse_path = os.path.join(sp,'sparse/0')
+        mkdir(sparse_path)
+        # Write out the images.
+        mkdir(os.path.join(sp , "images"))
+        for image in images:
+            shutil.copy(image, os.path.join(sp , "images",os.path.basename(image)))
+        mkdir(os.path.join(sp , "masks"))
+        for mask in masks:
+            shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
+        # if mask_folder is not None:
+        #     shutil.copytree(mask_folder, os.path.join(sp ,os.path.basename(mask_folder)),dirs_exist_ok=True)
+        # shutil.copytree(image_folder, os.path.join(sp , os.path.basename(image_folder)),dirs_exist_ok=True)
+        write_colmap_model(sparse_path,cam_infos,image_infos,step=args.step)
+        # shutil.copy(raw_ply,os.path.join(sp,'sparse/0/points3D.ply'))
+        # if args.baseline_distance==0:
+        if ply_data is not None:
+            ply_data.write(ply_path)
     
 def read_intrinsic(intrinsic_file):
     res = {}
@@ -427,17 +352,18 @@ def read_txt(file_path):
         data.append(components)
     return data
 
-def sliding_window(sequence, window_size=3,window_step=1,step=1,pad=0,pad_step=0):
+def sliding_window(sequence, window_size,window_step,pad=0,pad_step=0):
     """Generate a sliding window over a sequence."""
+    window_size -=2
     res = []
-    index = 0
-    while True:
-        choose = [index + step * i for i in range(window_size)]
-        if choose[-1]>=len(sequence):
-            break
-        tmp = [sequence[c] for c in choose]
-        res.append(tmp)
-        index += window_step
+    for i in range(0, len(sequence), window_step):
+        window = sequence[i:i+window_size]
+        if len(window) < window_size:
+            window = sequence[-window_size:]
+        if pad>0:
+            for _ in range(pad):
+                window = np.hstack((window[0]-pad_step,window,window[-1]+pad_step))
+        res.append(window)
     return res
 
 if __name__ == '__main__':
@@ -453,43 +379,37 @@ if __name__ == '__main__':
             for tmp in tmps:
                 shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
         path = os.path.join(args.root,'raw')
-
+    intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
+    extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
+    # data = read_rtf(rtf)
+    # lines = data.strip().split('\n')
+    # rows = [list(map(float, line.split())) for line in lines[1:]]
+    #prune data
     try:
-        image_folder = os.path.join(path,'image')
-        if not os.path.isdir(image_folder):
-            image_folder = os.path.join(path,'images')
-
-        mask_folder = os.path.join(path,'masks')
-        if not os.path.isdir(mask_folder):
-            mask_folder = os.path.join(path,'Mask')
-
-        depth_folder =  os.path.join(path,'depths')
-        if not os.path.isdir(depth_folder):
-            depth_folder = os.path.join(path,'world_depth')
+        image_folder = gofind(jhelp_folder(path),'image')[0]
+        # mask_folder = gofind(jhelp_folder(path),'masks')[0]
+        depth_folder = gofind(jhelp_folder(path),'depths')[0]
         images = jhelp_file(image_folder)
-        masks = jhelp_file(mask_folder) if os.path.isdir(mask_folder) else None
+        masks = None
         depths  = jhelp_file(depth_folder)
     except:
         raise ImportError('error input folder, need IMAGES and DEPTHS (MASKS) folder!')
+    # assert len(images)==len(masks) and len(images)==len(depths),f'error input number of image/mask/depth,{len(images)},{len(masks)},{len(depths)}'
     if args.mask_type != 'nomask':
         assert len(masks)>0,'can not find mask file!'
     
-    if len(gofind(jhelp_file(path),'.fbx'))>0:
-        from fbx2json import fbx_reader
-        instrinsics = {}
-        instrinsics['h'],instrinsics['w'] = read(images[0],type='image').shape[:2]
-        fbx_file = gofind(jhelp_file(path),'.fbx')[0]
-        ext_,[fw,fh] = fbx_reader(fbx_file)
-        focal_length_x = instrinsics['w']  * fw
-        focal_length_y = instrinsics['h']  * fh
-        instrinsics['fx'],instrinsics['fy'] = focal_length_x,focal_length_y
-        args.fbx=True
+    ext_ = read_extrinsics(extrinsic_file)
+    if len(images) <= args.max_frame:
+        images_prepare = [[images[i] for i in range(0,len(images),args.step)]]
+        # masks_prepare = [[masks[i] for i in range(0,len(masks),args.step)]]
+        depths_prepare = [[depths[i] for i in range(0,len(depths),args.step)]]
+        extrinsics = [ext_]
     else:
-        intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
-        extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
-        instrinsics = read_intrinsic(intrinsic_file)
-        ext_ = read_extrinsics(extrinsic_file)
-        args.fbx=False
+        images_prepare = sliding_window(images,args.max_frame,args.step)
+        # masks_prepare = sliding_window(masks,args.max_frame,args.step)
+        depths_prepare = sliding_window(depths,args.max_frame,args.step)
+        extrinsics = sliding_window(ext_,args.max_frame,args.step)
+        # extrinsics = sliding_window(ext_,min(ext_,len(args.max_frame)*args.step-args.step+1))
 
     task_indexes = np.arange(args.start_frame,args.start_frame+args.max_frame)
     task_indexes = []
@@ -501,42 +421,17 @@ if __name__ == '__main__':
             tmp +=args.step
             cur -= 1
             if cur < 0 or cur >= args.max_frame:
-                raise ValueError('error max frames')
+                raise ValueError('error max framse')
         while(tmp.max()>len(images)-1):
             tmp -=args.step
             cur += 1
             if cur < 0 or cur >= args.max_frame:
-                raise ValueError('error max frames')
+                raise ValueError('error max framse')
         
         tmp = [np.clip(k,0,len(images)-1) for k in tmp]
+
         task_indexes.append(tmp)
         curs.append(cur)
-
-    if len(args.custom)>1:
-        # custom = [i-1 for i in args.custom]
-        custom = args.custom
-        sorted_arr_with_indices = sorted(enumerate(custom), key=lambda x: x[1])
-        sorted_arr = [x[1] for x in sorted_arr_with_indices]
-        task_indexes = [sorted_arr]
-        original_positions = {original_idx: sorted_idx for sorted_idx, (original_idx, _) in enumerate(sorted_arr_with_indices)}
-        curs = [original_positions[0]]
-    
-    if len(images) <= args.max_frame:
-        args.step = 1
-        images_prepare = [[images[i] for i in range(0,len(images))]]
-        masks_prepare = [[masks[i] for i in range(0,len(masks))]] if masks is not None else None
-        depths_prepare = [[depths[i] for i in range(0,len(depths))]]
-        extrinsics = [ext_]
-    else:
-        # images_prepare = sliding_window(images,args.max_frame,step=args.step)
-        # masks_prepare = sliding_window(masks,args.max_frame,step=args.step) if masks is not None else None
-        # depths_prepare = sliding_window(depths,args.max_frame,step=args.step)
-        # extrinsics = sliding_window(ext_,args.max_frame,step=args.step)
-        images_prepare = [[images[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
-        masks_prepare = [[masks[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))] if masks is not None else None
-        depths_prepare = [[depths[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
-        extrinsics = [[ext_[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
-        # extrinsics = sliding_window(ext_,min(ext_,len(args.max_frame)*args.step-args.step+1))
     # if not args.full_result:
     # tmp_curs = []
     # tmp_task_indexes = []
@@ -546,15 +441,21 @@ if __name__ == '__main__':
     #         tmp_task_indexes.append(task_indexes[i])
     # curs = tmp_curs
     # task_indexes = tmp_task_indexes
+
+    images_prepare = [[images[ii] for ii in i]for i in task_indexes]
+    # masks_prepare = [[masks[ii] for ii in i]for i in task_indexes]
+    depths_prepare = [[depths[ii] for ii in i]for i in task_indexes]
+    extrinsics_ = read_extrinsics(extrinsic_file)
+    extrinsics = [[extrinsics_[ii] for ii in i]for i in task_indexes]
     #需要判断重复元素 --root /Users/qhong/Desktop/avatar_data/2039 --max_frame 5 --step 2  --inverse_depth  --mask_type fg 
-    
-    # source_ext = []
-    # source_ins = []
-    # for ext in ext_:
-    #     tmp,_,_ = cal_qvec(ext)
-    #     source_ext.append(tmp)
-    #     source_ins.append(instrinsics)
-    # source_ext = np.stack(source_ext)
+    instrinsics = read_intrinsic(intrinsic_file)
+    source_ext = []
+    source_ins = []
+    for ext in ext_:
+        tmp,_,_ = cal_qvec(ext)
+        source_ext.append(tmp)
+        source_ins.append(instrinsics)
+    source_ext = np.stack(source_ext)
     
     for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
         args.cur = curs[i]
@@ -567,23 +468,16 @@ if __name__ == '__main__':
             name += f'_step_{args.step}'
         name += f'_cur_{args.cur}'
         save_path = os.path.join(path,'..','pointcloud',name)
-        m = masks_prepare[i] if masks is not None else None
-        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,m)
-        if args.test:
-            break
-    if args.test:
-        plypath = os.path.join(save_path,'sparse/0/points3D.ply')
-        from plytest import show_ply
-        show_ply(plypath)
+        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,None)
 
-        # if i < len(images_prepare):
-        #     if i == len(images_prepare)-1:
-        #         image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None)]
-        #         cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE")]
-        #     else:
-        #         image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None),ImageInfo(uid=i+1,extrinsic=source_ext[i+1],rub=None)]
-        #         cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE"),CameraInfo(uid=i+1, fx=float(source_ins[i+1]['fx']),fy=float(source_ins[i+1]['fy']),cx=int(source_ins[i+1]['w'])/2.0 ,cy=int(source_ins[i+1]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i+1]['w']), height=int(source_ins[i+1]['h']),model="PINHOLE")]
-        #     write_colmap_model(os.path.join(save_path,'sparse/0'),cam_infos,image_infos,'.jatxt')
+        if i < len(images_prepare):
+            if i == len(images_prepare)-1:
+                image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None)]
+                cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE")]
+            else:
+                image_infos = [ImageInfo(uid=i,extrinsic=source_ext[i],rub=None),ImageInfo(uid=i+1,extrinsic=source_ext[i+1],rub=None)]
+                cam_infos = [CameraInfo(uid=i, fx=float(source_ins[i]['fx']),fy=float(source_ins[i]['fy']),cx=int(source_ins[i]['w'])/2.0 ,cy=int(source_ins[i]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i]['w']), height=int(source_ins[i]['h']),model="PINHOLE"),CameraInfo(uid=i+1, fx=float(source_ins[i+1]['fx']),fy=float(source_ins[i+1]['fy']),cx=int(source_ins[i+1]['w'])/2.0 ,cy=int(source_ins[i+1]['h'])/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=int(source_ins[i+1]['w']), height=int(source_ins[i+1]['h']),model="PINHOLE")]
+            write_colmap_model(os.path.join(save_path,'sparse/0'),cam_infos,image_infos,'.jatxt')
 
         # HEADER = (f'extra information for judder_angle renders,cf={str(i)}')
         # np.savetxt(os.path.join(save_path,'sparse/0/ja_images.txt'),source_ext[i:i+2],header=HEADER)

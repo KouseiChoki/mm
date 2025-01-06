@@ -19,6 +19,53 @@ DEPTH_WIDTH = 256
 DEPTH_HEIGHT = 192
 MAX_DEPTH = 20.0
 
+import collections
+BaseImage = collections.namedtuple(
+    "Image", ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"])
+class CImage(BaseImage):
+    def qvec2rotmat(self):
+        return qvec2rotmat(self.qvec)
+def read_extrinsics_text(path):
+    """
+    Taken from https://github.com/colmap/colmap/blob/dev/scripts/python/read_write_model.py
+    """
+    images = {}
+    with open(path, "r") as fid:
+        while True:
+            line = fid.readline()
+            if not line:
+                break
+            line = line.strip()
+            if len(line) > 0 and line[0] != "#":
+                elems = line.split()
+                image_id = int(elems[0])
+                qvec = np.array(tuple(map(float, elems[1:5])))
+                tvec = np.array(tuple(map(float, elems[5:8])))
+                camera_id = int(elems[8])
+                image_name = elems[9]
+                elems = fid.readline().split()
+                xys = np.column_stack([tuple(map(float, elems[0::3])),
+                                       tuple(map(float, elems[1::3]))])
+                point3D_ids = np.array(tuple(map(int, elems[2::3])))
+                images[image_id] = CImage(
+                    id=image_id, qvec=qvec, tvec=tvec,
+                    camera_id=camera_id, name=image_name,
+                    xys=xys, point3D_ids=point3D_ids)
+    return images
+
+def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
+    Rt = np.zeros((4, 4))
+    Rt[:3, :3] = R.transpose()
+    Rt[:3, 3] = t
+    Rt[3, 3] = 1.0
+
+    C2W = np.linalg.inv(Rt)
+    cam_center = C2W[:3, 3]
+    cam_center = (cam_center + translate) * scale
+    C2W[:3, 3] = cam_center
+    Rt = np.linalg.inv(C2W)
+    return np.float32(Rt)
+
 def qvec2rotmat(qvec):
     return np.array([
         [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
@@ -138,6 +185,30 @@ def load_confidence(path):
     return np.array(Image.open(path))
 
 
+# def point_clouds(rgbs,depths,confidences,ext,intrinsics,step=1):
+#     """
+#     Converts depth maps to point clouds and merges them all into one global point cloud.
+#     flags: command line arguments
+#     data: dict with keys ['intrinsics', 'poses']
+#     returns: [open3d.geometry.PointCloud]
+#     """
+#     pc = o3d.geometry.PointCloud()
+#     # for i, (T_WC, rgb) in enumerate(ext,rgbs):
+#     for i in range(0,len(rgbs),step):
+#         print(f"Point cloud {i}", end="\r")
+#           
+#         confidence = load_confidence(confidences[i])
+#         depth_path = depths[i]
+#         depth = load_depth(depth_path, confidence, filter_level=1)
+#         rgb = read(rgbs[i],type='image')
+#         rgb = cv2.resize(rgb,(DEPTH_WIDTH, DEPTH_HEIGHT),interpolation=cv2.INTER_NEAREST)
+#         # depth = cv2.resize(depth,(rgb.shape[1],rgb.shape[0]),interpolation=cv2.INTER_NEAREST)
+#         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+#             o3d.geometry.Image(rgb), depth,
+#             depth_scale=1.0, depth_trunc=MAX_DEPTH, convert_rgb_to_intensity=False)
+#         pc += o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics, extrinsic=T_CW)
+#     return pc
+
 def point_clouds(rgbs,depths,confidences,ext,intrinsics,step=1):
     """
     Converts depth maps to point clouds and merges them all into one global point cloud.
@@ -146,20 +217,24 @@ def point_clouds(rgbs,depths,confidences,ext,intrinsics,step=1):
     returns: [open3d.geometry.PointCloud]
     """
     pc = o3d.geometry.PointCloud()
+    tmp = []
+    colors = []
     # for i, (T_WC, rgb) in enumerate(ext,rgbs):
     for i in range(0,len(rgbs),step):
         print(f"Point cloud {i}", end="\r")
-        T_CW = np.linalg.inv(ext[i])
+        # T_CW = np.linalg.inv(ext[i])
         confidence = load_confidence(confidences[i])
         depth_path = depths[i]
-        depth = load_depth(depth_path, confidence, filter_level=1)
+        depth = np.asarray(load_depth(depth_path, confidence, filter_level=1))
         rgb = read(rgbs[i],type='image')
         rgb = cv2.resize(rgb,(DEPTH_WIDTH, DEPTH_HEIGHT),interpolation=cv2.INTER_NEAREST)
         # depth = cv2.resize(depth,(rgb.shape[1],rgb.shape[0]),interpolation=cv2.INTER_NEAREST)
-        rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-            o3d.geometry.Image(rgb), depth,
-            depth_scale=1.0, depth_trunc=MAX_DEPTH, convert_rgb_to_intensity=False)
-        pc += o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics, extrinsic=T_CW)
+        t = generate_point_cloud_from_depth(depth,intrinsics.intrinsic_matrix,ext[i])
+        tmp.append(t.reshape(-1,3))
+        colors.append(rgb[depth!=0].reshape(-1,3))
+    # print(np.concatenate(tmp).shape,np.concatenate(colors).shape)
+    pc.points = o3d.utility.Vector3dVector(np.concatenate(tmp))
+    pc.colors = o3d.utility.Vector3dVector(np.concatenate(colors)/255)
     return pc
 
 choices=['756x1008', '1428x1904']
@@ -185,9 +260,9 @@ for line in odometry:
     position = line[2:5]
     quaternion = line[5:]
     T_WC = np.eye(4)
-    T_WC[:3, :3] = Rotation.from_quat(quaternion).as_matrix()
+    T_WC[:3, :3] = Rotation.from_quat(quaternion).as_matrix().transpose()
     T_WC[:3, 3] = position
-    # T_CW = np.linalg.inv(T_WC)
+    # T_WC = np.linalg.inv(T_WC)
     poses.append(T_WC)
 pts,cls = [],[]
 
@@ -207,6 +282,7 @@ image_infos,cam_infos = [],[]
 for i in range(0,len(images),step):
     # _,_,tvec0,tvec1,tvec2,qx, qy, qz, qw = odometry[i]
     # tvec0,tvec1,tvec2 = w2c[:3, 3]
+    # w2c = poses[i]
     w2c = np.linalg.inv(poses[i])
     qx, qy, qz ,qw = R.from_matrix(w2c[:3, :3]).as_quat()
     tvec0,tvec1,tvec2 = w2c[:3, 3]
