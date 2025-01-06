@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-01-06 16:52:41
+LastEditTime: 2025-01-06 16:55:09
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -250,10 +250,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     for i in range(nums): 
         w,h = int(ins['w']),int(ins['h'])
         # etmp,c2w,rub = cal_qvec_unreal_to_rdf(ext[i])
-        if args.fbx:
-            etmp,c2w,rub = cal_qvec_rub_to_rdf(ext[i])
-        else:
-            etmp,c2w,rub = cal_qvec(ext[i])
+        etmp,c2w,rub = cal_qvec_rub_to_rdf(ext[i])
         image_info = ImageInfo(uid=index,extrinsic=etmp,rub=rub)
         image_infos.append(image_info)
         cam_info = CameraInfo(uid=index, fx=ins['fx'],fy=ins['fy'],cx=w/2.0 ,cy=h/2.0,image_name=os.path.basename(images[i]),image_path = images[i], width=w, height=h,model="PINHOLE")
