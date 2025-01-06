@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-01-06 16:43:45
+LastEditTime: 2025-01-06 16:52:41
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -229,7 +229,6 @@ def cal_qvec_rub_to_rdf(data):
         tx += args.baseline_distance
     c2w[:3,:3] = rotation_matrix
     translation_vector = [tx,ty,tz]
-    print(tx,ty,tz)
     c2w[:3,-1] = translation_vector
      # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
     c2w[:3, 1:3] *= -1
