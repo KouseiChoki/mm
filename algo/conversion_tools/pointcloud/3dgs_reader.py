@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-01-06 16:55:09
+LastEditTime: 2025-01-08 10:49:07
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -38,7 +38,7 @@ from fileutil.read_write_model import Camera,write_model,Image
 from file_utils import mvwrite,read
 from myutil import mask_adjust,write_txt
 import argparse
-MAX_DEPTH = 1e4
+MAX_DEPTH = 1e6
 IMG_DATA = ['.png','.tiff','.tif','.exr','.jpg']
 def prune(c,keyword,mode = 'basename'):
     if mode =='basename':
@@ -181,10 +181,41 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
     # 去除非法点
     if mask is not None:
         points_camera = points_camera[mask]
-    points_camera = points_camera[points_camera[:, 2] != 0]
+    # points_camera = points_camera[points_camera[:, 2] != 0]
     # 将点云从相机坐标系转换到世界坐标系
     points_world = (extrinsics[:3, :3] @ points_camera.T).T + extrinsics[:3, 3]
+    # points_camera += extrinsics[:3, 3]
+    # points_world = (extrinsics[:3, :3] @ points_camera.T).T
+    
     return points_world
+
+# def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics, mask=None):
+#     h, w = depth_image.shape
+#     i, j = np.meshgrid(np.arange(w), np.arange(h), indexing='xy')
+#     # 相机内参
+#     fx, fy = intrinsics[0, 0], intrinsics[1, 1]
+#     cx, cy = intrinsics[0, 2], intrinsics[1, 2]
+#     # 计算每个像素的三维坐标
+#     z = depth_image.astype(np.float32)  # 假设深度以毫米为单位，转换为米
+#     x = (i - cx) * z / fx
+#     y = (j - cy) * z / fy
+#     # 将点组合成 [N, 3] 的点云
+#     points_camera = np.stack((x, y, z), axis=-1).reshape(-1, 3)
+#     # 去除非法点
+#     if mask is not None:
+#         points_camera = points_camera[mask]
+#     points_camera = points_camera[points_camera[:, 2] != 0]
+#     # 如果平移是以原点计算，需要显式地将平移矢量应用到世界坐标原点
+#     # 先从 extrinsics 中提取旋转和平移
+#     rotation_matrix = extrinsics[:3, :3]
+#     translation_vector = extrinsics[:3, 3]
+#     # 转换到世界坐标系，平移由原点参考
+#     points_world = (rotation_matrix @ points_camera.T).T + translation_vector
+#     print("Rotation Matrix:\n", rotation_matrix)
+#     print("Translation Vector:\n", translation_vector)
+#     print("Points Camera (sample):\n", points_camera[:5])
+#     print("Points World (sample):\n", points_world[:5])
+#     return points_world
 
 # def cal_qvec(data):
 #     rx,ry,rz,tx,ty,tz = data
@@ -205,30 +236,123 @@ def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=Non
 #     tvec0,tvec1,tvec2 = w2c[:3, 3]
 #     return np.array([qw,qx,qy,qz,tvec0,tvec1,tvec2]),c2w,rub
 
-def cal_qvec(data):
-    from scipy.spatial.transform import Rotation as R
-    rx,ry,rz,tx,ty,tz = data
-    rotation_matrix = R.from_euler('YXZ', [rx,ry,rz],degrees=True).as_matrix()
-    c2w = np.eye(4,4)
-    c2w[:3,:3] = rotation_matrix
-    translation_vector = [tx,ty,tz]
-    c2w[:3,-1] = translation_vector
-     # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
-    c2w[:3, 1:3] *= -1
-    # get the world-to-camera transform and set R, T
-    w2c = np.linalg.inv(c2w)
-    R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
-    T = w2c[:3, 3]
-    return R,T
+# def cal_qvec(data):
+#     from scipy.spatial.transform import Rotation as R
+#     rx,ry,rz,tx,ty,tz = data
+#     rotation_matrix = R.from_euler('YXZ', [rx,ry,rz],degrees=True).as_matrix()
+#     c2w = np.eye(4,4)
+#     c2w[:3,:3] = rotation_matrix
+#     translation_vector = [tx,ty,tz]
+#     c2w[:3,-1] = translation_vector
+#      # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
+#     c2w[:3, 1:3] *= -1
+#     # get the world-to-camera transform and set R, T
+#     w2c = np.linalg.inv(c2w)
+#     R = np.transpose(w2c[:3,:3])  # R is stored transposed due to 'glm' in CUDA code
+#     T = w2c[:3, 3]
+#     return R,T
+
+from enum import Enum
+class EulerOrder(Enum):
+    XYZ = 0
+    XZY = 1
+    YXZ = 2
+    YZX = 3
+    ZYX = 4
+    ZXY = 5
+
+def euler_to_rotation(euler, euler_order, is_right_handed=True):
+    """
+    Converts Euler angles to a rotation matrix.
+    
+    Parameters:
+        euler (list or np.ndarray): A list or array of Euler angles [ex, ey, ez] in radians.
+        euler_order (EulerOrder): The order of rotations.
+        is_right_handed (bool): Whether the rotation is in a right-handed coordinate system.
+    
+    Returns:
+        np.ndarray: A 3x3 rotation matrix.
+    """
+    ex, ey, ez = euler
+    if is_right_handed:
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(ex), -np.sin(ex)],
+            [0, np.sin(ex), np.cos(ex)]
+        ])
+        Ry = np.array([
+            [np.cos(ey), 0, np.sin(ey)],
+            [0, 1, 0],
+            [-np.sin(ey), 0, np.cos(ey)]
+        ])
+        Rz = np.array([
+            [np.cos(ez), -np.sin(ez), 0],
+            [np.sin(ez), np.cos(ez), 0],
+            [0, 0, 1]
+        ])
+    else:  # Left-handed system
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(ex), np.sin(ex)],
+            [0, -np.sin(ex), np.cos(ex)]
+        ])
+        Ry = np.array([
+            [np.cos(ey), 0, -np.sin(ey)],
+            [0, 1, 0],
+            [np.sin(ey), 0, np.cos(ey)]
+        ])
+        Rz = np.array([
+            [np.cos(ez), np.sin(ez), 0],
+            [-np.sin(ez), np.cos(ez), 0],
+            [0, 0, 1]
+        ])
+
+    # Combine rotations based on the order
+    if euler_order == EulerOrder.XYZ:
+        R = Rx @ Ry @ Rz
+    elif euler_order == EulerOrder.XZY:
+        R = Rx @ Rz @ Ry
+    elif euler_order == EulerOrder.YXZ:
+        R = Ry @ Rx @ Rz
+    elif euler_order == EulerOrder.YZX:
+        R = Ry @ Rz @ Rx
+    elif euler_order == EulerOrder.ZYX:
+        R = Rz @ Ry @ Rx
+    elif euler_order == EulerOrder.ZXY:
+        R = Rz @ Rx @ Ry
+    else:
+        raise ValueError("Invalid Euler order.")
+
+    return R
+
+
+
 
 def cal_qvec_rub_to_rdf(data):
     rx,ry,rz,tx,ty,tz = data
+    # 示例输入
+    # euler_angles_r = [np.radians(rx), np.radians(ry), np.radians(rz)]  # 以弧度为单位
+    # euler_angles = [rx,ry,rz]  # 以弧度为单位
+    # order = EulerOrder.XYZ
+    # is_right_handed = True
+    # 生成旋转矩阵
+    # rotation_matrix = euler_to_rotation(euler_angles, order, False)
+    
+    # rotation_matrix = R.from_euler('XYZ', [rx,ry,rz],degrees=True).as_matrix()
     rotation_matrix = R.from_euler('xyz', [rx,ry,rz],degrees=True).as_matrix()
+    # 输出结果
+    # print("Rotation Matrix:")
+    # print(Rotation)
+    # print("rotation_matrix")
+    # print(rotation_matrix)
+    # sys.exit(0)
+    
     c2w = np.eye(4,4)
     if args.baseline_distance!=0:
         tx += args.baseline_distance
     c2w[:3,:3] = rotation_matrix
     translation_vector = [tx,ty,tz]
+    # print(tx,ty,tz)
     c2w[:3,-1] = translation_vector
      # change from OpenGL/Blender camera axes (Y up, Z back) to COLMAP (Y down, Z forward)
     c2w[:3, 1:3] *= -1
@@ -289,6 +413,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
                 mask = mask.reshape(-1)
             condition = mask <= args.mask_threshold
             rgb = rgb_[condition]
+            # c2w = np.linalg.inv(c2w)
             point = generate_point_cloud_from_depth(depth,intrinsics,c2w,condition)
             
             if args.mask_type =='mix' and args.cur == i:
@@ -317,7 +442,6 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
     xyz = np.concatenate(points)
     rgbs = np.concatenate(rgbs)
     ply_data = get_ply(xyz,rgbs)
-    print(xyz.shape,rgbs.shape)
     if len(tmp_points)>0:
         # xyz = np.array(tmp_points)
         # rgbs = np.array(tmp_rgbs)

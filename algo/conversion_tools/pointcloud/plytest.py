@@ -1,3 +1,31 @@
+'''
+Author: Qing Hong
+FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
+LastEditors: Qing Hong
+LastEditTime: 2025-01-07 15:30:12
+Description: 
+         ▄              ▄
+        ▌▒█           ▄▀▒▌     
+        ▌▒▒▀▄       ▄▀▒▒▒▐
+       ▐▄▀▒▒▀▀▀▀▄▄▄▀▒▒▒▒▒▐     ,-----------------.
+     ▄▄▀▒▒▒▒▒▒▒▒▒▒▒█▒▒▄█▒▐     (Wow,kousei's code)
+   ▄▀▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▐     `-,---------------' 
+  ▐▒▒▒▄▄▄▒▒▒▒▒▒▒▒▒▒▒▒▒▀▄▒▒▌  _.-'   ,----------.
+  ▌▒▒▐▄█▀▒▒▒▒▄▀█▄▒▒▒▒▒▒▒█▒▐         (surabashii)
+ ▐▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▒▒▒▒▒▒▒▀▄▌        `-,--------' 
+ ▌▒▀▄██▄▒▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌      _.-'
+ ▌▀▐▄█▄█▌▄▒▀▒▒▒▒▒▒░░░░░░▒▒▒▐ _.-'
+▐▒▀▐▀▐▀▒▒▄▄▒▄▒▒▒▒▒░░░░░░▒▒▒▒▌
+▐▒▒▒▀▀▄▄▒▒▒▄▒▒▒▒▒▒░░░░░░▒▒▒▐
+ ▌▒▒▒▒▒▒▀▀▀▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌
+ ▐▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▐
+  ▀▄▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▄▒▒▒▒▌
+    ▀▄▒▒▒▒▒▒▒▒▒▒▄▄▄▀▒▒▒▒▄▀
+      ▀▄▄▄▄▄▄▀▀▀▒▒▒▒▒▄▄▀
+         ▒▒▒▒▒▒▒▒▒▒▀▀
+When I wrote this, only God and I understood what I was doing
+Now, God only knows
+'''
 import open3d as o3d
 import sys
 # 读取 PLY 文件
@@ -10,7 +38,7 @@ def show_ply(ply_file):
 
     # 创建一个坐标轴对象
     coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=0.5,  # 坐标轴的长度
+        size=50,  # 坐标轴的长度
         origin=[0, 0, 0]  # 坐标轴的原点
     )
 
