@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-09-24 12:18:22
+LastEditTime: 2025-01-17 12:10:58
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -28,7 +28,8 @@ Now, God only knows
 '''
 import numpy as np 
 import cv2
-
+import os
+from tqdm import tqdm
 # 读取 MP4 视频并将帧转换为 NumPy 数组
 def video_to_numpy(video_path):
     # 创建视频捕捉对象
@@ -71,3 +72,17 @@ def concat_image(data,x=True,desc=None,target_h=None,target_w=None,resize_rate=N
         tmp = cv2.resize(tmp,None,fx=1/resize_rate,fy=1/resize_rate)
     return tmp
 
+def write_video(sp,data,fps=24):
+    fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')  # 设置输出视频为mp4格式
+     # video = cv2.VideoWriter('results/result.avi',fourcc, cap_fps, size, isColor=0)
+    video = None
+    for index in tqdm(range(len(data)),desc=f'writing video{os.path.basename(sp)}'):
+        imgs = data[index]
+        s = imgs[0]
+        # img2 = cv2.resize(img1,None,fx=2,fy=2)
+        if video ==None:
+            size = (s.shape[1],s.shape[0])
+            video = cv2.VideoWriter(sp, fourcc, fps, size)#设置保存视频的名称和路径，默认在根目录下
+            # imageio.mimwrite(os.path.join(target, 'result.mp4'), comp_frames, fps=30, quality=8)
+        video.write(s)
+    video.release()

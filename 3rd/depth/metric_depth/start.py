@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-31 15:19:28
+LastEditTime: 2025-02-18 12:31:35
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -103,7 +103,30 @@ if __name__ == '__main__':
     }
     mkdir(os.path.join(fp,'checkpoints'))
     dtype = args.algo.split('_')[-1]
-    assert dtype in ['vits','vitb','vitl','vitg'],'error algo'
+    if 'vits' in args.algo:
+        dtype = 'vits'
+    elif 'vitb' in args.algo:
+        dtype = 'vitb'
+    elif 'vitl' in args.algo:
+        dtype = 'vitl'
+    elif 'vitg' in args.algo:
+        dtype = 'vitg'
+    else:
+        raise NotImplementedError('not support algo')
+    #处理DA-2模型参数
+    # DA2-metric-b-ue-ep8-MD1000-R1918_1008
+    input_size = (args.input_size,args.input_size)
+    if 'DA2' in args.algo:
+        import re
+        md_match = re.search(r"MD(\d+)", args.algo)
+        r_match = re.search(r"R(\d+_\d+)", args.algo)
+        if md_match and r_match:
+            md_number = md_match.group(1)  # 1000
+            r_numbers = r_match.group(1).split('_')  # 1918_1008
+        args.max_depth = int(md_number)
+        input_size = (int(r_numbers[1]),int(r_numbers[0]))
+
+        
     ckpt_path = os.path.join(fp,'checkpoints',args.algo)+'.pth'
     if not os.path.isfile(ckpt_path):
         download_url = ckpt_path

@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-16 10:45:58
+LastEditTime: 2025-02-11 10:52:53
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -943,3 +943,31 @@ def yuv_from_picture(filename, height, width):
       
     fp.close()
     return img
+
+
+def find_folders_with_subfolder(root_path, keys = [], path_keys = [] ,excs = [] ,path_excs =[]):
+    """
+    Find all folders in the root_path that contain a subfolder with the name subfolder_name.
+    """
+    folders_with_subfolder = []
+
+    # Walk through the directory
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        # Check if the subfolder_name is in the list of directories
+        flag = True
+        for key in keys:
+            if key not in dirnames:
+                flag = False
+        for path_key in path_keys:
+            if path_key not in dirpath:
+                flag = False
+        for exc in excs:
+            if exc in dirnames:
+                flag = False
+        for exc in path_excs:
+            if exc in dirpath:
+                flag = False
+        if flag:
+            folders_with_subfolder.append(dirpath)
+
+    return folders_with_subfolder

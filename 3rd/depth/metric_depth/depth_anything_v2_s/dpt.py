@@ -184,7 +184,7 @@ class DepthAnythingV2(nn.Module):
         return depth.squeeze(1)
     
     @torch.no_grad()
-    def infer_image(self, raw_image, input_size=518,DEVICE='cpu'):
+    def infer_image(self, raw_image, input_size=(518,518),DEVICE='cpu'):
         image, (h, w) = self.image2tensor(raw_image, input_size,DEVICE)
         
         depth = self.forward(image)
@@ -193,11 +193,12 @@ class DepthAnythingV2(nn.Module):
         
         return depth.cpu().numpy()
     
-    def image2tensor(self, raw_image, input_size=518,DEVICE='cpu'):        
+    def image2tensor(self, raw_image, input_size=(518,518),DEVICE='cpu'):      
+        net_h, net_w = input_size  
         transform = Compose([
             Resize(
-                width=input_size,
-                height=input_size,
+                width=net_w,
+                height=net_h,
                 resize_target=False,
                 keep_aspect_ratio=True,
                 ensure_multiple_of=14,
