@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-02-18 12:31:35
+LastEditTime: 2025-02-19 14:16:26
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -71,10 +71,10 @@ def check_and_download_pth_file(file_path, download_url):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Depth Anything V2 Metric Depth Estimation')
     parser.add_argument('--name', type=str, default='mono_depth',help='depth name')
-    parser.add_argument('--root', type=str)
+    parser.add_argument('--root', type=str,required=True)
     parser.add_argument('--input-size', type=int, default=518)
     # parser.add_argument('--output', type=str, default='./vis_depth')
-    parser.add_argument('--device', type=str, default='cpu',help='cpu,cuda,mps')
+    parser.add_argument('--device', type=str, default='auto',help='auto,cpu,cuda,mps')
     parser.add_argument('--algo', type=str, default='depth_anything_v2_metric_hypersim_vitl',help='depth mode')
     # parser.add_argument('--encoder', type=str, default='vitl', choices=['vits', 'vitb', 'vitl', 'vitg'])
     # parser.add_argument('--load-from', type=str, default='checkpoints/depth_anything_v2_metric_hypersim_vitl.pth')
@@ -89,6 +89,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     DEVICE = args.device.lower()
+    if DEVICE == 'auto':
+        DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     assert DEVICE in ['cpu','mps','cuda'],f'not supported device :{DEVICE}!, please use mps , cuda or cpu'
     metric = True if '_metric_' in args.algo else False
     if metric:
@@ -139,8 +141,8 @@ if __name__ == '__main__':
             raise NotImplementedError(f'[MM ERROR][model]model file not exists:{args.algo},please use mmalgo to check')
         # raise NotImplementedError(f'[MM ERROR][model]model file loss!{model_name}')
     args.load_from = ckpt_path
-    encoder = args.algo.split('_')[-1]
-    mmc = model_configs[encoder]
+    # encoder = args.algo.split('_')[-1]
+    mmc = model_configs[dtype]
     depth_anything = DepthAnythingV2(**{**model_configs[dtype], 'max_depth': args.max_depth}) if metric else DepthAnythingV2(**{**model_configs[dtype]})
     depth_anything.load_state_dict(torch.load(args.load_from, map_location='cpu'))
     depth_anything = depth_anything.to(DEVICE).eval()
