@@ -92,7 +92,7 @@ if __name__ == '__main__':
     if DEVICE == 'auto':
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     assert DEVICE in ['cpu','mps','cuda'],f'not supported device :{DEVICE}!, please use mps , cuda or cpu'
-    metric = True if '_metric_' in args.algo else False
+    metric = True if 'metric' in args.algo else False
     if metric:
         from depth_anything_v2.dpt import DepthAnythingV2
     else:
@@ -117,7 +117,7 @@ if __name__ == '__main__':
         raise NotImplementedError('not support algo')
     #处理DA-2模型参数
     # DA2-metric-b-ue-ep8-MD1000-R1918_1008
-    input_size = (args.input_size,args.input_size)
+    input_size = args.input_size
     if 'DA2' in args.algo:
         import re
         md_match = re.search(r"MD(\d+)", args.algo)
@@ -127,7 +127,6 @@ if __name__ == '__main__':
             r_numbers = r_match.group(1).split('_')  # 1918_1008
         args.max_depth = int(md_number)
         input_size = (int(r_numbers[1]),int(r_numbers[0]))
-
         
     ckpt_path = os.path.join(fp,'checkpoints',args.algo)+'.pth'
     if not os.path.isfile(ckpt_path):
@@ -144,7 +143,12 @@ if __name__ == '__main__':
     # encoder = args.algo.split('_')[-1]
     mmc = model_configs[dtype]
     depth_anything = DepthAnythingV2(**{**model_configs[dtype], 'max_depth': args.max_depth}) if metric else DepthAnythingV2(**{**model_configs[dtype]})
-    depth_anything.load_state_dict(torch.load(args.load_from, map_location='cpu'))
+    if 'DA2' in args.algo:
+        checkpoint = torch.load(args.load_from, map_location='cpu')['model']
+        tmp = {k.replace('module.',''): v for k,v in checkpoint.items()}
+        depth_anything.load_state_dict(tmp)
+    else:
+        depth_anything.load_state_dict(torch.load(args.load_from, map_location='cpu'))
     depth_anything = depth_anything.to(DEVICE).eval()
 
     prepares = []
@@ -166,7 +170,7 @@ if __name__ == '__main__':
             
             raw_image = read(filename,type='image')
             # print(raw_image.shape, args.input_size,DEVICE)
-            depth = depth_anything.infer_image(raw_image, args.input_size,DEVICE)
+            depth = depth_anything.infer_image(raw_image, input_size,DEVICE)
             # if args.save_numpy:
             #     output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '_raw_depth_meter.npy')
             #     np.save(output_path, depth)
