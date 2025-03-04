@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-01-07 15:30:12
+LastEditTime: 2025-02-19 16:16:17
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -26,31 +26,40 @@ Description:
 When I wrote this, only God and I understood what I was doing
 Now, God only knows
 '''
-import open3d as o3d
-import sys
-# 读取 PLY 文件
-def show_ply(ply_file):
-    point_cloud = o3d.io.read_point_cloud(ply_file)
+import sys,os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))+'/../..')
+from file_utils import jhelp_file,write
+import numpy as np
+# import torch.nn.functional as F
+import cv2
+from tqdm import tqdm
 
-    # 打印点云信息
-    print(point_cloud)
-    print(f"Point cloud has {len(point_cloud.points)} points.")
+HEIGHT, WIDTH = 4032, 6048
+def decode_eth3d(root,res='2k'):
+    datas = jhelp_file(root)
+    for i in tqdm(range(len(datas))):
+        data = datas[i]
+        with open(data, "rb") as file:
+                        binary_data = file.read()
+        # Convert the binary data to a numpy array of 32-bit floats
+        depth_decoded = np.frombuffer(binary_data, dtype=np.float32).copy()
+        depth_decoded[depth_decoded == np.inf] = 0.0
+        depth_decoded = depth_decoded.reshape((HEIGHT, WIDTH))
+        new_pos = os.path.join(os.path.dirname(data)+'_decoded',os.path.basename(data).replace('.JPG','.exr'))
+        if res=='2k':
+            # depth_decoded = F.interpolate(depth_decoded[:, None], (1080, 1920), mode="bilinear", align_corners=True)[0, 0]
+            depth_decoded = cv2.resize(depth_decoded, (1920, 1080), interpolation=cv2.INTER_LINEAR)
+            new_pos = os.path.join(os.path.dirname(data)+'_decoded_2k',os.path.basename(data).replace('.JPG','.exr'))
+        depth = np.repeat(depth_decoded[...,None],4,axis=2)
+        d = depth[...,0]
+        d = (d - d.min()) / (d.max() - d.min())
+        # if args.norm:
+        depth[...,-1] = d
+        write(new_pos,depth)
+        
 
-    # 创建一个坐标轴对象
-    coordinate_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-        size=5,  # 坐标轴的长度
-        origin=[0, 0, 0]  # 坐标轴的原点
-    )
 
-    # 可视化点云
-    o3d.visualization.draw_geometries([point_cloud,coordinate_frame],
-                                    window_name="PLY Point Cloud Viewer",
-                                    width=1900,
-                                    height=1080,
-                                    left=50,
-                                    top=50,
-                                    point_show_normal=False)
-
-if __name__ == "__main__":
-    ply_file = sys.argv[1]
-    show_ply(ply_file)
+if __name__ == '__main__':
+    assert len(sys.argv)==2 ,'usage: python XXXX.py root'
+    root = sys.argv[1]
+    decode_eth3d(root)
