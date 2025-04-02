@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2022-09-26 15:01:24
 LastEditors: Qing Hong
-LastEditTime: 2024-11-01 12:42:41
+LastEditTime: 2025-03-05 14:24:45
 Description: file content
 '''
 import os,sys
@@ -35,7 +35,7 @@ if __name__ == '__main__':
         if size.lower() == '1k':
             image = cv2.resize(image,(960,540))
         elif size.lower() == '0.5k':
-            image = cv2.resize(image,(480,270))
+            image = cv2.resize(image,(512,512))
         elif size.lower() == '0.25k':
             image = cv2.resize(image,(240,135))
         elif size.lower() == '2k':

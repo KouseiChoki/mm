@@ -13,7 +13,7 @@ yacs==0.1.8
 opencv-python==4.5.5.62
 imageio
 timm==0.6.13
-openexr-tools
+OpenEXR
 colour-science
 bs4
 opencolorio

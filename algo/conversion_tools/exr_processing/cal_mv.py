@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-12-12 11:13:33
+LastEditTime: 2025-03-05 15:17:39
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -77,7 +77,7 @@ def init_param():
     parser.add_argument('--trans_mode',action='store_true', help="testmode")
     parser.add_argument('--bg_mode',action='store_true', help="bg_mode")
     parser.add_argument('--step',type=int, default=1,help="for bg mv only")
-    parser.add_argument('--core', type=int, default=4)
+    parser.add_argument('--core', type=int, default=1)
     parser.add_argument('--check_mode',action='store_true', help="check invalid data")
     parser.add_argument('--exrformat',action='store_true', help="check invalid data")
     args = parser.parse_args()
@@ -822,7 +822,7 @@ if __name__ == '__main__':
     num_of_core = args.core
     root = args.path
     mode = 1
-    args.dump_depth = True
+    # args.dump_depth = True
     # if '/final' in root:
         # mode = 2
     if args.MRQ:

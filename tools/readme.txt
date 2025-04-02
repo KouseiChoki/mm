@@ -1,7 +1,7 @@
 安装step:
 1.安装anaconda:https://www.anaconda.com/,安装完后关闭即可
 2.(下载)打开终端输入 cd ~/Documents/ &&git clone  http://10.35.116.93/mm/mm.git ,如果提示需要安装git，则git安装完后需要再输入一遍
-3.安装brew,打开终端输入(需输入密码)：
+3.(可选，如果运行出现OpenEXR错误，则手动安装此项目)安装brew,打开终端输入(需输入密码)：
   国外使用： cd ~/Documents/mm/tools && ./brew.sh
   国内使用： /bin/bash -c "$(curl -fsSL https://gitee.com/ineo6/homebrew-install/raw/master/install.sh)"
   安装完成后输入:brew install openexr
