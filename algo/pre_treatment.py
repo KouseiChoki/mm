@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:03:43
+LastEditTime: 2025-04-08 14:34:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -72,6 +72,15 @@ def pre_treatment(args,root,image_dir,multi_dir = False,single_mode=False,single
 def single_core(pth_,image_dir,n_start,n_limit,distributed_task):
     if '/' in image_dir and os.path.isdir(image_dir):
         pth = image_dir
+    elif '**' in image_dir:
+        import glob
+        # 匹配所有符合的文件夹
+        matches = glob.glob(os.path.join(pth_,image_dir))
+        # 选择第一个匹配的目录
+        if matches:
+            pth = matches[0]
+        else:
+            raise FileNotFoundError(f"No matching folder for pattern: {image_dir}")
     else:
         pth = os.path.join(pth_,image_dir) if image_dir.lower()!='none' else pth_
         pth = pth if os.path.isdir(pth) else pth_
