@@ -75,12 +75,13 @@ def single_core(pth_,image_dir,n_start,n_limit,distributed_task):
     elif '**' in image_dir:
         import glob
         # 匹配所有符合的文件夹
-        matches = glob.glob(os.path.join(pth_,image_dir))
+        ff = os.path.join(pth_,image_dir)
+        matches = glob.glob(ff)
         # 选择第一个匹配的目录
         if matches:
             pth = matches[0]
         else:
-            raise FileNotFoundError(f"No matching folder for pattern: {image_dir}")
+            raise FileNotFoundError(f"No matching folder for pattern: {ff}")
     else:
         pth = os.path.join(pth_,image_dir) if image_dir.lower()!='none' else pth_
         pth = pth if os.path.isdir(pth) else pth_
