@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-02-19 14:16:26
+LastEditTime: 2025-04-16 17:51:49
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -155,8 +155,14 @@ if __name__ == '__main__':
     if args.img_folder_name is not None:
         prepares = []
         for dirpath, dirnames, filenames in os.walk(args.root):
-            if args.img_folder_name in dirnames:
-                prepares.append(os.path.join(dirpath,args.img_folder_name))
+            if '*' in args.img_folder_name:
+                import re
+                pattern = re.compile(args.img_folder_name)
+                if pattern.fullmatch(dirnames):  # 如果你希望整个文件夹名匹配
+                    prepares.append(os.path.join(dirpath, dirnames))
+            else:
+                if args.img_folder_name in dirnames:
+                    prepares.append(os.path.join(dirpath,args.img_folder_name))
     else:
         prepares = [args.root]
 

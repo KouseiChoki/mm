@@ -1,0 +1,41 @@
+name: evaluation
+channels:
+  - defaults
+dependencies:
+  - bzip2=1.0.8=h6c40b1e_6
+  - ca-certificates=2025.2.25=hecd8cb5_0
+  - libffi=3.4.4=hecd8cb5_1
+  - ncurses=6.4=hcec6c5f_0
+  - openssl=3.0.16=h184c1cd_0
+  - python=3.10.16=hce00570_1
+  - readline=8.2=hca72f7f_0
+  - sqlite=3.45.3=h6c40b1e_0
+  - tk=8.6.14=h4d00af3_0
+  - xz=5.6.4=h46256e1_1
+  - zlib=1.2.13=h4b97444_1
+  - pip:
+    - et-xmlfile==2.0.0
+    - imageio==2.37.0
+    - imath==0.0.2
+    - lazy-loader==0.4
+    - networkx==3.4.2
+    - numpy==2.2.4
+    - opencv-python==4.11.0.86
+    - openexr==3.3.3
+    - openpyxl==3.1.5
+    - packaging==24.2
+    - pandas==2.2.3
+    - pillow==11.1.0
+    - pip==25.0
+    - python-dateutil==2.9.0.post0
+    - pytz==2025.2
+    - scikit-image==0.25.2
+    - scipy==1.15.2
+    - sckit==0.0.5
+    - setuptools==75.8.0
+    - six==1.17.0
+    - tifffile==2025.3.30
+    - tqdm==4.67.1
+    - tzdata==2025.2
+    - wheel==0.45.1
+prefix: /opt/anaconda3/envs/evaluation
