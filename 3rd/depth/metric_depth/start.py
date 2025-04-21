@@ -81,6 +81,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-depth', type=float, default=20)
     parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
     parser.add_argument('--img_folder_name', type=str, help='batch run"s folder name')
+    parser.add_argument('--output', type=str, default='',help='output path')
     
     # parser.add_argument('--save-numpy', dest='save_numpy', action='store_true', help='save the model raw output')
     # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
@@ -150,27 +151,23 @@ if __name__ == '__main__':
     else:
         depth_anything.load_state_dict(torch.load(args.load_from, map_location='cpu'))
     depth_anything = depth_anything.to(DEVICE).eval()
-
     prepares = []
     if args.img_folder_name is not None:
         prepares = []
         for dirpath, dirnames, filenames in os.walk(args.root):
-            if '*' in args.img_folder_name:
+            if '\\' in args.img_folder_name:
                 import re
                 pattern = re.compile(args.img_folder_name)
-                if pattern.fullmatch(dirnames):  # 如果你希望整个文件夹名匹配
-                    prepares.append(os.path.join(dirpath, dirnames))
+                for d in dirnames:
+                    if pattern.fullmatch(d):  # 如果你希望整个文件夹名匹配
+                        prepares.append(os.path.join(dirpath, d))
             else:
                 if args.img_folder_name in dirnames:
                     prepares.append(os.path.join(dirpath,args.img_folder_name))
     else:
         prepares = [args.root]
-
     for prepare in prepares:
         filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
-        
-        
-        
         for k, filename in enumerate(filenames):
             print(f'Progress {k+1}/{len(filenames)}: {filename}')
             
@@ -188,9 +185,16 @@ if __name__ == '__main__':
             #     depth = np.repeat(depth[..., np.newaxis], 3, axis=-1)
             # else:
             #     depth = (cmap(depth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
-            output = os.path.dirname(os.path.abspath(filename))+'/..'
             last = os.path.basename(filename).split('.')[-1]
-            output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
+            if len(args.output)>1:
+                output = args.output
+                output = os.path.join(output,os.path.basename(os.path.dirname(filename)))
+                output_path = os.path.join(output,os.path.basename(filename).replace(f'.{last}',''))+'.exr'
+            else:
+                output = os.path.dirname(os.path.abspath(filename))+'/..'
+                output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
+            
+                
             if args.color:
                 import copy
                 cmap = matplotlib.colormaps.get_cmap('Spectral')
