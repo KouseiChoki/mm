@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-03-05 15:17:39
+LastEditTime: 2025-04-22 16:01:53
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -815,6 +815,14 @@ def mkdir_helper(files,root,name):
 def refine_float(lst):
     return sorted(lst, key=lambda x: int(re.findall(r"0\.(\d+)",x)[-1]))
 
+
+def extract_last_4_digits(path):
+    match = re.search(r'(\d+)\.exr$', path)
+    return int(match.group(1)) if match else 0
+
+
+
+
 if __name__ == '__main__':
     # assert len(sys.argv)==3 ,'usage: python exr_get_mv.py root save_path'
     
@@ -859,6 +867,7 @@ if __name__ == '__main__':
             file_datas = jhelp_file(file_name)
             #prune data
             file_datas = prune(file_datas,'finalimage')
+            file_datas = sorted(file_datas, key=extract_last_4_digits)
             #extra depth
             extra_depth = [None] * len(file_datas) 
             if args.extra_depth is not None:

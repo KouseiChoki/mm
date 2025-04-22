@@ -19,3 +19,4 @@ bs4
 opencolorio
 sk-video
 moviepy
+plyfile
