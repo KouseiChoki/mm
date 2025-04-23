@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-04-22 16:01:53
+LastEditTime: 2025-04-22 16:25:39
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -622,7 +622,8 @@ def mv_cal_core(datas):
                     if args.objmvonly:
                         mv1 = objmv1
                     else:
-                        mv1[np.where(objmv1[...,:2]!=0)] = objmv1[np.where(objmv1[...,:2]!=0)]
+                        tmp_mask = np.where((objmv1[...,0]!=0)|(objmv1[...,1]!=0))
+                        mv1[tmp_mask] = objmv1[tmp_mask]
                 else:
                     tmp_mask = np.repeat(mask[...,None],2,axis=2)
                     mv1[np.where(tmp_mask!=0)] = objmv1[np.where(tmp_mask!=0)]
