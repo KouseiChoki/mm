@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-04-22 16:25:39
+LastEditTime: 2025-04-23 14:53:58
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -230,7 +230,7 @@ def exr_read_worldpos(filePath):
             fnmv0_B = key
         if 'FinalImagePWMV0.A' in key:
             fnmv0_A = key
-        if 'FinalImagePWMask.R' in key:
+        if 'ObjMask.R' in key:
             fnmask_R = key
     if depth_R is None:
         worldpos = None
@@ -618,7 +618,7 @@ def mv_cal_core(datas):
         else:
             mv1 = camera_tracking(depth,data1,data0) 
             if objmv1 is not None and not args.bg_mode:
-                if not args.mvinmask:
+                if mask is None:
                     if args.objmvonly:
                         mv1 = objmv1
                     else:
@@ -640,8 +640,9 @@ def mv_cal_core(datas):
             else:
                 mv0 = camera_tracking(depth,data1,data1_)
                 if objmv0 is not None and not args.bg_mode:
-                    if not args.mvinmask:
-                        mv0[np.where(objmv0[...,:2]!=0)] = objmv0[np.where(objmv0[...,:2]!=0)]
+                    if mask is None:
+                        tmp_mask = np.where((objmv0[...,0]!=0)|(objmv0[...,1]!=0))
+                        mv0[tmp_mask] = objmv0[tmp_mask]
                     else:
                         tmp_mask = np.repeat(mask[...,None],2,axis=2)
                         mv0[np.where(tmp_mask!=0)] = objmv0[np.where(tmp_mask!=0)]
