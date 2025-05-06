@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-06 14:28:52
+LastEditTime: 2025-05-06 14:45:18
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -505,7 +505,7 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     if masks is not None:
         mkdir(os.path.join(sp , "masks"))
         for mask in masks:
-            if not args.inverse_mask or args.inverse_mask_original_data:
+            if not args.inverse_mask_original_data:
                 shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
             else:
                 mask_ = read(mask,type='mask')
