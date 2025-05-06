@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-04-30 15:51:40
+LastEditTime: 2025-05-06 14:28:52
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -70,6 +70,7 @@ def init_param():
     parser.add_argument('--judder_angle',type=int, default=-1,help="frame step")
     parser.add_argument('--inverse_depth',action='store_true', help="depth= 1/depth")
     parser.add_argument('--inverse_mask',action='store_true', help="invere mask value")
+    parser.add_argument('--inverse_mask_original_data',action='store_true', help="invere mask value")
     parser.add_argument('--rub', action='store_true', help="dump rub viewmatrix")
     parser.add_argument('--test', action='store_true', help="use test")
     parser.add_argument('--down_scale',type=int, default=1,help="downscale rate")
@@ -403,7 +404,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
             rgb = cv2.resize(rgb,(target_w,target_h))
         # rgb = rgb[depth!= 0]
         rgb_=rgb.reshape(-1,3)
-        
+        mask = None
         if args.mask_type != 'nomask':
             mask = read(masks[i],type='mask')
             if args.inverse_mask:
@@ -436,6 +437,7 @@ def get_intrinsic_extrinsic(images,depths,ins,ext,save_path,args,masks=None):
             # point = np.asarray(tmp.points)
             # rgb = np.asarray(tmp.colors)
         if point is not None:
+
             if mask is not None:
                 # points_camera = points_camera[mask]
                 point = point.reshape(-1,3)[depth.reshape(-1)[condition]<MAX_DEPTH]
@@ -503,7 +505,7 @@ def ply_cal_core(images,depths,instrinsics,extrinsics,sp,args,masks=None):
     if masks is not None:
         mkdir(os.path.join(sp , "masks"))
         for mask in masks:
-            if not args.inverse_mask:
+            if not args.inverse_mask or args.inverse_mask_original_data:
                 shutil.copy(mask, os.path.join(sp , "masks",os.path.basename(mask)))
             else:
                 mask_ = read(mask,type='mask')
