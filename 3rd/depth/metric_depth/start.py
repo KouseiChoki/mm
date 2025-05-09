@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-09 14:58:16
+LastEditTime: 2025-05-09 15:27:25
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -227,13 +227,16 @@ if __name__ == '__main__':
             prepares.append(f)
 
     if args.core>1:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=args.core) as exe:
-            list(exe.map(process_image,(prepares,args)))
-        # process_fn = partial(process_image, model=depth_anything, args=args, device=args.DEVICE)
-        # num_workers = max(args.core, multiprocessing.cpu_count())  # 设置进程数
-        # with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
-        #     list(tqdm(pool.imap_unordered(process_fn, prepares), total=len(prepares)))
+        args_dict = vars(args)
+        args_list = []
+        for k, v in args_dict.items():
+            if isinstance(v, bool):
+                if v:
+                    args_list.append(f'--{k}')
+            elif v is not None:
+                args_list.append(f'--{k}={v}')
+        cmd = f'PYTORCH_ENABLE_MPS_FALLBACK=1 && torchrun --nproc_per_node={args.core} 3rd/depth/metric_depth/start.py '+ args_list
+        print(cmd)
     else:
         process_image(prepares)
     
