@@ -221,10 +221,9 @@ if __name__ == '__main__':
     args.metric = True if 'metric' in args.algo else False
     depth_anything,input_size = define_model(args)
     prepares = []
-    for ff in args.root:
-        filenames = glob.glob(os.path.join(ff, f'**/{args.img_folder_name}/*'), recursive=True)
-        for f in filenames:
-            prepares.append(f)
+    filenames = glob.glob(os.path.join(args.root, f'**/{args.img_folder_name}/*'), recursive=True)
+    for f in filenames:
+        prepares.append(f)
 
     if args.core>1:
         args_dict = vars(args)
