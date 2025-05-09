@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-09 15:32:44
+LastEditTime: 2025-05-09 15:40:54
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -32,7 +32,7 @@ import glob
 import numpy as np
 import os
 import torch
-
+from torch import distributed as dist
 from file_utils import mvwrite,read,mkdir
 import matplotlib
 import requests
@@ -192,6 +192,20 @@ def process_image(data):
         
         mvwrite(output_path,depth,precision='half')
     
+
+
+def init_distributed_mode(backend='gloo'):
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ and int(os.environ['WORLD_SIZE'])>1:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ['WORLD_SIZE'])
+        local_rank = int(os.environ['LOCAL_RANK'])
+        if rank==0:
+            print('using distributed mode, world_size is:{}'.format(world_size))
+    else:
+        print('Not using distributed mode')
+        return 0,1
+    return local_rank,world_size
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Depth Anything V2 Metric Depth Estimation')
     parser.add_argument('--name', type=str, default='mono_depth',help='depth name')
@@ -228,8 +242,10 @@ if __name__ == '__main__':
 
     if args.core>1:
         if args.multi_flag:
-            pass
+            distributed_task = init_distributed_mode()
+            print(distributed_task)
         else:
+            import sys
             args_dict = vars(args)
             args_list = []
             for k, v in args_dict.items():
@@ -238,7 +254,6 @@ if __name__ == '__main__':
                         args_list.append(f'--{k}')
                 elif v is not None:
                     args_list.append(f'--{k}={v}')
-            
             cmd = [
                 'PYTORCH_ENABLE_MPS_FALLBACK=1',
                 '&&',
@@ -248,7 +263,15 @@ if __name__ == '__main__':
                 '--multi_flag'
             ] + args_list
             command_str = ' '.join(cmd)
-            print(command_str)
+            print('======================================== multi core mmd start ======================================== ')
+            print('info:')
+            print('root:                    {}'.format(args.root))
+            print('numbers of core:         {}'.format(args.core))
+            try:
+                os.system(command_str)
+            except:
+                sys.exit('[MM ERROR][main process]main process error')
+            # print(command_str)
     else:
         process_image(prepares)
     
