@@ -128,68 +128,69 @@ def define_model(args):
     return depth_anything,input_size
 
 
-def process_image(prepares):
-    for prepare in prepares:
-        filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
-        for k, filename in enumerate(filenames):
-            print(f'Progress {k+1}/{len(filenames)}: {filename}')
+def process_image(data):
+    prepares,args = data
+        # filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
+    # print(prepares)
+    for k, filename in enumerate(prepares):
+        print(f'Progress {k+1}/{len(prepares)}: {filename}')
+        
+        raw_image = read(filename,type='image')
+        # print(raw_image.shape, args.input_size,DEVICE)
+        depth = depth_anything.infer_image(raw_image, input_size,args.DEVICE)
+        # if args.save_numpy:
+        #     output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '_raw_depth_meter.npy')
+        #     np.save(output_path, depth)
+        
+        # depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
+        # depth = depth.astype(np.uint8)
+        
+        # if args.grayscale:
+        #     depth = np.repeat(depth[..., np.newaxis], 3, axis=-1)
+        # else:
+        #     depth = (cmap(depth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
+        last = os.path.basename(filename).split('.')[-1]
+        if len(args.output)>1:
+            output = args.output
+            output = os.path.join(output,os.path.basename(os.path.dirname(filename)))
+            output_path = os.path.join(output,os.path.basename(filename).replace(f'.{last}',''))+'.exr'
+        else:
+            output = os.path.dirname(os.path.abspath(filename))+'/..'
+            output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
+        
             
-            raw_image = read(filename,type='image')
-            # print(raw_image.shape, args.input_size,DEVICE)
-            depth = depth_anything.infer_image(raw_image, input_size,DEVICE)
-            # if args.save_numpy:
-            #     output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '_raw_depth_meter.npy')
-            #     np.save(output_path, depth)
+        if args.color:
+            import copy
+            cmap = matplotlib.colormaps.get_cmap('Spectral')
+            tmpdepth = copy.deepcopy(depth)
+            tmpdepth = (tmpdepth - tmpdepth.min()) / (tmpdepth.max() - tmpdepth.min()) * 255.0
+            tmpdepth = tmpdepth.astype(np.uint8)
+            tmpdepth = (cmap(tmpdepth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
+            mkdir(os.path.join(output, f'{args.name}_color'))
+            cv2.imwrite(os.path.join(output, f'{args.name}_color',os.path.basename(filename).replace(f'.{last}',''))+'.png', tmpdepth)
+        # output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png')
+        # if args.pred_only:
+        #     cv2.imwrite(output_path, depth)
+        # else:
+        #     split_region = np.ones((raw_image.shape[0], 50, 3), dtype=np.uint8) * 255
+        #     combined_result = cv2.hconcat([raw_image, split_region, depth])
             
-            # depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
-            # depth = depth.astype(np.uint8)
-            
-            # if args.grayscale:
-            #     depth = np.repeat(depth[..., np.newaxis], 3, axis=-1)
-            # else:
-            #     depth = (cmap(depth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
-            last = os.path.basename(filename).split('.')[-1]
-            if len(args.output)>1:
-                output = args.output
-                output = os.path.join(output,os.path.basename(os.path.dirname(filename)))
-                output_path = os.path.join(output,os.path.basename(filename).replace(f'.{last}',''))+'.exr'
-            else:
-                output = os.path.dirname(os.path.abspath(filename))+'/..'
-                output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
-            
-                
-            if args.color:
-                import copy
-                cmap = matplotlib.colormaps.get_cmap('Spectral')
-                tmpdepth = copy.deepcopy(depth)
-                tmpdepth = (tmpdepth - tmpdepth.min()) / (tmpdepth.max() - tmpdepth.min()) * 255.0
-                tmpdepth = tmpdepth.astype(np.uint8)
-                tmpdepth = (cmap(tmpdepth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
-                mkdir(os.path.join(output, f'{args.name}_color'))
-                cv2.imwrite(os.path.join(output, f'{args.name}_color',os.path.basename(filename).replace(f'.{last}',''))+'.png', tmpdepth)
-            # output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png')
-            # if args.pred_only:
-            #     cv2.imwrite(output_path, depth)
-            # else:
-            #     split_region = np.ones((raw_image.shape[0], 50, 3), dtype=np.uint8) * 255
-            #     combined_result = cv2.hconcat([raw_image, split_region, depth])
-                
-            #     cv2.imwrite(output_path, combined_result)
-            depth = np.repeat(depth[...,None],4,axis=2)
-            d = depth[...,0]
-            d = (d - d.min()) / (d.max() - d.min())
-            # if args.norm:
-            if args.metric:
-                if args.inverse_depth:
-                    d = 1 - d
-                depth[...,-1] = d
-            else:
-                depth = np.repeat(d[...,None],4,axis=2)
-                if args.inverse_depth:
-                    depth[...,-1] = 1-depth[...,-1]
-            # mvwrite(os.path.join(args.outdir,os.path.basename(task),'mono_depth',os.path.basename(filename[:filename.rfind('.')]) + '.exr'),depth,precision='half')
-            
-            mvwrite(output_path,depth,precision='half')
+        #     cv2.imwrite(output_path, combined_result)
+        depth = np.repeat(depth[...,None],4,axis=2)
+        d = depth[...,0]
+        d = (d - d.min()) / (d.max() - d.min())
+        # if args.norm:
+        if args.metric:
+            if args.inverse_depth:
+                d = 1 - d
+            depth[...,-1] = d
+        else:
+            depth = np.repeat(d[...,None],4,axis=2)
+            if args.inverse_depth:
+                depth[...,-1] = 1-depth[...,-1]
+        # mvwrite(os.path.join(args.outdir,os.path.basename(task),'mono_depth',os.path.basename(filename[:filename.rfind('.')]) + '.exr'),depth,precision='half')
+        
+        mvwrite(output_path,depth,precision='half')
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Depth Anything V2 Metric Depth Estimation')
@@ -203,7 +204,7 @@ if __name__ == '__main__':
     # parser.add_argument('--load-from', type=str, default='checkpoints/depth_anything_v2_metric_hypersim_vitl.pth')
     parser.add_argument('--max-depth', type=float, default=20)
     parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
-    parser.add_argument('--img_folder_name', type=str, help='batch run"s folder name')
+    parser.add_argument('--img_folder_name', type=str, default='image',help='batch run"s folder name')
     parser.add_argument('--output', type=str, default='',help='output path')
     
     # parser.add_argument('--save-numpy', dest='save_numpy', action='store_true', help='save the model raw output')
@@ -218,34 +219,21 @@ if __name__ == '__main__':
         args.DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     assert args.DEVICE in ['cpu','mps','cuda'],f'not supported device :{args.DEVICE}!, please use mps , cuda or cpu'
     args.metric = True if 'metric' in args.algo else False
-    depth_anything,input_size,DEVICE = define_model(args)
-    ffolder = []
-    if args.img_folder_name is not None:
-        ffolder = []
-        for dirpath, dirnames, filenames in os.walk(args.root):
-            if '\\' in args.img_folder_name:
-                import re
-                pattern = re.compile(args.img_folder_name)
-                for d in dirnames:
-                    if pattern.fullmatch(d):  # 如果你希望整个文件夹名匹配
-                        ffolder.append(os.path.join(dirpath, d))
-            else:
-                if args.img_folder_name in dirnames:
-                    ffolder.append(os.path.join(dirpath,args.img_folder_name))
-    else:
-        ffolder = [args.root]
+    depth_anything,input_size = define_model(args)
     prepares = []
-    for ff in ffolder:
-        for f in ff:
+    for ff in args.root:
+        filenames = glob.glob(os.path.join(ff, f'**/{args.img_folder_name}/*'), recursive=True)
+        for f in filenames:
             prepares.append(f)
 
     if args.core>1:
-        import multiprocessing
-        from functools import partial
-        process_fn = partial(process_image, model=depth_anything, args=args, device=args.DEVICE)
-        num_workers = max(args.core, multiprocessing.cpu_count())  # 设置进程数
-        with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
-            list(tqdm(pool.imap_unordered(process_fn, prepares), total=len(prepares)))
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=args.core) as exe:
+            list(exe.map(process_image,(prepares,args)))
+        # process_fn = partial(process_image, model=depth_anything, args=args, device=args.DEVICE)
+        # num_workers = max(args.core, multiprocessing.cpu_count())  # 设置进程数
+        # with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
+        #     list(tqdm(pool.imap_unordered(process_fn, prepares), total=len(prepares)))
     else:
         process_image(prepares)
     
