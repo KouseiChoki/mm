@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-09 15:27:25
+LastEditTime: 2025-05-09 15:32:44
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -234,8 +234,16 @@ if __name__ == '__main__':
                     args_list.append(f'--{k}')
             elif v is not None:
                 args_list.append(f'--{k}={v}')
-        cmd = f'PYTORCH_ENABLE_MPS_FALLBACK=1 && torchrun --nproc_per_node={args.core} 3rd/depth/metric_depth/start.py '+ args_list
-        print(cmd)
+        
+        cmd = [
+            'PYTORCH_ENABLE_MPS_FALLBACK=1',
+            '&&',
+            'torchrun',
+            f'--nproc_per_node={args.core}',
+            '3rd/depth/metric_depth/start.py'
+        ] + args_list
+        command_str = ' '.join(cmd)
+        print(command_str)
     else:
         process_image(prepares)
     
