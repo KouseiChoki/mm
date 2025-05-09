@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-04-21 10:19:10
+LastEditTime: 2025-05-09 14:58:16
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -67,34 +67,8 @@ def check_and_download_pth_file(file_path, download_url):
         flag = download_file(download_url, file_path)
     return flag
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Depth Anything V2 Metric Depth Estimation')
-    parser.add_argument('--name', type=str, default='mono_depth',help='depth name')
-    parser.add_argument('--root', type=str,required=True)
-    parser.add_argument('--input-size', type=int, default=518)
-    # parser.add_argument('--output', type=str, default='./vis_depth')
-    parser.add_argument('--device', type=str, default='auto',help='auto,cpu,cuda,mps')
-    parser.add_argument('--algo', type=str, default='depth_anything_v2_metric_hypersim_vitl',help='depth mode')
-    # parser.add_argument('--encoder', type=str, default='vitl', choices=['vits', 'vitb', 'vitl', 'vitg'])
-    # parser.add_argument('--load-from', type=str, default='checkpoints/depth_anything_v2_metric_hypersim_vitl.pth')
-    parser.add_argument('--max-depth', type=float, default=20)
-    parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
-    parser.add_argument('--img_folder_name', type=str, help='batch run"s folder name')
-    parser.add_argument('--output', type=str, default='',help='output path')
-    
-    # parser.add_argument('--save-numpy', dest='save_numpy', action='store_true', help='save the model raw output')
-    # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
-    parser.add_argument('--color', action='store_true', help='apply colorful palette')
-    parser.add_argument('--inverse_depth', action='store_true', help='apply colorful palette')
-    args = parser.parse_args()
-    
-    DEVICE = args.device.lower()
-    if DEVICE == 'auto':
-        DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
-    assert DEVICE in ['cpu','mps','cuda'],f'not supported device :{DEVICE}!, please use mps , cuda or cpu'
-    metric = True if 'metric' in args.algo else False
-    if metric:
+def define_model(args):
+    if args.metric:
         from depth_anything_v2.dpt import DepthAnythingV2
     else:
         from depth_anything_v2_s.dpt import DepthAnythingV2
@@ -143,29 +117,18 @@ if __name__ == '__main__':
     args.load_from = ckpt_path
     # encoder = args.algo.split('_')[-1]
     mmc = model_configs[dtype]
-    depth_anything = DepthAnythingV2(**{**model_configs[dtype], 'max_depth': args.max_depth}) if metric else DepthAnythingV2(**{**model_configs[dtype]})
+    depth_anything = DepthAnythingV2(**{**model_configs[dtype], 'max_depth': args.max_depth}) if args.metric else DepthAnythingV2(**{**model_configs[dtype]})
     if 'DA2' in args.algo:
         checkpoint = torch.load(args.load_from, map_location='cpu')['model']
         tmp = {k.replace('module.',''): v for k,v in checkpoint.items()}
         depth_anything.load_state_dict(tmp)
     else:
         depth_anything.load_state_dict(torch.load(args.load_from, map_location='cpu'))
-    depth_anything = depth_anything.to(DEVICE).eval()
-    prepares = []
-    if args.img_folder_name is not None:
-        prepares = []
-        for dirpath, dirnames, filenames in os.walk(args.root):
-            if '\\' in args.img_folder_name:
-                import re
-                pattern = re.compile(args.img_folder_name)
-                for d in dirnames:
-                    if pattern.fullmatch(d):  # 如果你希望整个文件夹名匹配
-                        prepares.append(os.path.join(dirpath, d))
-            else:
-                if args.img_folder_name in dirnames:
-                    prepares.append(os.path.join(dirpath,args.img_folder_name))
-    else:
-        prepares = [args.root]
+    depth_anything = depth_anything.to(args.DEVICE).eval()
+    return depth_anything,input_size
+
+
+def process_image(prepares):
     for prepare in prepares:
         filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
         for k, filename in enumerate(filenames):
@@ -216,7 +179,7 @@ if __name__ == '__main__':
             d = depth[...,0]
             d = (d - d.min()) / (d.max() - d.min())
             # if args.norm:
-            if metric:
+            if args.metric:
                 if args.inverse_depth:
                     d = 1 - d
                 depth[...,-1] = d
@@ -227,3 +190,62 @@ if __name__ == '__main__':
             # mvwrite(os.path.join(args.outdir,os.path.basename(task),'mono_depth',os.path.basename(filename[:filename.rfind('.')]) + '.exr'),depth,precision='half')
             
             mvwrite(output_path,depth,precision='half')
+    
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Depth Anything V2 Metric Depth Estimation')
+    parser.add_argument('--name', type=str, default='mono_depth',help='depth name')
+    parser.add_argument('--root', type=str,required=True)
+    parser.add_argument('--input-size', type=int, default=518)
+    # parser.add_argument('--output', type=str, default='./vis_depth')
+    parser.add_argument('--device', type=str, default='auto',help='auto,cpu,cuda,mps')
+    parser.add_argument('--algo', type=str, default='depth_anything_v2_metric_hypersim_vitl',help='depth mode')
+    # parser.add_argument('--encoder', type=str, default='vitl', choices=['vits', 'vitb', 'vitl', 'vitg'])
+    # parser.add_argument('--load-from', type=str, default='checkpoints/depth_anything_v2_metric_hypersim_vitl.pth')
+    parser.add_argument('--max-depth', type=float, default=20)
+    parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
+    parser.add_argument('--img_folder_name', type=str, help='batch run"s folder name')
+    parser.add_argument('--output', type=str, default='',help='output path')
+    
+    # parser.add_argument('--save-numpy', dest='save_numpy', action='store_true', help='save the model raw output')
+    # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
+    parser.add_argument('--color', action='store_true', help='apply colorful palette')
+    parser.add_argument('--inverse_depth', action='store_true', help='apply colorful palette')
+    parser.add_argument('--core', type=int, default=1)
+
+    args = parser.parse_args()
+    args.DEVICE = args.device.lower()
+    if args.DEVICE == 'auto':
+        args.DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    assert args.DEVICE in ['cpu','mps','cuda'],f'not supported device :{args.DEVICE}!, please use mps , cuda or cpu'
+    args.metric = True if 'metric' in args.algo else False
+    depth_anything,input_size,DEVICE = define_model(args)
+    ffolder = []
+    if args.img_folder_name is not None:
+        ffolder = []
+        for dirpath, dirnames, filenames in os.walk(args.root):
+            if '\\' in args.img_folder_name:
+                import re
+                pattern = re.compile(args.img_folder_name)
+                for d in dirnames:
+                    if pattern.fullmatch(d):  # 如果你希望整个文件夹名匹配
+                        ffolder.append(os.path.join(dirpath, d))
+            else:
+                if args.img_folder_name in dirnames:
+                    ffolder.append(os.path.join(dirpath,args.img_folder_name))
+    else:
+        ffolder = [args.root]
+    prepares = []
+    for ff in ffolder:
+        for f in ff:
+            prepares.append(f)
+
+    if args.core>1:
+        import multiprocessing
+        from functools import partial
+        process_fn = partial(process_image, model=depth_anything, args=args, device=args.DEVICE)
+        num_workers = max(args.core, multiprocessing.cpu_count())  # 设置进程数
+        with multiprocessing.get_context("spawn").Pool(num_workers) as pool:
+            list(tqdm(pool.imap_unordered(process_fn, prepares), total=len(prepares)))
+    else:
+        process_image(prepares)
+    

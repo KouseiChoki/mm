@@ -1,0 +1,251 @@
+[opticalflow]
+##### Main
+# Use specified GPU, for example: 0,1,3 or  cpu for CPU mode , mps for m1/m2
+gpu = mps
+# image color space image(rgb), in_rec709(sRGB) or ACESCG
+color_space = image
+# framestep for mv (like 1 for mv0 and mv1; 1,2,3 for mv0-mv6)
+frame_step = 1
+# Merge mv0 and mv1
+MM9_format = 0
+
+### Algorithms
+# use mmalgo to check
+algorithm = kousei-v1-230908280
+
+##### Root
+# Data root and output (multiple folder)
+root = /Users/qhong/Desktop/0205mixed/0205
+output = result/1k
+# The name of image file (None if not exist)
+image_file = image
+# single folder mode
+enable_single_input_mode_2D = 0
+root_2D =  
+
+##### Depth and Disparity
+# Calculate depth, 2D uses monocular virtual depth, 3D uses stereo depth
+cal_depth = 0
+# External depth input, specify folder name
+extra_depth = None
+
+
+##### 3D
+3D_mode = 0
+# single folder mode (scene01->name of image file->image)
+enable_single_input_mode = 0
+left_root =  
+right_root = 
+# The name of left and right eye folder name
+left_dir_name = Left
+right_dir_name = Right
+
+
+
+#### Paramater
+#resize rate (0.6 to 1, The smaller this value, the less memory overhead, resulting in smoother motion vectors (mv).)
+resize_rate_x = 1
+resize_rate_y = 1
+# Image start (0 = start from zero)
+n_start = 0
+# Image size （0 = all)
+n_limit = 0
+# Film border's shape, auto for auto detection, 0,0,0,0 for top, bottom, left, right border length
+film_border = 0,0,0,0
+# fg mask area: alpha>threshold ，bg mask area:alpha < threshold
+threshold = 0
+# Use bounding box to fix small object
+use_bounding_box = 0
+# Mode 1: crop mode ,mode 2: sync mode 
+bounding_box_mode = 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+##### Another Parameter setting
+# Refine the exr output (mv's batch norm), take average mv and init alpha output, default is 1
+refine = 1
+
+
+##### Mask setting
+# The name of front mask file, use , to enable multi mask mode, (mask1,mask2,mask3.etc)
+front_mask_file = mask
+
+# Generate mask from image
+self_mask = 0
+# If restrain = 1, the motion vector will be limited to the mask range
+restrain = 1
+# The total (contains mask and depth) will be limited to the mask range
+restrain_all = 1
+# CF_SEARCH_METHOD:: CF uses full image, default = 0
+cf_use_full = 0
+# Multi-mask mode
+multi_mask_mode = 0
+# Multi-mask file
+multi_mask_file = masks
+
+##### Merge setting
+# Clean source mv0 and mv1
+clean_source = 0
+# Generate scene_change flag and MDL file
+scene_change = 0
+
+### Test setting
+# Output the restored image from left eye
+dump_restored_image = 0
+disparity_only = 0
+pass_mv = 0
+pass_depth = 0
+pass_when_exist = 0
+depth_to_disparity = 0
+depth_name = Depth
+
+##### Calculate best mode, result enhancement
+# This method will compare each algorithm (high cost)
+cal_best_mv= 0
+# Mask files name (The mask needs to be in the same folder as the image files) (None if not exist) 
+cal_best_mask_left = mask
+cal_best_mask_right = mask
+# The number of algorithms should be >=2 (example: gma-sintel,flowformer-2k,flowformer-2k-special)
+cal_best_target_algorithm = gma-sintel,flowformer-2k
+# Dilate the result mv (dilation is kernel size, 5,7 or higher)
+dilatation = 0
+erodition = 0
+# Clean temp file (only save the final file)
+clean_tmp_file = 0
+# Edge filter function
+edge_filter = 0
+
+##### End point error (evaluation)
+# Enable epe
+evaluate_epe = 0
+# The name of ground truth file
+ground_truth_file = mv1
+
+#### Extra
+# Use matting algorithm: rvm
+matting = 0
+# Dump the result of depth
+enable_dump = 0
+# Load the depth dump file
+load_dump = 0
+# Record the time cost
+time_cost = 0
+# Dump low resolution mv
+dump_low_mv = 0
+# Edge filter
+edge_filter_ksize = 8
+edge_filter_distance = 40
+edge_filter_iters = 4
+edge_filter_reverse = 0
+# IMAGEIO_USERDIR (if exist)
+IMAGEIO_USERDIR = None
+TORCH_HUB = checkpoints
+# Multi-thread backend (nccl or gloo, for NVIDIA GPU please use nccl)
+mt_backend = nccl
+# When a memory error is reported, set it to 1  
+empty_cache = 0  
+# Disparity's depth_range (batch norm)
+depth_range = 128
+# Save type, default is exr
+savetype = exr
+# Compression method (rle,zips,zip,piz,pxr,none)
+compress_method = piz
+
+# Supported algorithms
+all_algorithm = kousei
+#use warm start 
+usewarm = 0
+# MM files name
+MM = MM
+# 3D LUT file
+lut_file = None
+# Number of IO workers
+io_num_workers = 16
+#core of virtual depth
+virtualdepth_core = 64
+# prune repeat frames
+prune_repeat_frame = 1
+# Test mode
+testmode = 0
+#output frames = num_frames - 2
+num_frames = 5
+#enable multi mv output
+multi_output = 1
+# Enable extra input mode (Left folder first: left(or right)->scene01->image) - Specify separate left and right eye folders
+enable_extra_input_mode = 0
+#####server
+file_server_ip = http://10.35.116.93:8088
+
+### edit by hx
+fps = 24
+
+### If the motion vector (MV) contains a large area of zeros, please enable this feature. (This feature can prevent the all-pairs network from overfitting.)  sasuga watashi**
+compatibility_mode = 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#         ▄              ▄
+#        ▌▒█           ▄▀▒▌     
+#        ▌▒▒▀▄       ▄▀▒▒▒▐
+#       ▐▄▀▒▒▀▀▀▀▄▄▄▀▒▒▒▒▒▐     ,---------------.
+#     ▄▄▀▒▒▒▒▒▒▒▒▒▒▒█▒▒▄█▒▐     (Wow,you find it)
+#   ▄▀▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▐     `-,-------------' 
+#  ▐▒▒▒▄▄▄▒▒▒▒▒▒▒▒▒▒▒▒▒▀▄▒▒▌  _.-'   ,------------------.
+#  ▌▒▒▐▄█▀▒▒▒▒▄▀█▄▒▒▒▒▒▒▒█▒▐         (Reward you a flower)
+# ▐▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▒▒▒▒▒▒▒▀▄▌        `-,----------------' 
+# ▌▒▀▄██▄▒▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌      _.-'
+# ▌▀▐▄█▄█▌▄▒▀▒▒▒▒▒▒░░░░░░▒▒▒▐ _.-'
+#▐▒▀▐▀▐▀▒▒▄▄▒▄▒▒▒▒▒░░░░░░▒▒▒▒▌
+#▐▒▒▒▀▀▄▄▒▒▒▄▒▒▒▒▒▒░░░░░░▒▒▒▐
+# ▌▒▒▒▒▒▒▀▀▀▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌
+# ▐▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▐
+#  ▀▄▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▄▒▒▒▒▌
+#    ▀▄▒▒▒▒▒▒▒▒▒▒▄▄▄▀▒▒▒▒▄▀
+#      ▀▄▄▄▄▄▄▀▀▀▒▒▒▒▒▄▄▀
+#         ▒▒▒▒▒▒▒▒▒▒▀▀
