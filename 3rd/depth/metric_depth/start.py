@@ -128,13 +128,13 @@ def define_model(args):
     return depth_anything,input_size
 
 
-def process_image(data):
-    prepares,args = data
+def process_image(prepares,args,show=True):
         # filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
     # print(prepares)
-    for k, filename in enumerate(prepares):
-        print(f'Progress {k+1}/{len(prepares)}: {filename}')
-        
+    # for k, filename in enumerate(prepares):
+    cy = tqdm(range(len(prepares))) if show else range(len(prepares))
+    for k in cy:
+        filename = prepares[k]
         raw_image = read(filename,type='image')
         # print(raw_image.shape, args.input_size,DEVICE)
         depth = depth_anything.infer_image(raw_image, input_size,args.DEVICE)
@@ -239,21 +239,16 @@ if __name__ == '__main__':
     filenames = glob.glob(os.path.join(args.root, f'**/{args.img_folder_name}/*'), recursive=True)
     for f in filenames:
         prepares.append(f)
-
     if args.core>1:
         if args.multi_flag:
             distributed_task = init_distributed_mode()
-            print(distributed_task)
+            chunk_size = len(prepares)//distributed_task[1]
+            chunks = [prepares[i*chunk_size:(i+1)*chunk_size] for i in range(distributed_task[1])][distributed_task[0]]#not sorted
+            # print(distributed_task,chunks)
+            show = True if distributed_task[0]==0 else False
+            process_image(chunks,args,show=show)
         else:
             import sys
-            args_dict = vars(args)
-            args_list = []
-            for k, v in args_dict.items():
-                if isinstance(v, bool):
-                    if v:
-                        args_list.append(f'--{k}')
-                elif v is not None:
-                    args_list.append(f'--{k}={v}')
             cmd = [
                 'PYTORCH_ENABLE_MPS_FALLBACK=1',
                 '&&',
@@ -261,7 +256,7 @@ if __name__ == '__main__':
                 f'--nproc_per_node={args.core}',
                 '3rd/depth/metric_depth/start.py',
                 '--multi_flag'
-            ] + args_list
+            ] + sys.argv[1:]
             command_str = ' '.join(cmd)
             print('======================================== multi core mmd start ======================================== ')
             print('info:')
@@ -269,9 +264,10 @@ if __name__ == '__main__':
             print('numbers of core:         {}'.format(args.core))
             try:
                 os.system(command_str)
+                # print(command_str)
             except:
                 sys.exit('[MM ERROR][main process]main process error')
             # print(command_str)
     else:
-        process_image(prepares)
+        process_image(prepares,args)
     
