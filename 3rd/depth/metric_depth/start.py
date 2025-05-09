@@ -212,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--color', action='store_true', help='apply colorful palette')
     parser.add_argument('--inverse_depth', action='store_true', help='apply colorful palette')
     parser.add_argument('--core', type=int, default=1)
+    parser.add_argument('--multi_flag', action='store_true')
 
     args = parser.parse_args()
     args.DEVICE = args.device.lower()
@@ -226,24 +227,28 @@ if __name__ == '__main__':
         prepares.append(f)
 
     if args.core>1:
-        args_dict = vars(args)
-        args_list = []
-        for k, v in args_dict.items():
-            if isinstance(v, bool):
-                if v:
-                    args_list.append(f'--{k}')
-            elif v is not None:
-                args_list.append(f'--{k}={v}')
-        
-        cmd = [
-            'PYTORCH_ENABLE_MPS_FALLBACK=1',
-            '&&',
-            'torchrun',
-            f'--nproc_per_node={args.core}',
-            '3rd/depth/metric_depth/start.py'
-        ] + args_list
-        command_str = ' '.join(cmd)
-        print(command_str)
+        if args.multi_flag:
+            pass
+        else:
+            args_dict = vars(args)
+            args_list = []
+            for k, v in args_dict.items():
+                if isinstance(v, bool):
+                    if v:
+                        args_list.append(f'--{k}')
+                elif v is not None:
+                    args_list.append(f'--{k}={v}')
+            
+            cmd = [
+                'PYTORCH_ENABLE_MPS_FALLBACK=1',
+                '&&',
+                'torchrun',
+                f'--nproc_per_node={args.core}',
+                '3rd/depth/metric_depth/start.py',
+                '--multi_flag'
+            ] + args_list
+            command_str = ' '.join(cmd)
+            print(command_str)
     else:
         process_image(prepares)
     
