@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-09 15:40:54
+LastEditTime: 2025-05-22 14:58:06
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -37,6 +37,7 @@ from file_utils import mvwrite,read,mkdir
 import matplotlib
 import requests
 from tqdm import tqdm
+import re
 fp = os.path.dirname(os.path.abspath(__file__))
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 def download_file(url, destination):
@@ -236,9 +237,14 @@ if __name__ == '__main__':
     args.metric = True if 'metric' in args.algo else False
     depth_anything,input_size = define_model(args)
     prepares = []
-    filenames = glob.glob(os.path.join(args.root, f'**/{args.img_folder_name}/*'), recursive=True)
+    if os.path.basename(args.root) == args.img_folder_name:
+        filenames = glob.glob(os.path.join(args.root, '*'))
+    else:   
+        filenames = glob.glob(os.path.join(args.root, f'**/{args.img_folder_name}/*'), recursive=True)
+    filenames = sorted(filenames, key=lambda x: int(re.findall(r'(\d+)', x)[-1]))
     for f in filenames:
         prepares.append(f)
+
     if args.core>1:
         if args.multi_flag:
             distributed_task = init_distributed_mode()
