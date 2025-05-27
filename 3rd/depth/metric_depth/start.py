@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-22 14:58:06
+LastEditTime: 2025-05-27 10:26:12
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -247,11 +247,13 @@ if __name__ == '__main__':
 
     if args.core>1:
         if args.multi_flag:
-            distributed_task = init_distributed_mode()
-            chunk_size = len(prepares)//distributed_task[1]
-            chunks = [prepares[i*chunk_size:(i+1)*chunk_size] for i in range(distributed_task[1])][distributed_task[0]]#not sorted
+            # distributed_task = init_distributed_mode()
+            # chunk_size = len(prepares)//distributed_task[1]
+            # chunks = [prepares[i*chunk_size:(i+1)*chunk_size] for i in range(distributed_task[1])][distributed_task[0]]#not sorted
+            rank, world_size = init_distributed_mode()
+            chunks = np.array_split(prepares, world_size)[rank]
             # print(distributed_task,chunks)
-            show = True if distributed_task[0]==0 else False
+            show = True if rank==0 else False
             process_image(chunks,args,show=show)
         else:
             import sys
