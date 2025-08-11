@@ -20,3 +20,4 @@ opencolorio
 sk-video
 moviepy
 plyfile
+open3d==0.16.1
