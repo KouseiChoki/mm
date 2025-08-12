@@ -1,6 +1,0 @@
-[2025-08-12 15:37:31,928][__main__][CRITICAL] - Prediction failed due to please input root file, use root XX:
-Traceback (most recent call last):
-  File "/Users/qhong/Documents/MM/motionmodel/3rd/lama/start.py", line 43, in main
-    assert predict_config['root'],'please input root file, use root XX'
-AssertionError: please input root file, use root XX
-

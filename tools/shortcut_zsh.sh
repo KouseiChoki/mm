@@ -205,6 +205,18 @@ else
     }' >> ~/.zshrc
 fi
 
+if grep -q "mmlama()" ~/.zshrc; then
+    echo "命令 'mmlama()' 已存在于 ~/.zshrc 中，跳过添加。"
+else
+    # 如果命令不存在，则添加到 ~/.zshrc
+    echo "添加命令 'mmlama()' 到 ~/.zshrc。"
+    echo 'mmlama(){
+        conda activate mm
+        cd '"$PARENT_DIR"'
+        cd 3rd/lama
+        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python -W ignore start.py "$@"
+    }' >> ~/.zshrc
+fi
 
 echo "patch 3.19note 新版需要手动安装opencolorio,在控制台输入mm,左侧有(mm)的情况下输入pip install opencolorio"
 echo "patch 7.09note 新版需要手动安装plyfile,在控制台输入mm,左侧有(mm)的情况下输入pip install plyfile"

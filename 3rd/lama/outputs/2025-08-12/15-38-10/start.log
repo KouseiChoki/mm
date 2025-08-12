@@ -1,4 +1,0 @@
-[2025-08-12 15:38:10,741][saicinpainting.utils][WARNING] - Setting signal 1 handler <function print_traceback_handler at 0x38880c550>
-[2025-08-12 15:38:10,775][root][INFO] - Make generator ffc_resnet
-[2025-08-12 15:38:11,086][saicinpainting.training.data.datasets][INFO] - Make val dataloader Kousei from /Users/qhong/Desktop/0811/tmplate
-[2025-08-12 15:38:14,214][__main__][WARNING] - Interrupted by user

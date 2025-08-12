@@ -2,10 +2,10 @@ einops
 loguru==0.6.0
 matplotlib==3.8.0
 numpy
-Pillow==9.0.1
-scikit-image==0.19.2
-scikit-learn==1.0.2
-scipy==1.7.3
+Pillow
+scikit-image==0.24.0
+scikit-learn==1.6.1
+scipy==1.13.1
 torchaudio==0.11.0
 torchvision==0.12.0
 tqdm==4.62.3
@@ -21,3 +21,9 @@ sk-video
 moviepy
 plyfile
 open3d==0.16.1
+easydict==1.9.0
+pandas
+pytorch-lightning==1.2.9
+kornia==0.8.1
+hydra-core==1.1.0
+albumentations==0.5.2
