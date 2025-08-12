@@ -1,0 +1,22 @@
+root: /Users/qhong/Desktop/0811/tmplate
+output: false
+indir: false
+outdir: false
+model:
+  path: false
+  checkpoint: best.ckpt
+dataset:
+  kind: Kousei
+  img_suffix: .png,.exr,.jpg
+  pad_out_to_modulo: 8
+device: cuda
+out_key: inpainted
+refine: true
+refiner:
+  gpu_ids: 0
+  modulo: ${dataset.pad_out_to_modulo}
+  n_iters: 15
+  lr: 0.002
+  min_side: 512
+  max_scales: 3
+  px_budget: 1800000

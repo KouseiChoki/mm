@@ -1,0 +1,32 @@
+[2025-08-12 15:12:30,987][saicinpainting.utils][WARNING] - Setting signal 1 handler <function print_traceback_handler at 0x3c7f190d0>
+[2025-08-12 15:12:31,024][root][INFO] - Make generator ffc_resnet
+[2025-08-12 15:12:31,448][__main__][CRITICAL] - Prediction failed due to Key 'indir' is not in struct
+    full_key: indir
+    object_type=dict:
+Traceback (most recent call last):
+  File "/Users/qhong/Documents/MM/motionmodel/3rd/lama/start.py", line 69, in main
+    predict_config.indir = predict_config['root']
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/dictconfig.py", line 337, in __setattr__
+    raise e
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/dictconfig.py", line 334, in __setattr__
+    self.__set_impl(key, value)
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/dictconfig.py", line 318, in __set_impl
+    self._set_item_impl(key, value)
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/basecontainer.py", line 511, in _set_item_impl
+    self._validate_set(key, value)
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/dictconfig.py", line 180, in _validate_set
+    target = self._get_node(key) if key is not None else self
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/dictconfig.py", line 465, in _get_node
+    self._validate_get(key)
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/dictconfig.py", line 166, in _validate_get
+    self._format_and_raise(
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/base.py", line 190, in _format_and_raise
+    format_and_raise(
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/_utils.py", line 818, in format_and_raise
+    _raise(ex, cause)
+  File "/Users/qhong/anaconda3/envs/python_lama/lib/python3.9/site-packages/omegaconf/_utils.py", line 716, in _raise
+    raise ex.with_traceback(sys.exc_info()[2])  # set end OC_CAUSE=1 for full backtrace
+omegaconf.errors.ConfigAttributeError: Key 'indir' is not in struct
+    full_key: indir
+    object_type=dict
+
