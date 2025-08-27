@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-06 14:45:18
+LastEditTime: 2025-08-27 17:53:47
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -580,20 +580,7 @@ def sliding_window(sequence, window_size=3,window_step=1,step=1,pad=0,pad_step=0
         index += window_step
     return res
 
-if __name__ == '__main__':
-    args = init_param()
-    args.f = True
-    # rtf = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw/6DoF.rtf'
-    # path = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw'
-    path = args.root
-    if os.path.basename(args.root) != 'raw':
-        tmps = prune(jhelp(args.root),'raw')
-        if not os.path.isdir(os.path.join(args.root,'raw')):
-            mkdir(os.path.join(args.root,'raw'))
-            for tmp in tmps:
-                shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
-        path = os.path.join(args.root,'raw')
-
+def load_data(path):
     try:
         image_folder = os.path.join(path,'image')
         if not os.path.isdir(image_folder):
@@ -603,114 +590,261 @@ if __name__ == '__main__':
         if not os.path.isdir(mask_folder):
             mask_folder = os.path.join(path,'Mask')
 
-        depth_folder =  os.path.join(path,'depths')
+        depth_folder =  os.path.join(path,'depth')
         if not os.path.isdir(depth_folder):
-            depth_folder = os.path.join(path,'world_depth')
+            depth_folder = os.path.join(path,'depths')
+            if not os.path.isdir(depth_folder):
+                depth_folder = os.path.join(path,'world_depth')
         images = jhelp_file(image_folder)
         masks = jhelp_file(mask_folder) if os.path.isdir(mask_folder) else None
         depths  = jhelp_file(depth_folder)
     except:
         raise ImportError('error input folder, need IMAGES and DEPTHS (MASKS) folder!')
-    if args.mask_type != 'nomask':
-        assert len(masks)>0,'can not find mask file!'
-    
-    if len(gofind(jhelp_file(path),'.fbx'))>0:
-        from fbx2json import fbx_reader
-        instrinsics = {}
-        instrinsics['h'],instrinsics['w'] = read(images[0],type='image').shape[:2]
-        fbx_file = gofind(jhelp_file(path),'.fbx')[0]
-        ext_,[fw,fh] = fbx_reader(fbx_file)
-        focal_length_x = instrinsics['w']  * fw
-        focal_length_y = instrinsics['h']  * fh
-        instrinsics['fx'],instrinsics['fy'] = focal_length_x,focal_length_y
-        args.fbx=True
-    else:
-        intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
-        extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
-        instrinsics = read_intrinsic(intrinsic_file)
-        ext_ = read_extrinsics(extrinsic_file)
-        args.fbx=False
+    return images,masks,depths
 
-    task_indexes = np.arange(args.start_frame,args.start_frame+args.max_frame)
+def check_stero_mode(root):
+    """
+    在 root 下递归查找所有同时包含 'left' 和 'right' 子文件夹的目录，
+    返回列表，每个元素是 (left_path, right_path) 的元组
+    """
+    result = []
+    for dirpath, dirnames, _ in os.walk(root):
+        left_dirs = [d for d in dirnames if "left" in d.lower()]
+        right_dirs = [d for d in dirnames if "right" in d.lower()]
+        if left_dirs and right_dirs:
+            for l in left_dirs:
+                for r in right_dirs:
+                    result.append((
+                        os.path.join(dirpath, l),
+                        os.path.join(dirpath, r)
+                    ))
+    if len(result) == 1:
+        txt_files = []
+        for dirpath, _, filenames in os.walk(root):
+            for f in filenames:
+                if f.lower().endswith(".txt"):
+                    txt_files.append(os.path.join(dirpath, f))
+        return result[0],sorted(txt_files)
+    else:
+        return None
+
+
+def find_all_txt_files(root):
+    """
+    在 root 下递归查找所有 .txt 文件，返回完整路径列表
+    """
+    txt_files = []
+    for dirpath, _, filenames in os.walk(root):
+        for f in filenames:
+            if f.lower().endswith(".txt"):
+                txt_files.append(os.path.join(dirpath, f))
+    return txt_files
+
+def stereo_renaming(l_images, keyword="left"):
+    """
+    在路径包含 `keyword` 的目录下，将文件名改为 name_keyword.ext
+    但若路径中包含 'pointcloud' 则跳过；
+    若文件名已带 '_keyword' 后缀（不区分大小写）也跳过。
+    返回重命名后的路径列表。
+    """
+    renamed = []
+    k_lower = keyword.lower()
+    activate = False
+
+    for path in l_images:
+        parts_lower = [p.lower() for p in path.split(os.sep)]
+
+        # 1) 跳过 pointcloud
+        if "pointcloud" in parts_lower:
+            renamed.append(path)
+            # print(f"[SKIP pointcloud] {path}")
+            continue
+
+        # 2) 仅当路径中包含 keyword 的目录时才考虑改名
+        if k_lower in parts_lower:
+            folder, filename = os.path.split(path)
+            name, ext = os.path.splitext(filename)
+
+            # 2a) 已经命名过：xxx_left.ext → 跳过
+            if name.lower().endswith(f"_{k_lower}"):
+                renamed.append(path)
+                # print(f"[SKIP already tagged] {path}")
+                continue
+
+            new_name = f"{name}_{keyword}{ext}"
+            new_path = os.path.join(folder, new_name)
+
+            # 2b) 目标已存在，避免覆盖（选择跳过并提示）
+            if os.path.exists(new_path):
+                renamed.append(path)
+                # print(f"[SKIP exists] {new_path} already exists. Source kept: {path}")
+                continue
+
+            # 真正重命名
+            os.rename(path, new_path)
+            renamed.append(new_path)
+            activate=True
+            # print(f"[RENAME] {path}  ->  {new_path}")
+        else:
+            # 路径不含 keyword 的目录，保持不变
+            renamed.append(path)
+
+    return activate
+
+
+if __name__ == '__main__':
+    args = init_param()
+    args.f = True
+    # rtf = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw/6DoF.rtf'
+    # path = '/home/rg0775/QingHong/data/plytestdata/fg_avatar_0725/0729_3frames/raw'
+    path = args.root
     task_indexes = []
     curs = []
-    for i in range(len(images)):
-        cur = args.max_frame//2
-        tmp = i+(np.arange(args.max_frame)-args.max_frame//2)*args.step
-        while(tmp.min()<0):
-            tmp +=args.step
-            cur -= 1
-            if cur < 0 or cur >= args.max_frame:
-                raise ValueError('error max frames')
-        while(tmp.max()>len(images)-1):
-            tmp -=args.step
-            cur += 1
-            if cur < 0 or cur >= args.max_frame:
-                raise ValueError('error max frames')
-        
-        tmp = [np.clip(k,0,len(images)-1) for k in tmp]
-        task_indexes.append(tmp)
-        curs.append(cur)
+    stereo_mode = False
+    # 0827新增stereo方式
+    stereo_data = check_stero_mode(path)
+    if stereo_data is not None:
+        stereo_mode=True
+        print('using stereo mode')
+        img_path,txt_files = stereo_data
+        args.fbx = False
+        if True: #render one mode
+            l_images,l_masks,l_depths = load_data(img_path[0])
+            r_images,r_masks,r_depths = load_data(img_path[1])
+            activate = False
+            activate |=stereo_renaming(l_images,'left')
+            activate |=stereo_renaming(l_masks,'left')
+            activate |=stereo_renaming(l_depths,'left')
+            activate |=stereo_renaming(r_images,'right')
+            activate |=stereo_renaming(r_masks,'right')
+            activate |=stereo_renaming(r_depths,'right')
+            if activate:
+                stereo_data = check_stero_mode(path)#reload
+                img_path,txt_files = stereo_data 
+                l_images,l_masks,l_depths = load_data(img_path[0])
+                r_images,r_masks,r_depths = load_data(img_path[1])
 
-    if len(args.custom)>1:
-        # custom = [i-1 for i in args.custom]
-        custom = args.custom
-        sorted_arr_with_indices = sorted(enumerate(custom), key=lambda x: x[1])
-        sorted_arr = [x[1] for x in sorted_arr_with_indices]
-        task_indexes = [sorted_arr]
-        original_positions = {original_idx: sorted_idx for sorted_idx, (original_idx, _) in enumerate(sorted_arr_with_indices)}
-        curs = [original_positions[0]]
-    
-    if len(images) <= args.max_frame:
-        args.step = 1
-        images_prepare = [[images[i] for i in range(0,len(images))]]
-        masks_prepare = [[masks[i] for i in range(0,len(masks))]] if masks is not None else None
-        depths_prepare = [[depths[i] for i in range(0,len(depths))]]
-        extrinsics = [ext_]
+            intrinsic_file = [f for f in txt_files if 'intrinsic' in f.lower()]
+            instrinsics = read_intrinsic(intrinsic_file[0])
+            txt_files = [f for f in txt_files if 'intrinsic' not in f.lower()]
+            images_prepare,masks_prepare,depths_prepare,extrinsics = [],[],[],[]
+            for index in range(len(txt_files)):
+                txt = txt_files[index]
+                name = os.path.basename(txt)
+                max_frame = len(read_txt(txt))//2
+                tmp_ext = read_extrinsics(txt)
+                #最后k的数据倒叙排列
+                ext_ = tmp_ext[:max_frame]
+                ext_r = tmp_ext[-max_frame:][::-1]
+                images_prepare.append(l_images[index:index+max_frame] + r_images[index:index+max_frame])
+                masks_prepare.append(l_masks[index:index+max_frame] + r_masks[index:index+max_frame])
+                depths_prepare.append(l_depths[index:index+max_frame] + r_depths[index:index+max_frame])
+                extrinsics.append(ext_+ext_r)
+                curs.append((max_frame+1)//2)
+
+            args.step = 1
+            args.max_frame = max_frame
+            for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
+                args.cur = curs[i]
+                # curname = '{:0>4}'.format(i)
+                name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
+                name1 = os.path.splitext(os.path.basename(images_prepare[i][args.max_frame-1]))[0]
+                name = f'stereo_from_{name0}_to_{name1}_{args.mask_type}'
+                if args.step!=1:
+                    name += f'_step_{args.step}'
+                name += f'_cur_{args.cur}'
+                save_path = os.path.join(path,'..','pointcloud',name)
+                m = masks_prepare[i] if l_masks is not None else None
+                ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,m)
+                if args.test:
+                    break
+        else: #render all mode
+            pass 
+        
     else:
-        # images_prepare = sliding_window(images,args.max_frame,step=args.step)
-        # masks_prepare = sliding_window(masks,args.max_frame,step=args.step) if masks is not None else None
-        # depths_prepare = sliding_window(depths,args.max_frame,step=args.step)
-        # extrinsics = sliding_window(ext_,args.max_frame,step=args.step)
-        images_prepare = [[images[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
-        masks_prepare = [[masks[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))] if masks is not None else None
-        depths_prepare = [[depths[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
-        extrinsics = [[ext_[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
-        # extrinsics = sliding_window(ext_,min(ext_,len(args.max_frame)*args.step-args.step+1))
-    # if not args.full_result:
-    # tmp_curs = []
-    # tmp_task_indexes = []
-    # for i in range(len(curs)):
-    #     if curs[i] == args.max_frame//2:
-    #         tmp_curs.append(curs[i])
-    #         tmp_task_indexes.append(task_indexes[i])
-    # curs = tmp_curs
-    # task_indexes = tmp_task_indexes
-    #需要判断重复元素 --root /Users/qhong/Desktop/avatar_data/2039 --max_frame 5 --step 2  --inverse_depth  --mask_type fg 
+        if os.path.basename(args.root) != 'raw': #防呆码
+            tmps = prune(jhelp(args.root),'raw')
+            if not os.path.isdir(os.path.join(args.root,'raw')):
+                mkdir(os.path.join(args.root,'raw'))
+                for tmp in tmps:
+                    shutil.move(tmp,os.path.join(args.root,'raw',os.path.basename(tmp)))
+            path = os.path.join(args.root,'raw')
+
+        images,masks,depths = load_data(path)
+        if args.mask_type != 'nomask':
+            assert len(masks)>0,'can not find mask file!'
+        
+        if len(gofind(jhelp_file(path),'.fbx'))>0: #fbx mode
+            from fbx2json import fbx_reader
+            instrinsics = {}
+            instrinsics['h'],instrinsics['w'] = read(images[0],type='image').shape[:2]
+            fbx_file = gofind(jhelp_file(path),'.fbx')[0]
+            ext_,[fw,fh] = fbx_reader(fbx_file)
+            focal_length_x = instrinsics['w']  * fw
+            focal_length_y = instrinsics['h']  * fh
+            instrinsics['fx'],instrinsics['fy'] = focal_length_x,focal_length_y
+            args.fbx=True
+        else: #txt mode
+            intrinsic_file = gofind(jhelp_file(path),'intrinsic.txt')[0]
+            extrinsic_file = gofind(jhelp_file(path),'6DoF.txt')[0]
+            instrinsics = read_intrinsic(intrinsic_file)
+            ext_ = read_extrinsics(extrinsic_file)
+            args.fbx=False
+
+        for i in range(len(images)): #prepare data
+            cur = args.max_frame//2
+            tmp = i+(np.arange(args.max_frame)-args.max_frame//2)*args.step
+            while(tmp.min()<0):
+                tmp +=args.step
+                cur -= 1
+                if cur < 0 or cur >= args.max_frame:
+                    raise ValueError('error max frames')
+            while(tmp.max()>len(images)-1):
+                tmp -=args.step
+                cur += 1
+                if cur < 0 or cur >= args.max_frame:
+                    raise ValueError('error max frames')
+            
+            tmp = [np.clip(k,0,len(images)-1) for k in tmp]
+            task_indexes.append(tmp)
+            curs.append(cur)
+
+        if len(args.custom)>1:
+            custom = args.custom
+            sorted_arr_with_indices = sorted(enumerate(custom), key=lambda x: x[1])
+            sorted_arr = [x[1] for x in sorted_arr_with_indices]
+            task_indexes = [sorted_arr]
+            original_positions = {original_idx: sorted_idx for sorted_idx, (original_idx, _) in enumerate(sorted_arr_with_indices)}
+            curs = [original_positions[0]]
+        
+        if len(images) <= args.max_frame:
+            args.step = 1
+            images_prepare = [[images[i] for i in range(0,len(images))]]
+            masks_prepare = [[masks[i] for i in range(0,len(masks))]] if masks is not None else None
+            depths_prepare = [[depths[i] for i in range(0,len(depths))]]
+            extrinsics = [ext_]
+        else:
+            images_prepare = [[images[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
+            masks_prepare = [[masks[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))] if masks is not None else None
+            depths_prepare = [[depths[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
+            extrinsics = [[ext_[ff] for ff in task_indexes[f]] for f in range(len(task_indexes))]
+       
     
-    # source_ext = []
-    # source_ins = []
-    # for ext in ext_:
-    #     tmp,_,_ = cal_qvec(ext)
-    #     source_ext.append(tmp)
-    #     source_ins.append(instrinsics)
-    # source_ext = np.stack(source_ext)
-    
-    for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
-        args.cur = curs[i]
-        curname = os.path.splitext(os.path.basename(images[i]))[0]
-        # curname = '{:0>4}'.format(i)
-        name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
-        name1 = os.path.splitext(os.path.basename(images_prepare[i][-1]))[0]
-        name = f'{curname}_from_{name0}_to_{name1}_{args.mask_type}'
-        if args.step!=1:
-            name += f'_step_{args.step}'
-        name += f'_cur_{args.cur}'
-        save_path = os.path.join(path,'..','pointcloud',name)
-        m = masks_prepare[i] if masks is not None else None
-        ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,m)
-        if args.test:
-            break
+        for i in tqdm(range(len(images_prepare)),desc=os.path.basename(os.path.abspath(os.path.join(path,'..')))):
+            args.cur = curs[i]
+            curname = os.path.splitext(os.path.basename(images[i]))[0]
+            # curname = '{:0>4}'.format(i)
+            name0 = os.path.splitext(os.path.basename(images_prepare[i][0]))[0]
+            name1 = os.path.splitext(os.path.basename(images_prepare[i][-1]))[0]
+            name = f'{curname}_from_{name0}_to_{name1}_{args.mask_type}'
+            if args.step!=1:
+                name += f'_step_{args.step}'
+            name += f'_cur_{args.cur}'
+            save_path = os.path.join(path,'..','pointcloud',name)
+            m = masks_prepare[i] if masks is not None else None
+            ply_cal_core(images_prepare[i],depths_prepare[i],instrinsics,extrinsics[i],save_path,args,m)
+            if args.test:
+                break
     if args.test:
         plypath = os.path.join(save_path,'sparse/0/points3D.ply')
         from plytest import show_ply
