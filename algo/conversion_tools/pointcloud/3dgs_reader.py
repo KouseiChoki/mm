@@ -26,7 +26,7 @@ Description:
 When I wrote this, only God and I understood what I was doing
 Now, God only knows
 '''
-import open3d as o3d
+# import open3d as o3d
 import numpy as np
 import os,sys,shutil
 from tqdm import tqdm
@@ -149,23 +149,23 @@ def get_ply(xyz,rgbs):
     return ply_data
 
 
-def generate_point_cloud(rgb_,depth_,int,T_WC):
+# def generate_point_cloud(rgb_,depth_,int,T_WC):
     
-    """
-    Converts depth maps to point clouds and merges them all into one global point cloud.
-    flags: command line arguments
-    data: dict with keys ['intrinsics', 'poses']
-    returns: [open3d.geometry.PointCloud]
-    """
-    intrinsics = o3d.camera.PinholeCameraIntrinsic(width=depth_.shape[1], height=depth_.shape[0], fx=int[0, 0],
-        fy=int[1, 1], cx=int[0, 2], cy=int[1, 2])
-    T_WC = np.linalg.inv(T_WC)
+#     """
+#     Converts depth maps to point clouds and merges them all into one global point cloud.
+#     flags: command line arguments
+#     data: dict with keys ['intrinsics', 'poses']
+#     returns: [open3d.geometry.PointCloud]
+#     """
+#     intrinsics = o3d.camera.PinholeCameraIntrinsic(width=depth_.shape[1], height=depth_.shape[0], fx=int[0, 0],
+#         fy=int[1, 1], cx=int[0, 2], cy=int[1, 2])
+#     T_WC = np.linalg.inv(T_WC)
 
-    rgb = o3d.geometry.Image(rgb_)
-    depth = o3d.geometry.Image(depth_)
-    rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-    rgb, depth,depth_scale=1.0, depth_trunc=MAX_DEPTH, convert_rgb_to_intensity=False)
-    return o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics, extrinsic=T_WC)
+#     rgb = o3d.geometry.Image(rgb_)
+#     depth = o3d.geometry.Image(depth_)
+#     rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
+#     rgb, depth,depth_scale=1.0, depth_trunc=MAX_DEPTH, convert_rgb_to_intensity=False)
+#     return o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics, extrinsic=T_WC)
 
 def generate_point_cloud_from_depth(depth_image, intrinsics, extrinsics,mask=None):
     h, w = depth_image.shape
