@@ -347,64 +347,212 @@ param {*} zero_one 是否为01相位
 param {*} using_mask 使用哪种mask
 return {*} 光流结果地址dict
 '''
-def optical_flow(args,images,masks,right_images=None,right_masks=None,mask_extra_info=None):
-    algorithm_check(args.algorithm,args.all_algorithm)
+# def optical_flow(args,images,masks,right_images=None,right_masks=None,mask_extra_info=None):
+#     algorithm_check(args.algorithm,args.all_algorithm)
+#     if '-v' not in args.algorithm:
+#         algorithm_pick(images,args) #pick algo base on image size
+#     save_res = []
+#     model = None if cpu_algorithm(args.algorithm) else get_model(args)
+#     cams = ['left','right'] if args.threeD_mode else ['monocular']
+#     imgs_op = None
+#     for seq_,data in images.items():
+#         seq = seq_
+#         seq_images,[start,end] = data
+#         seq_images_right = None if right_images is None else right_images[seq][0]
+#         input_valid_check(seq_images,args)
+#         #film border checker
+#         if 'auto' in args.film_border.lower():
+#             from conversion_tools.filmborder_detection import cal_border_length 
+#             args.film_border_arr = cal_border_length(seq_images[0])
+#         else:
+#             args.film_border_arr = [int(num) for num in args.film_border.split(',')]
+#         for step in args.frame_step:
+#             for cam in cams:
+#                 initial_opt = None #初始光流
+#                 task_name = '{}_{}_'.format(args.algorithm_fullname,cam) if masks is None else '{}_{}_object_'.format(args.algorithm_fullname,cam)
+#                 if mask_extra_info is not None and cam !='right':
+#                     if '/' in mask_extra_info:
+#                         mask_extra_info = mask_extra_info.split('/')[-2]+'_'+mask_extra_info.split('/')[-1]
+#                     seq += f'_mask_{mask_extra_info}'
+#                 task_name += '$$'
+#                 append = os.path.join(args.output,seq,task_name,'mv_{}.'+ args.savetype)
+#                 #from start-1 to end +1 because the videoflow can't output first and last img mv
+#                 task_indexes = np.arange(start,end-1)
+#                 args.num_frames = min(end-start+2,args.num_frames) ## for valid num_frames
+#                 if args.multi_output and step==1:
+#                     slide_indexes = sliding_window(task_indexes,args.num_frames,args.num_frames-2,1,step)
+#                 else:
+#                     slide_indexes = sliding_window(task_indexes,3,1,args.num_frames//2,step)
+#                 total_range = range(len(slide_indexes))
+#                 if args.use_tqdm:
+#                     total_range = tqdm(total_range,desc='{}_{}'.format(task_name.replace('_$$','').replace('_##',''),seq))
+#                 for i in total_range:
+#                     slide_index = slide_indexes[i]
+#                     mask = masks[seq_][0] if masks is not None else None
+#                     imgs,valid,names = get_pairs(slide_index,seq_images,append,mask,args,step)
+#                     imgs_op = None
+#                     if seq_images_right is not None:
+#                         right_mask = right_masks[seq_][0] if right_masks is not None  else None
+#                         imgs_op,valid_op,names_op = get_pairs(slide_index,seq_images_right,append,right_mask,args,step)
+#                         if cam == 'right':
+#                             imgs_op,valid_op,names_op,imgs,valid,names = imgs,valid,names,imgs_op,valid_op,names_op
+#                             if 'disparity' in args.weight_file:
+#                                 continue
+#                     if len(imgs)==0: #pass when exists
+#                         if imgs_op is not None and len(imgs_op)>0:
+#                             if len(imgs_op[0])==0:
+#                                 continue
+#                         else:
+#                             continue
+#                     initial_opt = optical_flow_pre_processing(imgs,valid,model,names,imgs_op,args,initial_opt,dump=args.enable_dump,disparity_inverse = cam=='right')
+#     return save_res
+import traceback
+from tqdm import tqdm
+
+def optical_flow(args, images, masks,
+                 right_images=None, right_masks=None,
+                 mask_extra_info=None):
+
+    errors = []  # 汇总错误
+
+    algorithm_check(args.algorithm, args.all_algorithm)
     if '-v' not in args.algorithm:
-        algorithm_pick(images,args) #pick algo base on image size
+        algorithm_pick(images, args)
+
     save_res = []
     model = None if cpu_algorithm(args.algorithm) else get_model(args)
-    cams = ['left','right'] if args.threeD_mode else ['monocular']
+    cams = ['left', 'right'] if args.threeD_mode else ['monocular']
     imgs_op = None
-    for seq_,data in images.items():
+
+    for seq_, data in images.items():
         seq = seq_
-        seq_images,[start,end] = data
+        seq_images, [start, end] = data
         seq_images_right = None if right_images is None else right_images[seq][0]
-        input_valid_check(seq_images,args)
-        #film border checker
-        if 'auto' in args.film_border.lower():
-            from conversion_tools.filmborder_detection import cal_border_length 
-            args.film_border_arr = cal_border_length(seq_images[0])
-        else:
-            args.film_border_arr = [int(num) for num in args.film_border.split(',')]
+
+        try:
+            input_valid_check(seq_images, args)
+
+            # film border
+            if 'auto' in args.film_border.lower():
+                from conversion_tools.filmborder_detection import cal_border_length
+                args.film_border_arr = cal_border_length(seq_images[0])
+            else:
+                args.film_border_arr = [int(num) for num in args.film_border.split(',')]
+
+        except Exception as e:
+            errors.append({
+                "stage": "sequence_init",
+                "seq": seq,
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            })
+            continue  # 整个序列直接跳过
+
         for step in args.frame_step:
             for cam in cams:
-                initial_opt = None #初始光流
-                task_name = '{}_{}_'.format(args.algorithm_fullname,cam) if masks is None else '{}_{}_object_'.format(args.algorithm_fullname,cam)
-                if mask_extra_info is not None and cam !='right':
-                    if '/' in mask_extra_info:
-                        mask_extra_info = mask_extra_info.split('/')[-2]+'_'+mask_extra_info.split('/')[-1]
-                    seq += f'_mask_{mask_extra_info}'
+                initial_opt = None
+                task_name = (
+                    f'{args.algorithm_fullname}_{cam}_'
+                    if masks is None
+                    else f'{args.algorithm_fullname}_{cam}_object_'
+                )
+
+                if mask_extra_info is not None and cam != 'right':
+                    info = mask_extra_info
+                    if '/' in info:
+                        info = info.split('/')[-2] + '_' + info.split('/')[-1]
+                    seq = f'{seq}_mask_{info}'
+
                 task_name += '$$'
-                append = os.path.join(args.output,seq,task_name,'mv_{}.'+ args.savetype)
-                #from start-1 to end +1 because the videoflow can't output first and last img mv
-                task_indexes = np.arange(start,end-1)
-                args.num_frames = min(end-start+2,args.num_frames) ## for valid num_frames
-                if args.multi_output and step==1:
-                    slide_indexes = sliding_window(task_indexes,args.num_frames,args.num_frames-2,1,step)
+                append = os.path.join(args.output, seq, task_name, 'mv_{}.' + args.savetype)
+
+                task_indexes = np.arange(start, end - 1)
+                args.num_frames = min(end - start + 2, args.num_frames)
+
+                if args.multi_output and step == 1:
+                    slide_indexes = sliding_window(
+                        task_indexes, args.num_frames, args.num_frames - 2, 1, step
+                    )
                 else:
-                    slide_indexes = sliding_window(task_indexes,3,1,args.num_frames//2,step)
+                    slide_indexes = sliding_window(
+                        task_indexes, 3, 1, args.num_frames // 2, step
+                    )
+
                 total_range = range(len(slide_indexes))
                 if args.use_tqdm:
-                    total_range = tqdm(total_range,desc='{}_{}'.format(task_name.replace('_$$','').replace('_##',''),seq))
+                    total_range = tqdm(
+                        total_range,
+                        desc=f'{task_name.replace("_$$", "").replace("_##", "")}_{seq}'
+                    )
+
                 for i in total_range:
                     slide_index = slide_indexes[i]
-                    mask = masks[seq_][0] if masks is not None else None
-                    imgs,valid,names = get_pairs(slide_index,seq_images,append,mask,args,step)
-                    imgs_op = None
-                    if seq_images_right is not None:
-                        right_mask = right_masks[seq_][0] if right_masks is not None  else None
-                        imgs_op,valid_op,names_op = get_pairs(slide_index,seq_images_right,append,right_mask,args,step)
-                        if cam == 'right':
-                            imgs_op,valid_op,names_op,imgs,valid,names = imgs,valid,names,imgs_op,valid_op,names_op
-                            if 'disparity' in args.weight_file:
+
+                    try:
+                        mask = masks[seq_][0] if masks is not None else None
+                        imgs, valid, names = get_pairs(
+                            slide_index, seq_images, append, mask, args, step
+                        )
+
+                        imgs_op = None
+                        if seq_images_right is not None:
+                            right_mask = (
+                                right_masks[seq_][0] if right_masks is not None else None
+                            )
+                            imgs_op, valid_op, names_op = get_pairs(
+                                slide_index, seq_images_right, append,
+                                right_mask, args, step
+                            )
+
+                            if cam == 'right':
+                                imgs_op, valid_op, names_op, imgs, valid, names = (
+                                    imgs, valid, names,
+                                    imgs_op, valid_op, names_op
+                                )
+                                if 'disparity' in args.weight_file:
+                                    continue
+
+                        if len(imgs) == 0:
+                            if imgs_op is not None and len(imgs_op) > 0:
+                                if len(imgs_op[0]) == 0:
+                                    continue
+                            else:
                                 continue
-                    if len(imgs)==0: #pass when exists
-                        if imgs_op is not None and len(imgs_op)>0:
-                            if len(imgs_op[0])==0:
-                                continue
-                        else:
-                            continue
-                    initial_opt = optical_flow_pre_processing(imgs,valid,model,names,imgs_op,args,initial_opt,dump=args.enable_dump,disparity_inverse = cam=='right')
+
+                        initial_opt = optical_flow_pre_processing(
+                            imgs, valid, model, names,
+                            imgs_op, args, initial_opt,
+                            dump=args.enable_dump,
+                            disparity_inverse=(cam == 'right')
+                        )
+
+                    except Exception as e:
+                        errors.append({
+                            "stage": "frame",
+                            "seq": seq,
+                            "cam": cam,
+                            "step": step,
+                            "index": i,
+                            "error": str(e),
+                            "traceback": traceback.format_exc()
+                        })
+                        if args.use_tqdm:
+                            total_range.write(
+                                f"[ERROR] skip frame | seq={seq}, cam={cam}, step={step}, i={i}"
+                            )
+                        continue
+
+    # ===== 统一打印错误 =====
+    if errors:
+        print("\n========== OPTICAL FLOW ERROR SUMMARY ==========")
+        for idx, err in enumerate(errors):
+            print(f"\n[{idx}] Stage: {err.get('stage')}")
+            print(f"Seq: {err.get('seq')}")
+            print(f"Cam: {err.get('cam', '-')}, Step: {err.get('step', '-')}, Index: {err.get('index', '-')}")
+            print(err["error"])
+            print(err["traceback"])
+        print(f"\nTotal failed items: {len(errors)}")
+
     return save_res
 
 
