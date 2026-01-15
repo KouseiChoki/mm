@@ -38,6 +38,9 @@ import matplotlib
 import requests
 from tqdm import tqdm
 import re
+import traceback
+
+
 fp = os.path.dirname(os.path.abspath(__file__))
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 def download_file(url, destination):
@@ -129,65 +132,90 @@ def define_model(args):
     return depth_anything,input_size
 
 
-def process_image(prepares,args,show=True):
-        # filenames = glob.glob(os.path.join(prepare, '**/*'), recursive=True)
-    # print(prepares)
-    # for k, filename in enumerate(prepares):
+def process_image(prepares, args, show=True):
+    errors = []  # 用来汇总错误信息
+
     cy = tqdm(range(len(prepares))) if show else range(len(prepares))
     for k in cy:
         filename = prepares[k]
-        raw_image = read(filename,type='image')
-        # print(raw_image.shape, args.input_size,DEVICE)
-        depth = depth_anything.infer_image(raw_image, input_size,args.DEVICE)
-        # if args.save_numpy:
-        #     output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '_raw_depth_meter.npy')
-        #     np.save(output_path, depth)
-        
-        # depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
-        # depth = depth.astype(np.uint8)
-        
-        # if args.grayscale:
-        #     depth = np.repeat(depth[..., np.newaxis], 3, axis=-1)
-        # else:
-        #     depth = (cmap(depth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
-        last = os.path.basename(filename).split('.')[-1]
-        output_name = filename.replace(args.root,'')
-        output = args.output
-            # output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
-        output_path = os.path.join(output,os.path.dirname(output_name).lstrip(os.sep),os.path.basename(filename).replace(f'.{last}',''))+'.exr'
-            
-        if args.color:
-            import copy
-            cmap = matplotlib.colormaps.get_cmap('Spectral')
-            tmpdepth = copy.deepcopy(depth)
-            tmpdepth = (tmpdepth - tmpdepth.min()) / (tmpdepth.max() - tmpdepth.min()) * 255.0
-            tmpdepth = tmpdepth.astype(np.uint8)
-            tmpdepth = (cmap(tmpdepth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
-            mkdir(os.path.join(output, f'{args.name}_color'))
-            cv2.imwrite(os.path.join(output, f'{args.name}_color',os.path.basename(filename).replace(f'.{last}',''))+'.png', tmpdepth)
-        # output_path = os.path.join(args.outdir, os.path.splitext(os.path.basename(filename))[0] + '.png')
-        # if args.pred_only:
-        #     cv2.imwrite(output_path, depth)
-        # else:
-        #     split_region = np.ones((raw_image.shape[0], 50, 3), dtype=np.uint8) * 255
-        #     combined_result = cv2.hconcat([raw_image, split_region, depth])
-            
-        #     cv2.imwrite(output_path, combined_result)
-        depth = np.repeat(depth[...,None],4,axis=2)
-        d = depth[...,0]
-        d = (d - d.min()) / (d.max() - d.min())
-        # if args.norm:
-        if args.metric:
-            if args.inverse_depth:
-                d = 1 - d
-            depth[...,-1] = d
-        else:
-            depth = np.repeat(d[...,None],4,axis=2)
-            if args.inverse_depth:
-                depth[...,-1] = 1-depth[...,-1]
-        # mvwrite(os.path.join(args.outdir,os.path.basename(task),'mono_depth',os.path.basename(filename[:filename.rfind('.')]) + '.exr'),depth,precision='half')
-        
-        mvwrite(output_path,depth,precision='half')
+
+        try:
+            # ===== 原始代码开始 =====
+            raw_image = read(filename, type='image')
+            depth = depth_anything.infer_image(
+                raw_image, args.input_size, args.DEVICE
+            )
+
+            last = os.path.basename(filename).split('.')[-1]
+            output_name = filename.replace(args.root, '')
+            output = args.output
+
+            output_path = os.path.join(
+                output,
+                os.path.dirname(output_name).lstrip(os.sep),
+                os.path.basename(filename).replace(f'.{last}', '')
+            ) + '.exr'
+
+            if args.color:
+                import copy
+                cmap = matplotlib.colormaps.get_cmap('Spectral')
+                tmpdepth = copy.deepcopy(depth)
+                tmpdepth = (tmpdepth - tmpdepth.min()) / (tmpdepth.max() - tmpdepth.min()) * 255.0
+                tmpdepth = tmpdepth.astype(np.uint8)
+                tmpdepth = (cmap(tmpdepth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
+
+                mkdir(os.path.join(output, f'{args.name}_color'))
+                cv2.imwrite(
+                    os.path.join(
+                        output,
+                        f'{args.name}_color',
+                        os.path.basename(filename).replace(f'.{last}', '')
+                    ) + '.png',
+                    tmpdepth
+                )
+
+            depth = np.repeat(depth[..., None], 4, axis=2)
+            d = depth[..., 0]
+            d = (d - d.min()) / (d.max() - d.min())
+
+            if args.metric:
+                if args.inverse_depth:
+                    d = 1 - d
+                depth[..., -1] = d
+            else:
+                depth = np.repeat(d[..., None], 4, axis=2)
+                if args.inverse_depth:
+                    depth[..., -1] = 1 - depth[..., -1]
+
+            mvwrite(output_path, depth, precision='half')
+            # ===== 原始代码结束 =====
+
+        except Exception as e:
+            # 记录错误但不中断
+            err_msg = {
+                "index": k,
+                "file": filename,
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+            errors.append(err_msg)
+
+            if show:
+                cy.write(f"[ERROR] skip frame {k}: {filename}")
+                cy.write(str(e))
+
+            continue  # 明确跳过当前帧
+
+    # ===== 汇总错误 =====
+    if errors:
+        print("\n========== Error Summary ==========")
+        for i, err in enumerate(errors):
+            print(f"\n[{i}] File: {err['file']}")
+            print(err["error"])
+        print(f"\nTotal failed frames: {len(errors)}")
+
+    return errors
+
     
 
 
@@ -250,7 +278,7 @@ if __name__ == '__main__':
             chunks = np.array_split(prepares, world_size)[rank]
             # print(distributed_task,chunks)
             show = True if rank==0 else False
-            process_image(chunks,args,show=show)
+            errors = process_image(chunks,args,show=show)
         else:
             import sys
             cmd = [
@@ -273,5 +301,15 @@ if __name__ == '__main__':
                 sys.exit('[MM ERROR][main process]main process error')
             # print(command_str)
     else:
-        process_image(prepares,args)
+        errors = process_image(prepares,args)
+
+    if errors:
+        print("\n========== ERROR SUMMARY ==========")
+        for idx, file, msg, tb in errors:
+            print(f"\nFrame {idx}: {file}")
+            print(msg)
+            print(tb)
+        print(f"\nTotal failed frames: {len(errors)}")
+    else:
+        print("\nAll frames processed successfully ✅")
     
