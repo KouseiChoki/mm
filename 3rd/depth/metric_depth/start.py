@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-05-27 10:26:12
+LastEditTime: 2026-01-15 10:22:25
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -151,14 +151,10 @@ def process_image(prepares,args,show=True):
         # else:
         #     depth = (cmap(depth)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
         last = os.path.basename(filename).split('.')[-1]
-        if len(args.output)>1:
-            output = args.output
-            output = os.path.join(output,os.path.basename(os.path.dirname(filename)))
-            output_path = os.path.join(output,os.path.basename(filename).replace(f'.{last}',''))+'.exr'
-        else:
-            output = os.path.dirname(os.path.abspath(filename))+'/..'
-            output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
-        
+        output_name = filename.replace(args.root,'')
+        output = args.output
+            # output_path = os.path.join(output, f'{args.name}',os.path.basename(filename).replace(f'.{last}',''))+'.exr'
+        output_path = os.path.join(output,os.path.dirname(output_name).lstrip(os.sep),os.path.basename(filename).replace(f'.{last}',''))+'.exr'
             
         if args.color:
             import copy
@@ -220,7 +216,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-depth', type=float, default=20)
     parser.add_argument('--server', type=str, default='http://10.35.116.93:8088')
     parser.add_argument('--img_folder_name', type=str, default='image',help='batch run"s folder name')
-    parser.add_argument('--output', type=str, default='',help='output path')
+    parser.add_argument('--output', type=str, default='',help='output path',required=True)
     
     # parser.add_argument('--save-numpy', dest='save_numpy', action='store_true', help='save the model raw output')
     # parser.add_argument('--pred-only', dest='pred_only', action='store_true', help='only display the prediction')
