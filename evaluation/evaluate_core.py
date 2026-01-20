@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2024-10-25 11:05:32
+LastEditTime: 2026-01-20 13:44:52
 Description: file content
 '''
 import os,sys
@@ -57,7 +57,7 @@ def evaluate(mv_path,gt_path,dif_path='',skip=1,speed=[0,1],masks=None,fg=True):
         masks = masks[skip:-skip]
     epe_all,px1_all,px3_all,px5_all = 0,0,0,0
     totalnum = len(mvs)
-    for i in range(totalnum):
+    for i in tqdm(range(totalnum),desc=os.path.basename(os.path.dirname(mv_path))):
         mv = read(mvs[i],type='flo')[...,:2]
         # gt = read(gts[i],type='flo')[...,:2]
         gt_ = find_matching_files(mvs[i],gts)
@@ -82,9 +82,9 @@ def evaluate(mv_path,gt_path,dif_path='',skip=1,speed=[0,1],masks=None,fg=True):
         px1_all += metrics['1px']
         px3_all += metrics['3px']
         px5_all += metrics['5px']
-        if len(dif_path)>0:
-            diff = np.abs(mv-gt)
-            write(os.path.join(dif_path,os.path.basename(mvs[i])),diff)
+        # if len(dif_path)>0:
+        #     diff = np.abs(mv-gt)
+        #     write(os.path.join(dif_path,os.path.basename(mvs[i])),diff)
 
     return epe_all/totalnum,px1_all/totalnum,px3_all/totalnum,px5_all/totalnum
     
@@ -108,7 +108,8 @@ def evaluate_single_frame(mv,gt,valid,norm=True):
 def mm_evaluate(source_root,gt_root,obj_mode=False,skip=1,fg=True):
     sources = jhelp_folder(source_root)
     result = {}
-    for scene in tqdm(sources):
+    name = None
+    for scene in sources:
         scene_name = os.path.basename(scene)
         gt = os.path.join(gt_root,scene_name)
         if not os.path.isdir(gt):
@@ -121,17 +122,21 @@ def mm_evaluate(source_root,gt_root,obj_mode=False,skip=1,fg=True):
                 mv0_name = f
             if 'mv1' in f and 'mv1' != f:
                 mv1_name = f
+        if mv1_name != 'mv1':
+            name = mv1_name.replace('_mv1','')
         for speed in [[0,0.005],[0.005,0.01],[0.01,1]]:
             s = f's{speed[0]*1000}_{speed[1]*1000}'
+            print(f'speed = {s}')
             result[f'{scene_name}_mv1_{s}'] = evaluate(f'{scene}/{mv1_name}',f'{gt}/mv1',f'{scene}/{mv1_name}_diff',skip=skip,speed=speed,masks=masks,fg=fg)
             # if os.path.isdir(f'{gt}/mv0'):
                 # result[f'{scene_name}_mv0_{s}'] = evaluate(f'{scene}/{mv0_name}',f'{gt}/mv0',skip=skip,speed=speed,masks=masks,fg=fg)
-    return result
+    return result,name
 
 def esf(text, min_length=10):
     return f"{text:<{min_length}}"
 
 def show_evaluation(di,algorithm='mm',sp='',excel=True):
+    algorithm = 'custom algorithm' if not algorithm else algorithm
     if excel:
         # 创建一个新的工作簿和工作表
         wb = Workbook()

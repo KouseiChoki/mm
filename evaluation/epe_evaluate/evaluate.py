@@ -2,13 +2,14 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2025-04-11 11:19:02
+LastEditTime: 2026-01-20 13:44:11
 Description: file content
 '''
 import os,sys
 cur_path = os.path.dirname(os.path.abspath(__file__))
 from tqdm import tqdm
 sys.path.insert(0, cur_path+'/../algo')
+sys.path.insert(0, cur_path+'/..')
 from file_utils import read,write
 from openpyxl import Workbook
 import datetime
@@ -16,6 +17,8 @@ import re
 import numpy as np
 from skimage.metrics import peak_signal_noise_ratio
 from skimage.metrics import structural_similarity as ssim
+import argparse
+from evaluate_core import mm_evaluate,show_evaluation
 
 def jhelp(c):
 	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
@@ -100,7 +103,7 @@ def evaluate_single_frame(src,gt,valid=None,norm=True):
     }
     return metrics
 
-def mm_evaluate(sources,gts,basename='image',obj_mode=False,skip=1,fg=True):
+def psnr_evaluate(sources,gts,basename='image',obj_mode=False,skip=1,fg=True):
     result = {}
     for i in sources.keys():
         scene = sources[i]
@@ -115,7 +118,7 @@ def mm_evaluate(sources,gts,basename='image',obj_mode=False,skip=1,fg=True):
 def esf(text, min_length=10):
     return f"{text:<{min_length}}"
 
-def show_evaluation(di,algorithm='mm',sp='',excel=True):
+def show_evaluation_psnr(di,algorithm='mm',sp='',excel=True):
     # 创建一个新的工作簿和工作表
     wb = Workbook()
     ws = wb.active
@@ -177,33 +180,38 @@ def process_data(source_path,image_name):
 
 
 if __name__ == '__main__':
-    test = False
-    if test:
-        source_path = '/Users/qhong/Desktop/0411/srcs/slay_11'
-        target_path = '/Users/qhong/Desktop/0411/gts/slay_11'
-        image_name = 'image'
-    else:
-        assert len(sys.argv) == 3,'error input'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source','--root', required=True,dest='root',type=str ,help="source root")
+    parser.add_argument('--target','--gt', required=True,dest='gt',type=str ,help="ground truth root")
+    parser.add_argument('--mv', action='store_true',help="motion vector mode")
+    args = parser.parse_args()
+    source_path = args.root
+    target_path = args.gt
+    if not args.mv:
         # source_paths = find_folders_with_subfolder(sys.argv[1],keys=['mv1'])
-        source_path = sys.argv[1]
-        target_path = sys.argv[2]
-        if len(sys.argv)>3:
-            image_name = sys.argv[3]
-        else:
-            image_name = 'image'
-    # for i in range(len(source_paths)):
-    print('source_path:',source_path)
-    print('target_path:',target_path)
-    source = process_data(source_path,image_name)
-    target = process_data(target_path,image_name)
+        image_name = 'image'
+        # for i in range(len(source_paths)):
+        print('source_path:',source_path)
+        print('target_path:',target_path)
+        source = process_data(source_path,image_name)
+        target = process_data(target_path,image_name)
 
 
-    res = mm_evaluate(source,target)
-    now = datetime.datetime.now()
-    # 格式化为年月日小时分钟秒
-    formatted_date = now.strftime("%Y%m%d_%H%M%S")  # 输出格式类似 '20220429_153142'
-    # 使用这个字符串来命名文件
-    filename = f"data_{formatted_date}.txt"  # 文件名类似 'data_20220429_153142.txt'
-    filename = os.path.join(cur_path,filename)
-    show_evaluation(res,'evaluate_result',sp=filename)
-    # show_evaluation(res,'test',sp='/Users/qhong/Documents/1117test/MM/motionmodel/evaluation/1.txt')
+        res = psnr_evaluate(source,target)
+        now = datetime.datetime.now()
+        # 格式化为年月日小时分钟秒
+        formatted_date = now.strftime("%Y%m%d_%H%M%S")  # 输出格式类似 '20220429_153142'
+        # 使用这个字符串来命名文件
+        filename = f"data_{formatted_date}.txt"  # 文件名类似 'data_20220429_153142.txt'
+        filename = os.path.join(cur_path,filename)
+        show_evaluation_psnr(res,'evaluate_result',sp=filename)
+        # show_evaluation(res,'test',sp='/Users/qhong/Documents/1117test/MM/motionmodel/evaluation/1.txt')
+    else:
+        res,algo = mm_evaluate(source_path,target_path)
+        now = datetime.datetime.now()
+        # 格式化为年月日小时分钟秒
+        formatted_date = now.strftime("%Y%m%d_%H%M%S")  # 输出格式类似 '20220429_153142'
+        # 使用这个字符串来命名文件
+        filename = f"data_{formatted_date}.txt"  # 文件名类似 'data_20220429_153142.txt'
+        filename = os.path.join(cur_path,filename)
+        show_evaluation(res,algo,sp=filename)
