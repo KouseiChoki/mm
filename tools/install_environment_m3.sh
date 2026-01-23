@@ -3,10 +3,10 @@ chmod +x *
  # @Author: Qing Hong
  # @Date: 2023-09-20 12:03:09
  # @LastEditors: Qing Hong
- # @LastEditTime: 2026-01-23 11:23:28
+ # @LastEditTime: 2026-01-23 11:57:41
  # @Description: file content
 ### 
-conda install pytorch::pytorch torchvision torchaudio -c pytorch
+#conda install pytorch::pytorch torchvision torchaudio -c pytorch
 # /bin/bash  brew.sh
 # brew install openexr
 # export CFLAGS="-I/opt/homebrew/include/OpenEXR -I/opt/homebrew/include/Imath" && export LDFLAGS="-L/opt/homebrew/lib"&& pip install -r requirements.txt
