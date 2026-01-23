@@ -6,8 +6,8 @@ Pillow
 scikit-image==0.24.0
 scikit-learn==1.6.1
 scipy==1.13.1
-# torch
-# torchvision
+torch
+torchvision
 tqdm==4.62.3
 yacs==0.1.8
 opencv-python==4.5.5.62
