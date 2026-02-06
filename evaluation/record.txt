@@ -1,0 +1,6 @@
+python epe_evaluate/evaluate.py --gt /Users/qhong/Desktop/0116/data  --root /Users/qhong/Desktop/0123/clean --mv 
+
+--path /private/dept/Training/qhong/Unreal_raw/frame_2k/train --output /Volumes/hongqing/optical_flow_datasets/Unreal --f 
+
+
+

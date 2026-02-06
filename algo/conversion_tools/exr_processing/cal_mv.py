@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-04-23 14:53:58
+LastEditTime: 2026-02-06 16:00:12
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -58,7 +58,8 @@ type_dict = {"PW_PRM_BT601"              : [  0.640, 0.330, 0.290, 0.600, 0.150,
     "PW_PRM_UNSPECIFIED"        : [  0.708, 0.292, 0.170, 0.797, 0.131, 0.046  ]}
 def init_param():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path',  help="your data path", required=True)
+    parser.add_argument('--path','--root',  help="your data path", required=True)
+    parser.add_argument('--output',  help="your output path")
     parser.add_argument('--extra_depth',  help="using extra depth to calculate mv")
     parser.add_argument('--mvinmask', action='store_true', help="no_mask_mode mode.")
     parser.add_argument('--objmvonly', action='store_true', help="test object mv")
@@ -80,6 +81,7 @@ def init_param():
     parser.add_argument('--core', type=int, default=1)
     parser.add_argument('--check_mode',action='store_true', help="check invalid data")
     parser.add_argument('--exrformat',action='store_true', help="check invalid data")
+    parser.add_argument('--enable_colour_output',action='store_true', help="check invalid data")
     args = parser.parse_args()
     if args.depth_only or args.colormap:
         args.dump_depth = True
@@ -202,33 +204,35 @@ def exr_read_worldpos(filePath):
             depth_R = key
         elif 'FinalImageMovieRenderQueue_WorldDepth.R' in key:
             depth_R = key
+        elif 'ImageDepth.R' in key:
+            depth_R = key
         # if 'FinalImagePWWorldDepth.G' in key:
         #     depth_G = key
         # if 'FinalImagePWWorldDepth.B' in key:
         #     depth_B = key
-        if 'FinalImagePWMV1.R' in key:
+        if 'MV1.R' in key:
             fnmv1_R = key
         elif 'MotionVectors.R' in key:
             fnmv1_R = key
-        if 'FinalImagePWMV1.G' in key:
+        if 'MV1.G' in key:
             fnmv1_G = key
         elif 'MotionVectors.G' in key:
             fnmv1_G = key
-        if 'FinalImagePWMV1.B' in key:
+        if 'MV1.B' in key:
             fnmv1_B = key
         elif 'MotionVectors.B' in key:
             fnmv1_B = key
-        if 'FinalImagePWMV1.A' in key:
+        if 'MV1.A' in key:
             fnmv1_A = key
         elif 'MotionVectors.A' in key:
             fnmv1_A = key
-        if 'FinalImagePWMV0.R' in key:
+        if 'MV0.R' in key:
             fnmv0_R = key
-        if 'FinalImagePWMV0.G' in key:
+        if 'MV0.G' in key:
             fnmv0_G = key
-        if 'FinalImagePWMV0.B' in key:
+        if 'MV0.B' in key:
             fnmv0_B = key
-        if 'FinalImagePWMV0.A' in key:
+        if 'MV0.A' in key:
             fnmv0_A = key
         if 'ObjMask.R' in key:
             fnmask_R = key
@@ -324,7 +328,7 @@ def exr_read_worldpos_next(filePath):
     data_cur['pitch'] = float(img_exr.header()['unreal/camera/curRot/pitch'])
     data_cur['roll'] = float(img_exr.header()['unreal/camera/curRot/roll'])
     data_cur['yaw'] = float(img_exr.header()['unreal/camera/curRot/yaw'])
-    if 'FinalImagePWMV0.R' in img_exr.header()['channels']:
+    if 'MV0.R' in img_exr.header()['channels']:
         mv0_x = np.array(array.array('f', img_exr.channel('FinalImagePWMV0.R',pt))).reshape(size)
         mv0_y = np.array(array.array('f', img_exr.channel('FinalImagePWMV0.G',pt))).reshape(size)
         mv0_z = np.array(array.array('f', img_exr.channel('FinalImagePWMV0.B',pt))).reshape(size)
@@ -627,7 +631,6 @@ def mv_cal_core(datas):
                 else:
                     tmp_mask = np.repeat(mask[...,None],2,axis=2)
                     mv1[np.where(tmp_mask!=0)] = objmv1[np.where(tmp_mask!=0)]
-            # mv1[...,0] *= -1
         mvwrite(os.path.join(mv1_sp,os.path.basename(img)),adjust(mv1),precision='half')
 
         if objmv0_ is not None or args.bg_mode:
@@ -652,16 +655,16 @@ def mv_cal_core(datas):
     if step !=1:
         return
     #hdr
-   
-    if dtype=='acescg':
-        mvwrite(os.path.join(save_path,'ACESCG',os.path.basename(img)),hdr_image)
-        hdr_image = acescg_to_rec709.apply(hdr_image)
-    elif dtype=='rec709':
-        mvwrite(os.path.join(save_path,'rec709',os.path.basename(img)),hdr_image)
-        if args.ACESCG:
-            mvwrite(os.path.join(save_path,'ACESCG',os.path.basename(img)),rec709_to_acescg.apply(hdr_image))
-    else:
-        raise ValueError(f'not supported color space:{dtype}')
+    if args.enable_colour_output:
+        if dtype=='acescg':
+            mvwrite(os.path.join(save_path,'ACESCG',os.path.basename(img)),hdr_image)
+            hdr_image = acescg_to_rec709.apply(hdr_image)
+        elif dtype=='rec709':
+            mvwrite(os.path.join(save_path,'rec709',os.path.basename(img)),hdr_image)
+            if args.ACESCG:
+                mvwrite(os.path.join(save_path,'ACESCG',os.path.basename(img)),rec709_to_acescg.apply(hdr_image))
+        else:
+            raise ValueError(f'not supported color space:{dtype}')
     #ldr
     if not args.exrformat:
         image = hdr_to_rgb(hdr_image)
@@ -795,18 +798,36 @@ def restore_file_name(root):
             rename(file, os.path.join(os.path.dirname(file),'Mask'))
             
             
-def loop_helper(files,key='ori'):
-    if len(jhelp_folder(files)) == 0:
-        return [files]
-    res = []
-    for file in jhelp_folder(files):
-        if os.path.basename(file) ==key:
-            return [file]
-        if 'fps' in os.path.basename(file).lower() or os.path.basename(file) in ['12','24','48']:
-            res += [file]
-        else:
-            res += loop_helper(file)
-    return res
+# def loop_helper(files,key='ori'):
+#     if len(jhelp_folder(files)) == 0:
+#         return [files]
+#     res = []
+#     for file in jhelp_folder(files):
+#         if os.path.basename(file) ==key:
+#             return [file]
+#         if 'fps' in os.path.basename(file).lower() or os.path.basename(file) in ['12','24','48']:
+#             res += [file]
+#         else:
+#             res += loop_helper(file)
+#     return res
+
+def loop_helper(root,key='.exr'):
+    """
+    递归查找 root 下所有包含 .exr 文件的文件夹
+
+    Args:
+        root (str): 根目录路径
+
+    Returns:
+        List[str]: 包含 .exr 文件的文件夹路径列表
+    """
+    exr_dirs = []
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        if any(fname.lower().endswith(key) for fname in filenames):
+            exr_dirs.append(dirpath)
+
+    return exr_dirs
 
 def mkdir_helper(files,root,name):
     if len(files)>0:
@@ -853,15 +874,18 @@ if __name__ == '__main__':
         assert len(file_names)>0,'error root'
         for id,file_name in enumerate(file_names):
             print('starting camera mv calculation({}/{}) {}'.format(id+1,len(file_names),file_name))
-            if len(jhelp_file(file_name)) != 0 and 'ori' != os.path.basename(file_name):
-                ori_files = jhelp_file(file_name)
-                if len(ori_files)>0:
-                    mkdir(os.path.join(file_name,'ori'))
-                    for ori_file in ori_files:
-                        shutil.move(ori_file,os.path.join(file_name,'ori'))
-            if 'ori' != os.path.basename(file_name):
-                file_name = os.path.join(file_name,'ori')
-            save_path = os.path.abspath(os.path.join(file_name,'..'))
+            if args.output is  None:
+                if len(jhelp_file(file_name)) != 0 and 'ori' != os.path.basename(file_name):
+                    ori_files = jhelp_file(file_name)
+                    if len(ori_files)>0:
+                        mkdir(os.path.join(file_name,'ori'))
+                        for ori_file in ori_files:
+                            shutil.move(ori_file,os.path.join(file_name,'ori'))
+                if 'ori' != os.path.basename(file_name):
+                    file_name = os.path.join(file_name,'ori')
+            else:
+                pass
+            save_path = os.path.abspath(os.path.join(file_name,'..')) if args.output is None else file_name.replace(root,args.output)
             if not os.path.isdir(file_name):
                 continue
             name = os.path.basename(save_path)
