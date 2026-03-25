@@ -153,6 +153,32 @@ def get_model(args):
         model.load_state_dict(tmp)
         model = model.module.to(DEVICE)
         model.eval()
+    elif 'mma' in model_name:
+        dir_flowformer = os.path.dirname(os.path.abspath(__file__))+'/../3rd/mma/core'
+        sys.path.insert(0, dir_flowformer)
+        from raft import RAFT
+        import json,argparse
+        def json_to_args(json_path):
+            # return a argparse.Namespace object
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+            args = argparse.Namespace()
+            args_dict = args.__dict__
+            for key, value in data.items():
+                args_dict[key] = value
+            return args
+        json_path = os.path.dirname(os.path.abspath(__file__))+'/../3rd/mma/config/mma-v0.json'
+        args = json_to_args(json_path)
+        model = RAFT(args)
+        ckpt_path = os.path.dirname(os.path.abspath(__file__))+'/../checkpoints/'
+        model_path = os.path.join(ckpt_path,model_name.replace('.pth','') + '.pth')
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError('没有模型文件，请先获取模型文件')
+            sys.exit(0)
+        state_dict = torch.load(model_path, map_location=torch.device('cpu'))
+        model.load_state_dict(state_dict, strict=False)
+        model = model.to(DEVICE)
+        model.eval()
     else:
         raise NotImplementedError(f'[MM ERROR][model]model file loss!{model_name}')
     return model

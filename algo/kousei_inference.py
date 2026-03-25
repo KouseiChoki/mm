@@ -306,6 +306,13 @@ def optical_flow_algo_one_step(pre,cur,args,model=None,flow_prev=None):
             flow_lr = None
         flow = flow.squeeze(0).cpu().detach()
         flow = padder.unpad(flow)
+    elif 'mma' in algo:
+        pre = torch.from_numpy(pre).permute(2, 0, 1).unsqueeze(0).float().to(DEVICE)
+        cur = torch.from_numpy(cur).permute(2, 0, 1).unsqueeze(0).float().to(DEVICE)
+        output = model(pre, cur,norm=True)
+        flow = output["flow"][-1]
+        flow = flow.squeeze(0).cpu().detach()
+        flow_lr = None
     else:
         raise NotImplementedError
     return flow,flow_lr

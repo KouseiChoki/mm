@@ -192,12 +192,13 @@ if len(sys.argv) >1 and not test_mode:
     args.weight_file = sys.argv[1]
     args = adjust_weight(args)
 DEVICE = torch.device("cpu")
-if 'cpu' not in args.gpu and args.multi_frame_algo:
+if 'cpu' not in args.gpu and args.multi_frame_algo or 'mma' in args.algorithm:
     import torch
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
     cudnn.deterministic = True
     if 'mps' not in args.gpu:
+        DEVICE = torch.device("cuda")
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     else:
         DEVICE = torch.device('mps')

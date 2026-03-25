@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-16 09:53:32
+LastEditTime: 2024-08-16 12:32:31
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -275,7 +275,7 @@ def cal_psnr(image,target_image):
     return -psnr
 
 def cpu_algorithm(algorithm):
-    if algorithm.lower() in ['farneback','deepflow','simpleflow','sparse_to_dense_flow','pca_flow','rlof','stdf','pcaflow'] or 'cpu'  in algorithm.lower():
+    if algorithm.lower() in ['farneback','deepflow','simpleflow','sparse_to_dense_flow','pca_flow','rlof'] or 'cpu'  in algorithm.lower():
         return True
     return False
 
@@ -867,14 +867,6 @@ def get_resize_rate(algorithm,h,w):
             resize_rate_y = 432/h if h > 432 else 1
             # resize_rate_x = 1920/w 
             # resize_rate_y = 880/h 
-        elif 'v2' in algorithm:
-            resize_rate_x = 960/w if w > 960 else 1
-            resize_rate_y = 540/h if h > 540 else 1
-        elif 'v5' in algorithm:
-            resize_rate_x = 1440/w if w > 1440 else 1
-            resize_rate_y = 720/h if h > 720 else 1
-            # resize_rate_x = 1920/w 
-            # resize_rate_y = 880/h 
         else:
             resize_rate_x = 1920/w if w > 1920 else 1
             resize_rate_y = 1080/h if h > 1080 else 1
@@ -1057,58 +1049,3 @@ def mv_magnitude(flow):
     # write('/Users/qhong/Desktop/0221/0222_mask_enhance_test/test.flo',flow)
     # write('/Users/qhong/Desktop/0221/0222_mask_enhance_test/tflow.flo',tflow)
     return flow
-
-def read_edl(edl):
-    with open(edl, 'r') as file:
-        lines = file.readlines()
-    transitions = []
-    # 更新正则表达式以匹配你的 EDL 格式
-    pattern = r"(\d{3})\s+(\S+)\s+V\s+(\w)\s+(\d{2}:\d{2}:\d{2}:\d{2})\s+(\d{2}:\d{2}:\d{2}:\d{2})\s+(\d{2}:\d{2}:\d{2}:\d{2})\s+(\d{2}:\d{2}:\d{2}:\d{2})"
-    clip_name_pattern = r"\* FROM CLIP NAME:\s+(.+)"  # 用于匹配剪辑名称注释行
-    current_clip_name = None
-    for i in range(len(lines)-1):
-        line = lines[i]
-        # 匹配场景切换的相关信息
-        match = re.match(pattern, line)
-        if match:
-            clip_number = match.group(1)
-            file_name = match.group(2)
-            transition_type = match.group(3)
-            source_in = match.group(4)
-            source_out = match.group(5)
-            record_in = match.group(6)
-            record_out = match.group(7)
-            # 检查是否有剪辑名称的注释行
-            clip_name_match = re.match(clip_name_pattern, lines[i+1])
-            if clip_name_match:
-                current_clip_name = clip_name_match.group(1)
-            # 使用当前的剪辑名称
-            transitions.append({
-                "clip_number": clip_number,
-                "file_name": file_name,
-                "transition_type": transition_type,
-                "source_in": source_in,
-                "source_out": source_out,
-                "record_in": record_in,
-                "record_out": record_out,
-                "clip_name": current_clip_name  # 添加剪辑名称
-            })
-    return transitions
-    
-
-def tp_to_array(timecode):
-    time_parts = timecode.split(':')
-    time_parts_int = [int(part) for part in time_parts]
-    return time_parts_int
-
-def process_edl(edls,name,fps=24):
-    assert len(edls)>2,'error edl file!'
-    start_time = tp_to_array(edls[0]['record_in'])
-    res = []
-    for edl in edls:
-        change_time = tp_to_array(edl['record_out'])
-        change_frame = (((change_time[0] - start_time[0])*60 + change_time[1] - start_time[1])*60 +change_time[2] - start_time[2])*fps + change_time[3] - start_time[3]
-        res.append(change_frame)
-    final_res = {}
-    final_res[name] = res
-    return final_res

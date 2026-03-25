@@ -167,7 +167,7 @@ savetype = exr
 compress_method = piz
 
 # Supported algorithms
-all_algorithm = kousei,farneback,deepflow,simpleflow,stdf,pcaflow,rlof
+all_algorithm = kousei,farneback,deepflow,simpleflow,stdf,pcaflow,rlof,mma
 #use warm start 
 usewarm = 0
 # MM files name
