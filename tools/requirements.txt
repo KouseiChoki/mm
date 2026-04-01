@@ -27,3 +27,4 @@ pytorch-lightning==1.2.9
 kornia==0.8.1
 hydra-core==1.1.0
 albumentations==0.5.2
+natsort
