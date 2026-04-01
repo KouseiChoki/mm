@@ -26,8 +26,8 @@ from file_utils import read,write
 import glob
 
 parser = argparse.ArgumentParser(description='Test Restormer on your own images')
-parser.add_argument('--input_dir', default='/home/zhenying/qhong/data/LUN5285_s01_p01', type=str, help='Directory of input images or path of single image')
-parser.add_argument('--result_dir', default='/home/zhenying/qhong/result/test', type=str, help='Directory for restored results')
+parser.add_argument('--input_dir','--root',required=True, type=str, help='Directory of input images or path of single image')
+parser.add_argument('--result_dir','--output', required=True, type=str, help='Directory for restored results')
 parser.add_argument('--task', default='Real_Denoising', type=str, help='Task to run', choices=['Motion_Deblurring',
                                                                                     'Single_Image_Defocus_Deblurring',
                                                                                     'Deraining',
@@ -106,7 +106,10 @@ weights, parameters = get_weights_and_parameters(task, parameters)
 load_arch = run_path(os.path.join('basicsr', 'models', 'archs', 'restormer_arch.py'))
 model = load_arch['Restormer'](**parameters)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 try:
     checkpoint = torch.load(weights)
