@@ -20,7 +20,7 @@ opencolorio
 sk-video
 moviepy
 plyfile
-open3d==0.16.1
+open3d
 easydict==1.9.0
 pandas
 pytorch-lightning==1.2.9
