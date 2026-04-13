@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2025-02-11 10:52:53
+LastEditTime: 2026-04-13 16:36:09
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -537,7 +537,7 @@ def mvwrite2(path,flow,compress='piz',precision = FLOAT):
         cpm = NO_COMPRESSION
     mvwrite_helper(path, flow, precision = precision, compression = cpm)
 
-def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
+def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'half'):
     if precision.lower() == 'half':
       precision_ = HALF
     elif precision.lower() == 'uint':
