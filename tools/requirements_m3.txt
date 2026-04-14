@@ -1,7 +1,7 @@
 einops
 loguru==0.6.0
-matplotlib==3.8.0
 numpy
+matplotlib
 Pillow
 scikit-image==0.24.0
 scikit-learn==1.6.1
