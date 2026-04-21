@@ -17,8 +17,16 @@ conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/m
 )
 
 4.(安装)打开终端输入  cd ~/Documents/mm/tools && conda activate mm &&sudo ./install_environment_m2.sh ，需输入密码
+如果因网络连接问题可以切换成其他源：
+清华源:
+pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+阿里
+pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+中科大
+pip config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple
+切换完成后重新运行即可
 
-用法参考doc下的usage.txt
+5.mm用法参考doc下的usage.txt
 
 
 
