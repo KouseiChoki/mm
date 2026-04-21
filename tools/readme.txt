@@ -12,6 +12,8 @@ cd ~/Documents/ &&git clone https://github.com/KouseiChoki/mm.git
 conda config --add channels conda-forge
 清华源:
 conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+
+切换完毕后再次运行配置指令即可
 )
 
 4.(安装)打开终端输入  cd ~/Documents/mm/tools && conda activate mm &&sudo ./install_environment_m2.sh ，需输入密码
