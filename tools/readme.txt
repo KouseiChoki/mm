@@ -16,7 +16,7 @@ conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/m
 切换完毕后再次运行配置指令即可
 )
 
-4.(安装)打开终端输入  cd ~/Documents/mm/tools && conda activate mm &&sudo ./install_environment_m2.sh ，需输入密码
+4.(安装)打开终端输入  cd ~/Documents/mm/tools && conda activate mm &&sudo ./install_environment_m2.sh ，请根据自身mac环境选择install_environment_mX,默认为m2
 如果因网络连接问题可以切换成其他源：
 清华源:
 pip config set global.index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
