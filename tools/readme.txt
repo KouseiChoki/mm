@@ -1,6 +1,6 @@
 安装step:
 安装过程需要管理员权限，如果没有则需要下所有指令前添加sudo XXXXXX
-1.安装anaconda:https://www.anaconda.com/,根据官网提示下载安装
+1.安装anaconda:https://www.anaconda.com/,根据官网提示下载安装（如果此前装过，则跳过这一步）
 
 2.(下载)打开终端输入:
 cd ~/Documents/ &&git clone https://github.com/KouseiChoki/mm.git
