@@ -20,8 +20,8 @@ config文件主要分为以下四块：**Main,Mask,Root,Algorithms,Paramaters**
 用户需要在此指定运行环境,cpu代表以cpu方式执行，mps代表使用mac芯片中的显存进行推理，数字代表使用gpu编号进行推理
 ```
 gpu = cpu  
-gpu = mps
-gpu = 0,1,2
+gpu = mps (mps用户使用这个)
+gpu = 0,1,2 (windows用户使用这个)
 ```
 
 其次需要指定framestep来设定输出间隔，framestep=1时只输出间隔为1的MM（mv0，mv1）

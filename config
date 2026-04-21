@@ -13,6 +13,7 @@ MM9_format = 0
 ### Algorithms
 # use mmalgo to check
 # optical flow: farneback,deepflow,simpleflow,stdf,pcaflow,rlof
+# mm使用kousei-版本号-序列号，mma使用mma-版本号-序列号,如kousei-v1-230908280，具体算法模型请使用mmalgo或者云端存储获取
 algorithm = kousei-v1-230908280
 
 ##### Root

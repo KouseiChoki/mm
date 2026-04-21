@@ -1,39 +1,65 @@
 import os
+import re
 from pathlib import Path
 import MP2E
-from file_utils import read, write
-
-# ---------- 参数配置 ----------
+from file_utils import read, write,jhelp_file
+from tqdm import tqdm
+# ---------- 配置 ----------
 PARAM_MAP = {
-    "FM":  [90, 0, 0],
-    "FR":  [90, 45, 0],
-    "FL":  [90, -45, 0],
+    "RU":  [90, 30, 45],
+    "RM":  [90, 45, 0],
+    "RD":  [90, 30, -45],
     "FU":  [90, 0, 45],
+    "FM":  [90, 0, 0],
     "FD":  [90, 0, -45],
-    "BR":  [90, 135, 0],
-    "BL":  [90, -135, 0],
-    "BU":  [90, 0, 135],
-    "BD":  [90, 0, -135],
+    "LU":  [90, -30, 45],
+    "LM":  [90, -45, 0],
+    "LD":  [90, -30, -45],
 }
 
 ERP_HEIGHT = 2048
 ERP_WIDTH = 2048
 
-INPUT_ROOT = "/Users/qhong/Desktop/0420"
+INPUT_ROOT = "/Users/qhong/Desktop/0420/robot_test"
 OUTPUT_ROOT = "/Users/qhong/Desktop/0420/p2e/flat"
 
 IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')
+MV_EXTS = ('.exr', '.flo')
 
 
-def find_corresponding_files(root):
+def extract_last_number(filename: str) -> str:
+    """
+    提取文件名中最后一个连续数字串（作为序号）。
+    例如 '1.FinalImage.0000.png' -> '0000'
+    """
+    numbers = re.findall(r'\d+', filename)
+    return numbers[-1] if numbers else None
+
+
+def find_file_by_number(directory: Path, number: str, exts: tuple) -> Path:
+    """
+    在 directory 中查找文件名包含给定 number 的文件。
+    若找到唯一匹配则返回路径，否则返回 None。
+    """
+    candidates = []
+    for ext in exts:
+        candidates.extend(directory.glob(f"*{ext}"))
+    matches = [f for f in candidates if number in f.name]
+    if len(matches) == 1:
+        return matches[0]
+    elif len(matches) > 1:
+        print(f"  警告: 在 {directory} 中找到多个包含序号 {number} 的文件，跳过。")
+    return None
+
+
+def find_corresponding_files(root,passright=1):
     """
     递归扫描根目录，找到所有同时包含 image/、mv0/、mv1/ 子目录的文件夹，
-    返回 (img_path, mv0_path, mv1_path, base_name) 列表。
+    并通过序号匹配返回 (img_path, mv0_path, mv1_path, base_name) 列表。
     """
     triplets = []
     root_path = Path(root)
 
-    # 遍历所有名为 "image" 的目录（任意深度）
     for img_dir in root_path.rglob("image"):
         if not img_dir.is_dir():
             continue
@@ -43,26 +69,19 @@ def find_corresponding_files(root):
         if not (mv0_dir.is_dir() and mv1_dir.is_dir()):
             continue
 
-        # 处理该 image 目录下的所有图片
-        for ext in IMAGE_EXTS:
-            for img_file in img_dir.glob(f"*{ext}"):
-                stem = img_file.stem
-                mv0_candidates = list(mv0_dir.glob(f"{stem}.*"))
-                mv1_candidates = list(mv1_dir.glob(f"{stem}.*"))
-                if mv0_candidates and mv1_candidates:
-                    triplets.append((
-                        str(img_file),
-                        str(mv0_candidates[0]),
-                        str(mv1_candidates[0]),
-                        stem
+        # 遍历该 image 目录下的所有图片
+        img_file = jhelp_file(img_dir)
+        mv0_file = jhelp_file(mv0_dir)
+        mv1_file = jhelp_file(mv1_dir)
+        for index in range(len(img_file)-passright):
+            triplets.append((
+                        str(img_file[index]),
+                        str(mv0_file[index]),
+                        str(mv1_file[index]),
+                        Path(img_file[index]).stem   # 保留原始图片主名作为输出基础名
                     ))
-                else:
-                    print(f"警告: {img_file} 缺少对应的 mv0/mv1 文件，跳过")
     return triplets
 
-
-def ensure_dir(path):
-    Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def process_all():
@@ -73,36 +92,28 @@ def process_all():
         return
     print(f"找到 {len(triplets)} 组待处理文件。")
 
-    for img_path, mv0_path, mv1_path, base_name in triplets:
-        print(f"\n处理: {base_name} ({img_path})")
+    for index in tqdm(range(len(triplets))):
+        img_path, mv0_path, mv1_path, base_name = triplets[index]
         mv0_data = read(mv0_path)[..., :2]
         mv1_data = read(mv1_path)[..., :2]
 
         for param_name, (fov, theta, phi) in PARAM_MAP.items():
-            print(f"  参数组 {param_name} (FOV={fov}, THETA={theta}, PHI={phi})")
             equ = MP2E.MPerspective(
                 [[img_path, mv0_data, mv1_data]],
                 [[fov, theta, phi]]
             )
             img_erp, mask_erp, mv0_erp, mv1_erp = equ.GetEquirec(ERP_HEIGHT, ERP_WIDTH)
 
-            # 保存结果
             out_subdir = Path(OUTPUT_ROOT) / param_name
             out_img_dir = out_subdir / "img"
             out_mask_dir = out_subdir / "mask"
             out_mv0_dir = out_subdir / "mv0"
             out_mv1_dir = out_subdir / "mv1"
-            ensure_dir(out_img_dir)
-            ensure_dir(out_mask_dir)
-            ensure_dir(out_mv0_dir)
-            ensure_dir(out_mv1_dir)
 
             write(str(out_img_dir / f"{base_name}.png"), img_erp[..., ::-1])
             write(str(out_mask_dir / f"{base_name}.png"), mask_erp)
             write(str(out_mv0_dir / f"{base_name}.exr"), mv0_erp)
             write(str(out_mv1_dir / f"{base_name}.exr"), mv1_erp)
-
-            print(f"    已保存至 {out_subdir}")
 
     print("\n所有任务完成！")
 

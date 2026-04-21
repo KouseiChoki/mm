@@ -1,29 +1,52 @@
 mm主函数
 
+在zsh terminal下直接输入如下指令即可运行对应工具,具体用法参考user_manual
+
+
+主要用法：
 1. mm
-用法:mm主函数
-mm config
+用法:mm主函数,包含mm及mma
+
+2.mmd
+用法:获取depth
+
+3.mmfi
+用法:获取frame_iterpolation
+
+4.mmlama
+获取lama
+
+5.mmdenoise
+获取denoise以及relightning
+
+6.mmgs
+获取3dgs
+
+
+其他用法：
+1.mmupdate
+用法：用于升级mm
 
 2.mmexrreader
 用法： 用于将unreal图片拆解成mv和image
-mmexrreader --path your_file_path
-(
-其他可选参数：
---MRQ :for movie render queue
---dump_depth: dump world depth
-)
 
-3.
-mmevaluation
+3.mmevaluation
 用法：用于评估mv
-mmevaluation --path your_file_path
-(
-其他可选参数：
---img_path your_image_path
-)
 
-4.mmupdate
-用法：用于升级mm
+4.mmply
+用法：从exr文件获取mm点云
 
-4.mmalgo
+5.mmalgo(因服务器原因暂不可用)
 用法：用于查询所有可用算法模型
+
+6.mmboundingboxreader
+用法：读取bounding box数据
+
+7.mmtrain
+用法:执行mm训练
+
+8.mmtb
+用法：执行mm训练后查看训练结果
+
+9:mmcolortrans
+用法:色彩转换

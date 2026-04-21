@@ -26,7 +26,8 @@ pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
 pip config set global.index-url https://pypi.mirrors.ustc.edu.cn/simple
 切换完成后重新运行即可
 
-5.mm用法参考doc下的usage.txt
+5.mm用法参考doc下的user_manual
+  运行指令参考usage.txt
 
 
 
