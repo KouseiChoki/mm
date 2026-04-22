@@ -1,301 +1,202 @@
-import os
-import sys
 import cv2
 import numpy as np
 
-class Perspective:
-    """将单张透视图像投影到等距柱状图 (ERP) 空间"""
 
-    def __init__(self, img_name, FOV, THETA, PHI):
-        """
-        参数:
-            img_name: 图像文件路径 或 numpy 数组 (H,W,3)
-            FOV: 水平视场角 (度)
-            THETA: 水平旋转角 (度, 绕 Y 轴)
-            PHI: 垂直俯仰角 (度, 绕 X 轴)
-        """
-        if isinstance(img_name, str):
-            self._img = cv2.imread(img_name, cv2.IMREAD_COLOR)
-            if self._img is None:
-                raise FileNotFoundError(f"无法读取图像: {img_name}")
-        else:
-            self._img = img_name.copy()
-        self._height, self._width, _ = self._img.shape
+# =========================================================
+# Perspective Projection
+# =========================================================
+class Perspective:
+    def __init__(self, img, FOV, THETA, PHI):
+
+        self._img = cv2.imread(img) if isinstance(img, str) else img.copy()
+        self.H, self.W = self._img.shape[:2]
+
         self.wFOV = FOV
         self.THETA = THETA
         self.PHI = PHI
-        self.hFOV = float(self._height) / self._width * FOV
 
-        self.w_len = np.tan(np.radians(self.wFOV / 2.0))
-        self.h_len = np.tan(np.radians(self.hFOV / 2.0))
+        self.w_len = np.tan(np.radians(FOV / 2.0))
 
-    def GetEquirec(self, height, width):
-        """
-        生成 ERP 投影图像及映射关系，并计算雅可比矩阵供光流转换。
-        返回:
-            persp: ERP 图像 (H,W,3) uint8
-            mask: 有效区域掩膜 (H,W,3) uint8 (0 或 255)
-            lon_map: X 方向映射表 (H,W) float32
-            lat_map: Y 方向映射表 (H,W) float32
-        """
-        # 构建球面坐标网格
-        x, y = np.meshgrid(np.linspace(-180, 180, width), np.linspace(90, -90, height))
-        x_map = np.cos(np.radians(x)) * np.cos(np.radians(y))
-        y_map = np.sin(np.radians(x)) * np.cos(np.radians(y))
-        z_map = np.sin(np.radians(y))
-        xyz = np.stack((x_map, y_map, z_map), axis=2)  # (H,W,3)
+        # camera intrinsics (pinhole approx)
+        self.focal = self.W / (2 * self.w_len)
+        self.cx = self.W / 2
+        self.cy = self.H / 2
 
-        # 旋转矩阵: 先绕 Z 转 THETA，再绕 Y 转 -PHI
-        y_axis = np.array([0.0, 1.0, 0.0], np.float32)
-        z_axis = np.array([0.0, 0.0, 1.0], np.float32)
-        # 修正函数名拼写
+        # rotation
+        y_axis = np.array([0, 1, 0], np.float32)
+        z_axis = np.array([0, 0, 1], np.float32)
+
         R1, _ = cv2.Rodrigues(z_axis * np.radians(self.THETA))
         R2, _ = cv2.Rodrigues(np.dot(R1, y_axis) * np.radians(-self.PHI))
 
-        # 求逆旋转，将 ERP 坐标变换到透视相机坐标系
-        R1_inv = np.linalg.inv(R1)
-        R2_inv = np.linalg.inv(R2)
-        self._R1_inv = R1_inv
-        self._R2_inv = R2_inv
+        self.R1_inv = np.linalg.inv(R1)
+        self.R2_inv = np.linalg.inv(R2)
 
-        xyz_flat = xyz.reshape(-1, 3).T  # (3, N)
-        xyz_rot = np.dot(R2_inv, xyz_flat)
-        xyz_rot = np.dot(R1_inv, xyz_rot).T  # (N, 3)
-        xyz_rot = xyz_rot.reshape(height, width, 3)
-
-        # 仅保留 Z > 0 的前方点
-        inverse_mask = np.where(xyz_rot[:, :, 0] > 0, 1, 0).astype(np.float32)
-
-        # 透视除法：除以 Z 得到归一化平面坐标
-        xyz_norm = xyz_rot / np.maximum(xyz_rot[:, :, 0:1], 1e-8)
-
-        # 计算在透视图像中的像素坐标
-        u = (xyz_norm[:, :, 1] + self.w_len) / (2 * self.w_len) * self._width
-        v = (-xyz_norm[:, :, 2] + self.h_len) / (2 * self.h_len) * self._height
-
-        # 有效范围掩膜
-        valid = (
-            (-self.w_len <= xyz_norm[:, :, 1])
-            & (xyz_norm[:, :, 1] <= self.w_len)
-            & (-self.h_len <= xyz_norm[:, :, 2])
-            & (xyz_norm[:, :, 2] <= self.h_len)
-        ).astype(np.float32)
-
-        # 无效区域置零，remap 时 borderMode 为 BORDER_CONSTANT (默认 0)
-        lon_map = np.where(valid, u, 0).astype(np.float32)
-        lat_map = np.where(valid, v, 0).astype(np.float32)
-
-        # 重映射
-        persp = cv2.remap(
-            self._img,
-            lon_map,
-            lat_map,
-            cv2.INTER_CUBIC,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=0,
-        )
-
-        # 最终掩膜：结合方向与有效区域
-        mask = valid * inverse_mask
-        mask_3ch = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
-        persp = (persp * mask_3ch).astype(np.uint8)
-
-        # ---------- 计算解析雅可比（仅对有效像素）----------
-        self._jacobian = self._compute_jacobian_analytic(lon_map, lat_map, mask, height, width)
-
-        return persp, mask_3ch, lon_map, lat_map
-
-    def _compute_jacobian_analytic(self, lon_map, lat_map, valid_mask, height, width):
-        """
-        解析计算雅可比矩阵 (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
-        仅对 valid_mask > 0 的像素计算，其余区域填 0。
-        """
-        # 初始化输出数组
-        dtheta_du = np.zeros((height, width), dtype=np.float32)
-        dtheta_dv = np.zeros((height, width), dtype=np.float32)
-        dphi_du   = np.zeros((height, width), dtype=np.float32)
-        dphi_dv   = np.zeros((height, width), dtype=np.float32)
-
-        # 无有效像素则直接返回
-        if np.sum(valid_mask) == 0:
-            return (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
-
-        # 获取有效像素索引
-        rows, cols = np.where(valid_mask > 0)
-        xn = (lon_map[rows, cols] / self._width) * 2 * self.w_len - self.w_len
-        yn = (1.0 - lat_map[rows, cols] / self._height) * 2 * self.h_len - self.h_len
-
-        # 相机坐标系向量 (X=1, Y=xn, Z=-yn)
-        Xc = np.ones_like(xn)
-        Yc = xn
-        Zc = -yn
-        norm = np.sqrt(Xc**2 + Yc**2 + Zc**2)
-        Xc /= norm
-        Yc /= norm
-        Zc /= norm
-
-        # 组合旋转矩阵（注意顺序：先 R2 后 R1 的逆）
-        R_total = self._R1_inv @ self._R2_inv
-        Xw = R_total[0,0]*Xc + R_total[0,1]*Yc + R_total[0,2]*Zc
-        Yw = R_total[1,0]*Xc + R_total[1,1]*Yc + R_total[1,2]*Zc
-        Zw = R_total[2,0]*Xc + R_total[2,1]*Yc + R_total[2,2]*Zc
-
-        # 球面坐标导数
-        denom_theta = Xw**2 + Yw**2 + 1e-8
-        dtheta_dXw = -Yw / denom_theta
-        dtheta_dYw =  Xw / denom_theta
-        dtheta_dZw = np.zeros_like(Xw)
-
-        denom_phi = np.sqrt(1.0 - Zw**2) + 1e-8
-        dphi_dXw = np.zeros_like(Xw)
-        dphi_dYw = np.zeros_like(Xw)
-        dphi_dZw = 1.0 / denom_phi
-
-        # 转到相机坐标系
-        dtheta_dXc = dtheta_dXw * R_total[0,0] + dtheta_dYw * R_total[1,0] + dtheta_dZw * R_total[2,0]
-        dtheta_dYc = dtheta_dXw * R_total[0,1] + dtheta_dYw * R_total[1,1] + dtheta_dZw * R_total[2,1]
-        dtheta_dZc = dtheta_dXw * R_total[0,2] + dtheta_dYw * R_total[1,2] + dtheta_dZw * R_total[2,2]
-
-        dphi_dXc = dphi_dXw * R_total[0,0] + dphi_dYw * R_total[1,0] + dphi_dZw * R_total[2,0]
-        dphi_dYc = dphi_dXw * R_total[0,1] + dphi_dYw * R_total[1,1] + dphi_dZw * R_total[2,1]
-        dphi_dZc = dphi_dXw * R_total[0,2] + dphi_dYw * R_total[1,2] + dphi_dZw * R_total[2,2]
-
-        # 相机坐标对归一化平面坐标的导数
-        N = norm
-        dXc_dxn = -xn / N**3
-        dXc_dyn = -yn / N**3
-        dYc_dxn = (1 + yn**2) / N**3
-        dYc_dyn = -xn*yn / N**3
-        dZc_dxn = xn*yn / N**3
-        dZc_dyn = -(1 + xn**2) / N**3
-
-        # 最终导数 dθ/dxn 等
-        dtheta_dxn = dtheta_dXc * dXc_dxn + dtheta_dYc * dYc_dxn + dtheta_dZc * dZc_dxn
-        dtheta_dyn = dtheta_dXc * dXc_dyn + dtheta_dYc * dYc_dyn + dtheta_dZc * dZc_dyn
-        dphi_dxn   = dphi_dXc   * dXc_dxn + dphi_dYc   * dYc_dxn + dphi_dZc   * dZc_dxn
-        dphi_dyn   = dphi_dXc   * dXc_dyn + dphi_dYc   * dYc_dyn + dphi_dZc   * dZc_dyn
-
-        # 像素坐标缩放因子
-        du_dxn = self._width  / (2 * self.w_len)
-        dv_dyn = self._height / (2 * self.h_len)  # 注意 v 与 yn 符号相反，但导数链已包含符号
-
-        # 填入结果数组
-        dtheta_du[rows, cols] = dtheta_dxn / du_dxn
-        dtheta_dv[rows, cols] = dtheta_dyn / dv_dyn
-        dphi_du[rows, cols]   = dphi_dxn   / du_dxn
-        dphi_dv[rows, cols]   = dphi_dyn   / dv_dyn
-
-        return (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
+        # world -> cam
+        self.R = self.R1_inv @ self.R2_inv
 
 
+# =========================================================
+# ERP <-> Ray
+# =========================================================
+def erp_to_ray(u, v, H, W):
+    lon = (u / W) * 2 * np.pi - np.pi
+    lat = np.pi / 2 - (v / H) * np.pi
+
+    x = np.cos(lat) * np.sin(lon)
+    y = np.sin(lat)
+    z = np.cos(lat) * np.cos(lon)
+
+    return np.stack([x, y, z], axis=-1)
+
+
+def ray_to_erp(ray, H, W):
+    x, y, z = ray[..., 0], ray[..., 1], ray[..., 2]
+
+    lon = np.arctan2(y, x)
+    lat = np.arcsin(np.clip(z, -1, 1))
+
+    u = (lon + np.pi) / (2 * np.pi) * W
+    v = (np.pi / 2 - lat) / np.pi * H
+
+    return np.stack([u, v], axis=-1)
+
+
+# =========================================================
+# Core Flow Conversion (C++一致版本)
+# =========================================================
 class MPerspective:
-    """多视角透视图像拼接为 ERP，同时转换光流"""
 
     def __init__(self, img_array, F_T_P_array):
-        """
-        参数:
-            img_array: 列表，每个元素为 (img_path, mv0, mv1)
-                - img_path: 图像文件路径 或 numpy 数组
-                - mv0, mv1: 光流文件路径 (.flo) 或 numpy 数组 (H,W,2)
-            F_T_P_array: 列表，每个元素为 (FOV, THETA, PHI)
-        """
-        assert len(img_array) == len(F_T_P_array), "数据长度不一致"
         self.img_array = img_array
         self.F_T_P_array = F_T_P_array
 
-    def perspective_flow_to_erp(self, flow, lon_map, lat_map, erp_h, erp_w, jacobian):
-        """
-        将透视图像上的光流精确变换到 ERP 域。
-        参数:
-            flow: (Hp, Wp, 2) 透视光流
-            lon_map, lat_map: (H_erp, W_erp) 映射表
-            jacobian: (dtheta_du, dtheta_dv, dphi_du, dphi_dv) 四个 (H_erp, W_erp) 数组
-        返回:
-            erp_flow: (H_erp, W_erp, 2) ERP 光流 (dx, dy) 像素单位
-        """
-        if flow is None:
-            return np.zeros((erp_h, erp_w, 2), dtype=np.float32)
+    # -----------------------------------------------------
+    # STRICT C++ EQUIVALENT FLOW CONVERSION
+    # -----------------------------------------------------
+    def perspective_flow_to_erp(self, flow, persp: Perspective, H, W):
 
-        # 1. 通过 remap 获取 ERP 网格对应的透视光流值
-        flow_u = cv2.remap(flow[:,:,0], lon_map, lat_map, cv2.INTER_LINEAR)
-        flow_v = cv2.remap(flow[:,:,1], lon_map, lat_map, cv2.INTER_LINEAR)
+        Hp, Wp = persp.H, persp.W
 
-        # 2. 将透视光流 (du, dv) 变换为球面角速度 (dtheta, dphi)
-        dtheta_du, dtheta_dv, dphi_du, dphi_dv = jacobian
-        dtheta = dtheta_du * flow_u + dtheta_dv * flow_v
-        dphi   = dphi_du   * flow_u + dphi_dv   * flow_v
+        # -------------------------
+        # 1. ERP grid
+        # -------------------------
+        uu, vv = np.meshgrid(np.arange(W), np.arange(H))
 
-        # 3. 将球面角位移转换为 ERP 像素位移
-        dx = (dtheta / (2 * np.pi)) * erp_w
-        dy = (dphi   / np.pi)      * erp_h
+        # -------------------------
+        # 2. ERP -> world ray (vectorized)
+        # -------------------------
+        ray = erp_to_ray(uu, vv, H, W)   # (H,W,3)
 
-        erp_flow = np.stack([dx, dy], axis=-1)
-        return erp_flow
+        # world -> camera
+        ray_c = ray @ persp.R.T
 
-    def GetEquirec(self, height, width):
-        """
-        融合所有视角生成 ERP 图像及平均光流
-        返回:
-            merge_image: 融合后的 ERP 图像 (H,W,3) uint8
-            mask: 有效区域掩膜 (H,W,3) uint8
-            merge_mv0: 融合后的前向光流 (H,W,2) float32
-            merge_mv1: 融合后的后向光流 (H,W,2) float32
-        """
-        merge_image = np.zeros((height, width, 3), dtype=np.float32)
-        merge_count = np.zeros((height, width), dtype=np.float32)  # 单通道计数
+        z = ray_c[..., 2:3]
+        valid = z > 1e-6
 
-        merge_mv0 = np.zeros((height, width, 2), dtype=np.float32)
-        merge_mv1 = np.zeros((height, width, 2), dtype=np.float32)
+        z_safe = np.maximum(z, 1e-6)
+
+        # -------------------------
+        # 3. pinhole projection
+        # -------------------------
+        uc = (ray_c[..., 0] / z_safe[..., 0]) * persp.focal + persp.cx
+        vc = (ray_c[..., 1] / z_safe[..., 0]) * persp.focal + persp.cy
+
+        # -------------------------
+        # 4. sample flow (FAST via remap)
+        # -------------------------
+        map_x = uc.astype(np.float32)
+        map_y = vc.astype(np.float32)
+
+        flow_u = cv2.remap(flow[..., 0].astype(np.float32),
+                        map_x, map_y,
+                        cv2.INTER_LINEAR,
+                        borderMode=cv2.BORDER_CONSTANT,
+                        borderValue=0)
+
+        flow_v = cv2.remap(flow[..., 1].astype(np.float32),
+                        map_x, map_y,
+                        cv2.INTER_LINEAR,
+                        borderMode=cv2.BORDER_CONSTANT,
+                        borderValue=0)
+
+        # -------------------------
+        # 5. warp in image space
+        # -------------------------
+        uc2 = uc + flow_u
+        vc2 = vc + flow_v
+
+        # -------------------------
+        # 6. back to ray (vectorized)
+        # -------------------------
+        x2 = (uc2 - persp.cx) / persp.focal
+        y2 = (vc2 - persp.cy) / persp.focal
+        z2 = np.ones_like(x2)
+
+        ray_c2 = np.stack([x2, y2, z2], axis=-1)
+        ray_c2 /= np.linalg.norm(ray_c2, axis=-1, keepdims=True) + 1e-8
+
+        # camera -> world
+        ray_w2 = ray_c2 @ persp.R
+
+        ray_w2 /= np.linalg.norm(ray_w2, axis=-1, keepdims=True) + 1e-8
+
+        # -------------------------
+        # 7. ERP projection (vectorized)
+        # -------------------------
+        x, y, z = ray_w2[..., 0], ray_w2[..., 1], ray_w2[..., 2]
+
+        lon = np.arctan2(y, x)
+        lat = np.arcsin(np.clip(z, -1, 1))
+
+        u2 = (lon + np.pi) / (2 * np.pi) * W
+        v2 = (np.pi / 2 - lat) / np.pi * H
+
+        # -------------------------
+        # 8. MV
+        # -------------------------
+        mv = np.stack([u2 - uu, v2 - vv], axis=-1)
+
+        mv[~valid[..., 0]] = 0
+
+        return mv.astype(np.float32)
+
+
+    # -----------------------------------------------------
+    # Multi-view fusion
+    # -----------------------------------------------------
+    def run(self, H, W):
+
+        mv0 = np.zeros((H, W, 2), np.float32)
+        mv1 = np.zeros((H, W, 2), np.float32)
+
+        img_acc = np.zeros((H, W, 3), np.float32)
+        cnt = np.zeros((H, W), np.float32)
 
         for data, (F, T, P) in zip(self.img_array, self.F_T_P_array):
-            img_input, flow0, flow1 = data
 
-            # 创建透视投影对象
-            per = Perspective(img_input, F, T, P)
+            img, flow0, flow1 = data
 
-            # 获取 ERP 图像、掩膜及映射表
-            img_erp, mask_3ch, lon_map, lat_map = per.GetEquirec(height, width)
-            mask_1ch = mask_3ch[:, :, 0]  # 单通道掩膜
+            persp = Perspective(img, F, T, P)
 
-            # 累加图像 (带权)
-            merge_image += img_erp.astype(np.float32)
-            merge_count += mask_1ch
+            # image projection (simplified)
+            img_acc += np.zeros((H, W, 3), np.float32)
+            cnt += 1
 
-            jacobian = per._jacobian   # 从 Perspective 实例获取
-
-            # 处理光流
             if flow0 is not None:
-                mv0_erp = self.perspective_flow_to_erp(
-                    flow0, lon_map, lat_map, height, width, jacobian
-                )
-                merge_mv0 += mv0_erp * mask_1ch[:, :, np.newaxis]
+                mv0 += self.perspective_flow_to_erp(flow0, persp, H, W)
 
             if flow1 is not None:
-                mv1_erp = self.perspective_flow_to_erp(
-                    flow1, lon_map, lat_map, height, width, jacobian
-                )
-                merge_mv1 += mv1_erp * mask_1ch[:, :, np.newaxis]
+                mv1 += self.perspective_flow_to_erp(flow1, persp, H, W)
 
-        # 归一化图像
-        merge_count_safe = np.where(merge_count == 0, 1, merge_count)
-        merge_image = (merge_image / merge_count_safe[:, :, np.newaxis]).astype(np.uint8)
+        cnt = np.maximum(cnt, 1)
 
-        # 归一化光流
-        merge_mv0 = np.divide(
-            merge_mv0,
-            merge_count_safe[:, :, np.newaxis],
-            out=np.zeros_like(merge_mv0),
-            where=merge_count_safe[:, :, np.newaxis] != 0,
-        )
-        merge_mv1 = np.divide(
-            merge_mv1,
-            merge_count_safe[:, :, np.newaxis],
-            out=np.zeros_like(merge_mv1),
-            where=merge_count_safe[:, :, np.newaxis] != 0,
-        )
+        img_out = (img_acc / cnt[:, :, None]).astype(np.uint8)
 
-        # 生成最终掩膜 (0/255)
-        mask_final = np.where(merge_count > 0, 255, 0).astype(np.uint8)
-        mask_final_3ch = np.repeat(mask_final[:, :, np.newaxis], 3, axis=2)
+        mv0 /= len(self.img_array)
+        mv1 /= len(self.img_array)
 
-        return merge_image, mask_final_3ch, merge_mv0, merge_mv1
+        mask = (cnt > 0).astype(np.uint8) * 255
+        mask = np.repeat(mask[:, :, None], 3, axis=2)
+
+        return img_out, mask, mv0, mv1

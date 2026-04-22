@@ -1,0 +1,38 @@
+# Configuration for Flat2ErpConverter::Configuration
+# Generated automatically
+
+moduleMode=Flat2Erp
+strInputPath=/Users/qhong/Desktop/0420/robot_test/image
+strInputFilePattern=1.FinalImage.%04d.png
+
+strInputMv0Path=/Users/qhong/Desktop/0420/robot_test/mv0
+strInputMv0FilePattern=mv_%08d.exr
+
+strInputMv1Path=/Users/qhong/Desktop/0420/robot_test/mv1
+strInputMv1FilePattern=mv_%08d.exr
+
+isInputMvxReversed=0
+isInputMvyReversed=0
+
+strOutputPath=/Users/qhong/Desktop/0420/robot_test/flat
+strOutputFilePattern=1.FinalImage_Erp.%04d.png
+strOutputMv0FilePattern=mv_%08d.exr
+strOutputMv1FilePattern=mv_%08d.exr
+strOutputMaskFilePattern=mask_%08lld.exr
+
+strFlatViewsFile=/Users/kzhu/Desktop/DataLocalRepo/nightfall/Event_Version_1_0001_0002/LEFT/flat_test/FlatViews.txt
+
+startFrame=0
+totalFrames=40
+erpW=2048
+erpH=2048
+outputNoExrBpc=8
+
+//0:rgb, 1:depth, 2:motion, 3:rgb_with_motion
+dataMode=3
+
+//0:I2N 1:N2I 2:I2I 3:N2N.  I means single image, N means n-views
+mapperMode=0
+
+enBilinear=true
+blendMode=1

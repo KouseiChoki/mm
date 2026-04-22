@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 import MP2E
-from file_utils import read, write,jhelp_file
+from mm.algo.erp.ray_mapper.file_utils import read, write,jhelp_file
 from tqdm import tqdm
 # ---------- 配置 ----------
 PARAM_MAP = {
@@ -20,8 +20,8 @@ PARAM_MAP = {
 ERP_HEIGHT = 4096
 ERP_WIDTH = 4096
 
-INPUT_ROOT = "/Users/qhong/Desktop/0420/robot_test"
-OUTPUT_ROOT = "/Users/qhong/Desktop/0420/p2e/flat"
+INPUT_ROOT = "/Users/qhong/Desktop/0422/24fps"
+OUTPUT_ROOT = "/Users/qhong/Desktop/0422/erps"
 
 IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')
 MV_EXTS = ('.exr', '.flo')
@@ -113,7 +113,7 @@ def process_all():
                 [[img_path, mv0_data, mv1_data]],
                 [[fov, theta, phi]]
             )
-            img_erp, mask_erp, mv0_erp, mv1_erp = equ.GetEquirec(ERP_HEIGHT, ERP_WIDTH)
+            img_erp, mask_erp, mv0_erp, mv1_erp = equ.run(ERP_HEIGHT, ERP_WIDTH)
 
             out_subdir = Path(OUTPUT_ROOT) / param_name
             out_img_dir = out_subdir / "img"
