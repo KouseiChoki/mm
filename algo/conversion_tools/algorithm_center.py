@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2026-04-22 11:06:05
+LastEditTime: 2026-04-22 11:09:01
 Description: file content
 '''
 import os,sys
@@ -65,12 +65,13 @@ def get_all_pth(url):
     fm = list(filter(lambda x:'.pth' in x,getlink(url + '/fm')))
     mix = list(filter(lambda x:'.pth' in x,getlink(url + '/mix')))
     depth= list(filter(lambda x:'.pth' in x,getlink(url + '/depth')))
-    mma = list(filter(lambda x:'.pth' in x,getlink(url + '/mma_fm')))
+    mma_fm = list(filter(lambda x:'.pth' in x,getlink(url + '/mma_fm')))
+    denoise = list(filter(lambda x:'.pth' in x,getlink(url + '/denoise')))
     response = requests.get(url+'/setsumei.txt', stream=True,timeout=30).text.splitlines()
-    for p in [fm,fg,bg,mix,depth]:
+    for p in [fm,fg,bg,mix,depth,mma_fm,denoise]:
         if p ==fm:
             print('--------------mm frame algorithm--------------')
-        if p ==mma:
+        if p ==mma_fm:
             print('--------------mma frame algorithm--------------')
         if p ==fg:
             print('--------------fg algorithm--------------')
@@ -80,6 +81,8 @@ def get_all_pth(url):
             print('--------------mix algorithm--------------')
         if p ==depth:
             print('--------------depth algorithm--------------')
+        if p ==denoise:
+            print('--------------denoise algorithm--------------')
         for pp in p:
             pp = pp.replace('.pth','')
             setsu = 'No describe' if pp not in response else response[response.index(pp)+1]
