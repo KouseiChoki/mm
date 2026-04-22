@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2024-07-09 15:45:11
+LastEditTime: 2026-04-22 11:06:05
 Description: file content
 '''
 import os,sys
@@ -65,10 +65,13 @@ def get_all_pth(url):
     fm = list(filter(lambda x:'.pth' in x,getlink(url + '/fm')))
     mix = list(filter(lambda x:'.pth' in x,getlink(url + '/mix')))
     depth= list(filter(lambda x:'.pth' in x,getlink(url + '/depth')))
+    mma = list(filter(lambda x:'.pth' in x,getlink(url + '/mma_fm')))
     response = requests.get(url+'/setsumei.txt', stream=True,timeout=30).text.splitlines()
     for p in [fm,fg,bg,mix,depth]:
         if p ==fm:
-            print('--------------frame algorithm--------------')
+            print('--------------mm frame algorithm--------------')
+        if p ==mma:
+            print('--------------mma frame algorithm--------------')
         if p ==fg:
             print('--------------fg algorithm--------------')
         if p ==bg:
