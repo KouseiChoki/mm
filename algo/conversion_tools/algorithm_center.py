@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2026-04-22 11:15:13
+LastEditTime: 2026-04-22 11:17:41
 Description: file content
 '''
 import os,sys
@@ -57,7 +57,7 @@ def getlink(url):
 def getsetsumei(url):
     response = requests.get(url, stream=True,timeout=30)
     response.encoding = 'utf-8'
-    datas = str(response.content).split('/')
+    return response.text.splitlines()
 
 def get_all_pth(url):
     # url = 'http://10.35.116.93:8088'
@@ -68,7 +68,7 @@ def get_all_pth(url):
     depth= list(filter(lambda x:'.pth' in x,getlink(url + '/depth')))
     mma_fm = list(filter(lambda x:'.pth' in x,getlink(url + '/mma_fm')))
     denoise = list(filter(lambda x:'.pth' in x,getlink(url + '/denoise')))
-    response = requests.get(url+'/setsumei.txt', stream=True,timeout=30).text.splitlines()
+    response = getsetsumei(url+'/setsumei.txt')
     for p in [fm,fg,bg,mix,depth,mma_fm,denoise]:
         if p ==fm:
             print('--------------mm frame algorithm--------------')
