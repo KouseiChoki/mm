@@ -177,7 +177,7 @@ def main():
         
         # 输出路径可以基于原目录生成，例如在父目录下创建 flat 子目录
         parent_dir = Path(img_dir).parent
-        output_dir = parent_dir / "flat" if not output else os.path.join(output,os.path.basename(parent_dir))
+        output_dir = parent_dir / "flat" if not output else Path(os.path.join(output,os.path.basename(parent_dir)))
         output_dir.mkdir(exist_ok=True)
         
         overrides = {
