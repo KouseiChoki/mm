@@ -13,16 +13,16 @@ MM9_format = 0
 ### Algorithms
 # use mmalgo to check
 # optical flow: farneback,deepflow,simpleflow,stdf,pcaflow,rlof
-# mm使用kousei-版本号-序列号，mma使用mma-版本号-序列号,如kousei-v1-230908280，具体算法模型请使用mmalgo或者云端存储获取(/dept/TCShared/qhong/mm_checkpoints)
+# mm使用kousei-版本号-序列号，mma使用mma-版本号-序列号,如kousei-v1-230908280，具体算法模型请使用mmalgo或者云端存储获取(/dept/TCShared/qhong/mm_checkpoints) ，mmalgo为自动获取，云端获取的模型请放在mm/checkpoints下(没有则手动创建)
 algorithm = kousei-v1-230908280
 
 ##### Root
-# Data root and output (multiple folder)
+# Data root and output (multiple folder) 批量跑选择此目录
 root = pattern/1k
 output = result/1k
-# The name of image file (None if not exist)
+# The name of image file (None if not exist) 图片文件夹名称，如果没有image子目录，则填写None
 image_file = image
-# single folder mode
+# single folder mode  跑单个scene将下述enable_single_input_mode_2D设为1，在root_2D中填写单个scene的位置即可
 enable_single_input_mode_2D = 0
 root_2D =  
 
