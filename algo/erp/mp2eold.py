@@ -1,8 +1,35 @@
+'''
+Author: Qing Hong
+FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
+LastEditors: Qing Hong
+LastEditTime: 2026-04-21 17:24:32
+Description: 
+         ▄              ▄
+        ▌▒█           ▄▀▒▌     
+        ▌▒▒▀▄       ▄▀▒▒▒▐
+       ▐▄▀▒▒▀▀▀▀▄▄▄▀▒▒▒▒▒▐     ,-----------------.
+     ▄▄▀▒▒▒▒▒▒▒▒▒▒▒█▒▒▄█▒▐     (Wow,kousei's code)
+   ▄▀▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▐     `-,---------------' 
+  ▐▒▒▒▄▄▄▒▒▒▒▒▒▒▒▒▒▒▒▒▀▄▒▒▌  _.-'   ,----------.
+  ▌▒▒▐▄█▀▒▒▒▒▄▀█▄▒▒▒▒▒▒▒█▒▐         (surabashii)
+ ▐▒▒▒▒▒▒▒▒▒▒▒▀██▀▒▒▒▒▒▒▒▒▀▄▌        `-,--------' 
+ ▌▒▀▄██▄▒▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌      _.-'
+ ▌▀▐▄█▄█▌▄▒▀▒▒▒▒▒▒░░░░░░▒▒▒▐ _.-'
+▐▒▀▐▀▐▀▒▒▄▄▒▄▒▒▒▒▒░░░░░░▒▒▒▒▌
+▐▒▒▒▀▀▄▄▒▒▒▄▒▒▒▒▒▒░░░░░░▒▒▒▐
+ ▌▒▒▒▒▒▒▀▀▀▒▒▒▒▒▒▒▒░░░░▒▒▒▒▌
+ ▐▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▐
+  ▀▄▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▄▒▒▒▒▌
+    ▀▄▒▒▒▒▒▒▒▒▒▒▄▄▄▀▒▒▒▒▄▀
+      ▀▄▄▄▄▄▄▀▀▀▒▒▒▒▒▄▄▀
+         ▒▒▒▒▒▒▒▒▒▒▀▀
+When I wrote this, only God and I understood what I was doing
+Now, God only knows
+'''
 import os
 import sys
 import cv2
 import numpy as np
-
 class Perspective:
     """将单张透视图像投影到等距柱状图 (ERP) 空间"""
 
@@ -31,7 +58,7 @@ class Perspective:
 
     def GetEquirec(self, height, width):
         """
-        生成 ERP 投影图像及映射关系，并计算雅可比矩阵供光流转换。
+        生成 ERP 投影图像及映射关系
         返回:
             persp: ERP 图像 (H,W,3) uint8
             mask: 有效区域掩膜 (H,W,3) uint8 (0 或 255)
@@ -48,7 +75,6 @@ class Perspective:
         # 旋转矩阵: 先绕 Z 转 THETA，再绕 Y 转 -PHI
         y_axis = np.array([0.0, 1.0, 0.0], np.float32)
         z_axis = np.array([0.0, 0.0, 1.0], np.float32)
-        # 修正函数名拼写
         R1, _ = cv2.Rodrigues(z_axis * np.radians(self.THETA))
         R2, _ = cv2.Rodrigues(np.dot(R1, y_axis) * np.radians(-self.PHI))
 
@@ -57,6 +83,7 @@ class Perspective:
         R2_inv = np.linalg.inv(R2)
         self._R1_inv = R1_inv
         self._R2_inv = R2_inv
+
 
         xyz_flat = xyz.reshape(-1, 3).T  # (3, N)
         xyz_rot = np.dot(R2_inv, xyz_flat)
@@ -99,93 +126,62 @@ class Perspective:
         mask = valid * inverse_mask
         mask_3ch = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
         persp = (persp * mask_3ch).astype(np.uint8)
+        # 新增：计算雅可比矩阵 (∂θ/∂u, ∂θ/∂v, ∂φ/∂u, ∂φ/∂v)
+        # 首先获取 lon_map/lat_map 对应的球面坐标 (theta, phi)
+        y_idx, x_idx = np.mgrid[0:height, 0:width]
+        theta = (x_idx / width) * 2 * np.pi - np.pi          # [-π, π]
+        phi = np.pi/2 - (y_idx / height) * np.pi             # [π/2, -π/2]
 
-        # ---------- 计算解析雅可比（仅对有效像素）----------
-        self._jacobian = self._compute_jacobian_analytic(lon_map, lat_map, mask, height, width)
+        # 解析雅可比：基于小孔模型推导
+        # 为简化，这里直接利用解析导数（已验证）
+        w_len = np.tan(np.radians(self.wFOV / 2.0))
+        h_len = np.tan(np.radians(self.hFOV / 2.0))
+
+        # 将 lon_map/lat_map 从像素坐标转换为归一化平面坐标 (xn, yn)
+        xn = (lon_map / self._width) * 2 * w_len - w_len
+        yn = (1.0 - lat_map / self._height) * 2 * h_len - h_len   # 注意 v 轴方向
+
+        # 计算导数：dθ/dxn, dθ/dyn, dφ/dxn, dφ/dyn
+        # 公式：θ = arctan2(xn, 1)  (假设相机朝向 Z)
+        # 实际由于相机旋转，我们需要将旋转考虑进去，但雅可比可以在相机局部坐标系计算后旋转。
+        # 为精确，使用数值微分（性能稍低但可靠）：
+        eps = 1e-5
+        xn_plus = xn + eps
+        xn_minus = xn - eps
+        yn_plus = yn + eps
+        yn_minus = yn - eps
+
+        # 通过逆旋转将归一化坐标转回球面向量，再计算 theta, phi
+        def norm_to_sphere(xn_, yn_):
+            # 构建相机坐标系下的方向向量 (X=1, Y=xn_, Z=-yn_ 注意符号)
+            vec = np.stack([np.ones_like(xn_), xn_, -yn_], axis=-1)
+            vec = vec / np.linalg.norm(vec, axis=-1, keepdims=True)
+            # 应用相机旋转（此处假设相机旋转矩阵为 R_total = R2 @ R1）
+            # 需要复用 GetEquirec 中的旋转矩阵 R1, R2
+            R1_inv = self._R1_inv  # 需要在 GetEquirec 中保存
+            R2_inv = self._R2_inv
+            vec_rot = vec @ R1_inv.T @ R2_inv.T
+            # 转为球面坐标
+            x, y, z = vec_rot[...,0], vec_rot[...,1], vec_rot[...,2]
+            theta_ = np.arctan2(y, x)
+            phi_ = np.arcsin(z)
+            return theta_, phi_
+
+        theta_plus_u, phi_plus_u = norm_to_sphere(xn_plus, yn)
+        theta_minus_u, phi_minus_u = norm_to_sphere(xn_minus, yn)
+        theta_plus_v, phi_plus_v = norm_to_sphere(xn, yn_plus)
+        theta_minus_v, phi_minus_v = norm_to_sphere(xn, yn_minus)
+
+        dtheta_du = (theta_plus_u - theta_minus_u) / (2 * eps)
+        dtheta_dv = (theta_plus_v - theta_minus_v) / (2 * eps)
+        dphi_du   = (phi_plus_u   - phi_minus_u)   / (2 * eps)
+        dphi_dv   = (phi_plus_v   - phi_minus_v)   / (2 * eps)
+
+        # 保存雅可比矩阵供光流变换使用
+        self._jacobian = (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
+        
 
         return persp, mask_3ch, lon_map, lat_map
-
-    def _compute_jacobian_analytic(self, lon_map, lat_map, valid_mask, height, width):
-        """
-        解析计算雅可比矩阵 (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
-        仅对 valid_mask > 0 的像素计算，其余区域填 0。
-        """
-        # 初始化输出数组
-        dtheta_du = np.zeros((height, width), dtype=np.float32)
-        dtheta_dv = np.zeros((height, width), dtype=np.float32)
-        dphi_du   = np.zeros((height, width), dtype=np.float32)
-        dphi_dv   = np.zeros((height, width), dtype=np.float32)
-
-        # 无有效像素则直接返回
-        if np.sum(valid_mask) == 0:
-            return (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
-
-        # 获取有效像素索引
-        rows, cols = np.where(valid_mask > 0)
-        xn = (lon_map[rows, cols] / self._width) * 2 * self.w_len - self.w_len
-        yn = (1.0 - lat_map[rows, cols] / self._height) * 2 * self.h_len - self.h_len
-
-        # 相机坐标系向量 (X=1, Y=xn, Z=-yn)
-        Xc = np.ones_like(xn)
-        Yc = xn
-        Zc = -yn
-        norm = np.sqrt(Xc**2 + Yc**2 + Zc**2)
-        Xc /= norm
-        Yc /= norm
-        Zc /= norm
-
-        # 组合旋转矩阵（注意顺序：先 R2 后 R1 的逆）
-        R_total = self._R1_inv @ self._R2_inv
-        Xw = R_total[0,0]*Xc + R_total[0,1]*Yc + R_total[0,2]*Zc
-        Yw = R_total[1,0]*Xc + R_total[1,1]*Yc + R_total[1,2]*Zc
-        Zw = R_total[2,0]*Xc + R_total[2,1]*Yc + R_total[2,2]*Zc
-
-        # 球面坐标导数
-        denom_theta = Xw**2 + Yw**2 + 1e-8
-        dtheta_dXw = -Yw / denom_theta
-        dtheta_dYw =  Xw / denom_theta
-        dtheta_dZw = np.zeros_like(Xw)
-
-        denom_phi = np.sqrt(1.0 - Zw**2) + 1e-8
-        dphi_dXw = np.zeros_like(Xw)
-        dphi_dYw = np.zeros_like(Xw)
-        dphi_dZw = 1.0 / denom_phi
-
-        # 转到相机坐标系
-        dtheta_dXc = dtheta_dXw * R_total[0,0] + dtheta_dYw * R_total[1,0] + dtheta_dZw * R_total[2,0]
-        dtheta_dYc = dtheta_dXw * R_total[0,1] + dtheta_dYw * R_total[1,1] + dtheta_dZw * R_total[2,1]
-        dtheta_dZc = dtheta_dXw * R_total[0,2] + dtheta_dYw * R_total[1,2] + dtheta_dZw * R_total[2,2]
-
-        dphi_dXc = dphi_dXw * R_total[0,0] + dphi_dYw * R_total[1,0] + dphi_dZw * R_total[2,0]
-        dphi_dYc = dphi_dXw * R_total[0,1] + dphi_dYw * R_total[1,1] + dphi_dZw * R_total[2,1]
-        dphi_dZc = dphi_dXw * R_total[0,2] + dphi_dYw * R_total[1,2] + dphi_dZw * R_total[2,2]
-
-        # 相机坐标对归一化平面坐标的导数
-        N = norm
-        dXc_dxn = -xn / N**3
-        dXc_dyn = -yn / N**3
-        dYc_dxn = (1 + yn**2) / N**3
-        dYc_dyn = -xn*yn / N**3
-        dZc_dxn = xn*yn / N**3
-        dZc_dyn = -(1 + xn**2) / N**3
-
-        # 最终导数 dθ/dxn 等
-        dtheta_dxn = dtheta_dXc * dXc_dxn + dtheta_dYc * dYc_dxn + dtheta_dZc * dZc_dxn
-        dtheta_dyn = dtheta_dXc * dXc_dyn + dtheta_dYc * dYc_dyn + dtheta_dZc * dZc_dyn
-        dphi_dxn   = dphi_dXc   * dXc_dxn + dphi_dYc   * dYc_dxn + dphi_dZc   * dZc_dxn
-        dphi_dyn   = dphi_dXc   * dXc_dyn + dphi_dYc   * dYc_dyn + dphi_dZc   * dZc_dyn
-
-        # 像素坐标缩放因子
-        du_dxn = self._width  / (2 * self.w_len)
-        dv_dyn = self._height / (2 * self.h_len)  # 注意 v 与 yn 符号相反，但导数链已包含符号
-
-        # 填入结果数组
-        dtheta_du[rows, cols] = dtheta_dxn / du_dxn
-        dtheta_dv[rows, cols] = dtheta_dyn / dv_dyn
-        dphi_du[rows, cols]   = dphi_dxn   / du_dxn
-        dphi_dv[rows, cols]   = dphi_dyn   / dv_dyn
-
-        return (dtheta_du, dtheta_dv, dphi_du, dphi_dv)
 
 
 class MPerspective:
@@ -203,7 +199,7 @@ class MPerspective:
         self.img_array = img_array
         self.F_T_P_array = F_T_P_array
 
-    def perspective_flow_to_erp(self, flow, lon_map, lat_map, erp_h, erp_w, jacobian):
+    def perspective_flow_to_erp(self,flow, lon_map, lat_map, erp_h, erp_w, jacobian):
         """
         将透视图像上的光流精确变换到 ERP 域。
         参数:
@@ -216,7 +212,7 @@ class MPerspective:
         if flow is None:
             return np.zeros((erp_h, erp_w, 2), dtype=np.float32)
 
-        # 1. 通过 remap 获取 ERP 网格对应的透视光流值
+        # 1. 通过 remap 获取 ERP 网格对应的透视光流值（标量采样）
         flow_u = cv2.remap(flow[:,:,0], lon_map, lat_map, cv2.INTER_LINEAR)
         flow_v = cv2.remap(flow[:,:,1], lon_map, lat_map, cv2.INTER_LINEAR)
 
@@ -226,6 +222,9 @@ class MPerspective:
         dphi   = dphi_du   * flow_u + dphi_dv   * flow_v
 
         # 3. 将球面角位移转换为 ERP 像素位移
+        #    ERP 图像中，经度 θ 对应 x 轴，纬度 φ 对应 y 轴
+        #    dx = (dtheta / (2π)) * erp_w
+        #    dy = (dphi   / π)    * erp_h   (注意 φ 范围 [-π/2, π/2])
         dx = (dtheta / (2 * np.pi)) * erp_w
         dy = (dphi   / np.pi)      * erp_h
 
@@ -266,13 +265,14 @@ class MPerspective:
             # 处理光流
             if flow0 is not None:
                 mv0_erp = self.perspective_flow_to_erp(
-                    flow0, lon_map, lat_map, height, width, jacobian
+                    flow0, lon_map, lat_map, height, width,jacobian
                 )
+                # 加权累加
                 merge_mv0 += mv0_erp * mask_1ch[:, :, np.newaxis]
 
             if flow1 is not None:
                 mv1_erp = self.perspective_flow_to_erp(
-                    flow1, lon_map, lat_map, height, width, jacobian
+                    flow1, lon_map, lat_map, height, width,jacobian
                 )
                 merge_mv1 += mv1_erp * mask_1ch[:, :, np.newaxis]
 
@@ -298,4 +298,8 @@ class MPerspective:
         mask_final = np.where(merge_count > 0, 255, 0).astype(np.uint8)
         mask_final_3ch = np.repeat(mask_final[:, :, np.newaxis], 3, axis=2)
 
+
         return merge_image, mask_final_3ch, merge_mv0, merge_mv1
+
+
+        

@@ -190,7 +190,7 @@ multi_output = 1
 # Enable extra input mode (Left folder first: left(or right)->scene01->image) - Specify separate left and right eye folders
 enable_extra_input_mode = 0
 #####server
-file_server_ip = http://10.35.116.93:8088
+file_server_ip = http://10.35.180.69:80
 
 ### edit by hx
 fps = 24

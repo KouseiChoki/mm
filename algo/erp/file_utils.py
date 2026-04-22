@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2026-04-21 15:07:00
+LastEditTime: 2026-04-21 16:51:05
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -65,12 +65,20 @@ _default_channel_names = {
 }
 TAG_CHAR = np.array([202021.25], np.float32)
 
-def jhelp(c):
-	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
-def jhelp_folder(c):
-    return list(filter(lambda x:os.path.isdir(x),jhelp(c)))
-def jhelp_file(c):
-    return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
+def extract_number(file_path):
+    file_name = os.path.basename(file_path)  # 获取文件名
+    number = re.findall(r'\d+', file_name)   # 提取文件名中的数字
+    return int(number[-1]) if number else 0   # 返回数字用于排序
+def jhelp(c,restrict=False):
+    if restrict:
+        return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c),key=extract_number)))]
+    else:
+	    return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
+def jhelp_folder(c,restrict=False):
+    return list(filter(lambda x:os.path.isdir(x),jhelp(c,restrict)))
+def jhelp_file(c,restrict=True):
+    return list(filter(lambda x:not os.path.isdir(x),jhelp(c,restrict)))
+    
 def mkdir(path):
     if  not os.path.exists(path):
         os.makedirs(path,exist_ok=True)
@@ -529,7 +537,7 @@ def mvwrite2(path,flow,compress='piz',precision = FLOAT):
         cpm = NO_COMPRESSION
     mvwrite_helper(path, flow, precision = precision, compression = cpm)
 
-def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
+def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'half'):
     if precision.lower() == 'half':
       precision_ = HALF
     elif precision.lower() == 'uint':
@@ -561,16 +569,15 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
           cv2.imwrite(path,flow[...,:3][...,::-1])
     else:
         if len(flow.shape) == 2:
-          flow = np.repeat(flow[...,None],3,axis=2)
+            flow = np.repeat(flow[...,None],3,axis=2)
         if flow.shape[2] == 2:
-          flow = np.insert(flow,2,0,axis=2)
-        flow = np.clip(flow,-1,1)
-        if flow.min() < 0:
-          flow = ((flow+1)/2 * 255).astype('uint8')
-        else:
-          flow = (flow * 255).astype('uint8')
+            flow = np.insert(flow,2,0,axis=2)
+        if flow.min() < -1:
+           flow = np.clip(flow,-1,1)
+        if flow.max() <= 1:
+           flow = ((flow+1)/2 * 255).astype('uint8')
         if flow.shape[2] ==4:
-          Image.fromarray(flow).save(path)
+           Image.fromarray(flow).save(path)
         else:
           cv2.imwrite(path,flow[...,:3][...,::-1])
 
@@ -936,3 +943,31 @@ def yuv_from_picture(filename, height, width):
       
     fp.close()
     return img
+
+
+def find_folders_with_subfolder(root_path, keys = [], path_keys = [] ,excs = [] ,path_excs =[]):
+    """
+    Find all folders in the root_path that contain a subfolder with the name subfolder_name.
+    """
+    folders_with_subfolder = []
+
+    # Walk through the directory
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        # Check if the subfolder_name is in the list of directories
+        flag = True
+        for key in keys:
+            if key not in dirnames:
+                flag = False
+        for path_key in path_keys:
+            if path_key not in dirpath:
+                flag = False
+        for exc in excs:
+            if exc in dirnames:
+                flag = False
+        for exc in path_excs:
+            if exc in dirpath:
+                flag = False
+        if flag:
+            folders_with_subfolder.append(dirpath)
+
+    return folders_with_subfolder

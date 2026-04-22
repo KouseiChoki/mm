@@ -17,8 +17,8 @@ PARAM_MAP = {
     "LD":  [90, -30, -45],
 }
 
-ERP_HEIGHT = 2048
-ERP_WIDTH = 2048
+ERP_HEIGHT = 4096
+ERP_WIDTH = 4096
 
 INPUT_ROOT = "/Users/qhong/Desktop/0420/robot_test"
 OUTPUT_ROOT = "/Users/qhong/Desktop/0420/p2e/flat"
@@ -82,6 +82,15 @@ def find_corresponding_files(root,passright=1):
                     ))
     return triplets
 
+def mv_denormalize(mv,normalize=False):
+    h,w,_ = mv.shape
+    if normalize:
+        mv[...,0] /= w
+        mv[...,1] /= h
+    else:
+        mv[...,0] *= w
+        mv[...,1] *= h
+    return mv
 
 
 def process_all():
@@ -94,8 +103,10 @@ def process_all():
 
     for index in tqdm(range(len(triplets))):
         img_path, mv0_path, mv1_path, base_name = triplets[index]
-        mv0_data = read(mv0_path)[..., :2]
-        mv1_data = read(mv1_path)[..., :2]
+        mv0_data = mv_denormalize(read(mv0_path)[..., :2])
+        mv1_data = mv_denormalize(read(mv1_path)[..., :2])
+        #denormalized
+        
 
         for param_name, (fov, theta, phi) in PARAM_MAP.items():
             equ = MP2E.MPerspective(
@@ -112,8 +123,8 @@ def process_all():
 
             write(str(out_img_dir / f"{base_name}.png"), img_erp[..., ::-1])
             write(str(out_mask_dir / f"{base_name}.png"), mask_erp)
-            write(str(out_mv0_dir / f"{base_name}.exr"), mv0_erp)
-            write(str(out_mv1_dir / f"{base_name}.exr"), mv1_erp)
+            write(str(out_mv0_dir / f"{base_name}.exr"), mv_denormalize(mv0_erp,normalize=True))
+            write(str(out_mv1_dir / f"{base_name}.exr"), mv_denormalize(mv1_erp,normalize=True))
 
     print("\n所有任务完成！")
 
