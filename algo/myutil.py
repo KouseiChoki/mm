@@ -859,7 +859,7 @@ def get_resize_rate(algorithm,h,w):
     if '-v' in algorithm:
         if 'v0' in algorithm:
             resize_rate_x = 1920/w if w > 1920 else 1
-            resize_rate_y = 1080/h if h > 1080 else 1
+            resize_rate_y = 880/h if h > 880 else 1
             # resize_rate_x = 1920/w 
             # resize_rate_y = 880/h 
         elif 'v1' in algorithm:
@@ -873,6 +873,11 @@ def get_resize_rate(algorithm,h,w):
         elif 'v5' in algorithm:
             resize_rate_x = 1440/w if w > 1440 else 1
             resize_rate_y = 720/h if h > 720 else 1
+            # resize_rate_x = 1920/w 
+            # resize_rate_y = 880/h 
+        elif 'v6' in algorithm:
+            resize_rate_x = 1826/w if w > 1826 else 1
+            resize_rate_y = 1024/h if h > 1024 else 1
             # resize_rate_x = 1920/w 
             # resize_rate_y = 880/h 
         else:
