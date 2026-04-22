@@ -168,10 +168,28 @@ def get_model(args):
                 args_dict[key] = value
             return args
         json_path = os.path.dirname(os.path.abspath(__file__))+'/../3rd/mma/config/mma-v0.json'
-        args = json_to_args(json_path)
-        model = RAFT(args)
+        cargs = json_to_args(json_path)
+        model = RAFT(cargs)
         ckpt_path = os.path.dirname(os.path.abspath(__file__))+'/../checkpoints/'
         model_path = os.path.join(ckpt_path,model_name.replace('.pth','') + '.pth')
+        if not os.path.isfile(model_path):
+            download_url = model_path
+            md = args.server
+            if args.mask_mode:
+                if args.mask_type=='bg':
+                    md += '/mma_bg'
+                elif args.mask_type=='fg':
+                    md += '/mma_fg'
+                else:
+                    md += '/mma_mix'
+            else:
+                md += '/mma_fm'
+            md += '/' + model_name + '.pth'
+            print(download_url,md)
+            flag = check_and_download_pth_file(download_url,md)
+            if not flag:
+                raise NotImplementedError(f'[MM ERROR][model]model file not exists:{model_name},please use mmalgo to check')
+            
         if not os.path.isfile(model_path):
             raise FileNotFoundError('没有模型文件，请先获取模型文件')
             sys.exit(0)
