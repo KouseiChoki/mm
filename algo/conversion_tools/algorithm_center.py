@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2026-04-22 11:17:41
+LastEditTime: 2026-04-22 11:19:31
 Description: file content
 '''
 import os,sys
@@ -88,6 +88,7 @@ def get_all_pth(url):
             pp = pp.replace('.pth','')
             setsu = 'No describe' if pp not in response else response[response.index(pp)+1]
             print(pp+'  :  '+setsu)
+    print('-----------使用方式：直接在mm config中将algorithm替换成上述模型名即可，如出现网络原因请从nas云端获取------------')
 
 
 if __name__ == '__main__':
