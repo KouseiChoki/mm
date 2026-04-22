@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2026-04-22 11:09:01
+LastEditTime: 2026-04-22 11:15:13
 Description: file content
 '''
 import os,sys
@@ -56,6 +56,7 @@ def getlink(url):
 
 def getsetsumei(url):
     response = requests.get(url, stream=True,timeout=30)
+    response.encoding = 'utf-8'
     datas = str(response.content).split('/')
 
 def get_all_pth(url):
