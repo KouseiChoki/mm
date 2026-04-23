@@ -19,42 +19,77 @@ os.makedirs(WORK_DIR, exist_ok=True)
 import re
 from pathlib import Path
 
-def extract_pattern_and_range(img_dir,rpass=1):
+from pathlib import Path
+import re
+
+
+def extract_pattern_and_range(img_dir, rpass=1):
     """
     从 image 目录中的文件提取文件名模式、起始帧和总帧数。
-    假设文件命名如 "prefix.0000.png" 或 "1.FinalImage.0000.png"
-    返回 (strInputFilePattern, startFrame, totalFrames)
+    自动过滤隐藏文件（如 .DS_Store / .xxx.png）
     """
+
     img_path = Path(img_dir)
-    # 获取所有图片文件
-    image_files = sorted([f for f in img_path.glob("*") if f.suffix.lower() in ('.png', '.jpg', '.jpeg')])
+
+    # -------------------------
+    # 1. 过滤文件
+    # -------------------------
+    image_files = sorted([
+        f for f in img_path.iterdir()
+        if f.is_file()
+        and not f.name.startswith('.')                      # ✅ 过滤隐藏文件
+        and f.suffix.lower() in ('.png', '.jpg', '.jpeg')   # ✅ 限制格式
+    ])
+
     if not image_files:
-        raise ValueError(f"No image files in {img_dir}")
-    
-    # 尝试从第一个文件名中提取前缀和序号格式
-    first_name = image_files[0].stem  # 不带扩展名
-    # 查找末尾的数字部分
+        raise ValueError(f"No valid image files in {img_dir}")
+
+    # -------------------------
+    # 2. 过滤不能解析数字的文件
+    # -------------------------
+    valid_files = []
+    for f in image_files:
+        if re.search(r'(\d+)$', f.stem):
+            valid_files.append(f)
+
+    if not valid_files:
+        raise ValueError(f"No valid numbered image files in {img_dir}")
+
+    valid_files = sorted(valid_files)
+
+    # -------------------------
+    # 3. 解析 pattern
+    # -------------------------
+    first_name = valid_files[0].stem
+
     match = re.search(r'^(.*?)(\d+)$', first_name)
     if not match:
         raise ValueError(f"Cannot parse number from filename: {first_name}")
+
     prefix = match.group(1)
     num_str = match.group(2)
     num_digits = len(num_str)
-    
-    # 构建 printf 格式模式
-    pattern = f"{prefix}%0{num_digits}d.png"
-    
-    # 获取所有序号
+
+    # 自动适配扩展名（避免写死 png）
+    ext = valid_files[0].suffix.lower()
+
+    pattern = f"{prefix}%0{num_digits}d{ext}"
+
+    # -------------------------
+    # 4. 提取帧号
+    # -------------------------
     numbers = []
-    for f in image_files:
+    for f in valid_files:
         m = re.search(r'(\d+)$', f.stem)
         if m:
             numbers.append(int(m.group(1)))
-    numbers.sort()
+
+    numbers = sorted(numbers)
+
     start_frame = numbers[0]
     total_frames = len(numbers)
-    
-    return pattern, start_frame, total_frames-rpass
+
+    return pattern, start_frame, total_frames - rpass
 
 def extract_mv_pattern(mv_dir, mv_type='mv0'):
     """
