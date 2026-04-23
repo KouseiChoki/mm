@@ -171,23 +171,37 @@ def run_task(prm_path, task_name):
         raise
 
 
-def find_corresponding_files(root,passright=1):
+def find_corresponding_files(root, passright=1):
     """
     递归扫描根目录，找到所有同时包含 image/、mv0/、mv1/ 子目录的文件夹，
-    并通过序号匹配返回 (img_path, mv0_path, mv1_path, base_name) 列表。
+    并过滤掉路径中包含 flat 的目录，
+    返回 (img_path, mv0_path, mv1_path) 列表。
     """
     triplets = []
     root_path = Path(root)
 
     for img_dir in root_path.rglob("image"):
+        # ✅ 跳过任何路径中包含 "flat" 的目录
+        if "flat" in img_dir.parts:
+            continue
+
         if not img_dir.is_dir():
             continue
+
         parent = img_dir.parent
+
+        # 再保险：父目录也检查一次
+        if "flat" in parent.parts:
+            continue
+
         mv0_dir = parent / "mv0"
         mv1_dir = parent / "mv1"
+
         if not (mv0_dir.is_dir() and mv1_dir.is_dir()):
             continue
-        triplets.append((img_dir,mv0_dir,mv1_dir))
+
+        triplets.append((img_dir, mv0_dir, mv1_dir))
+
     return triplets
 
 def main():
