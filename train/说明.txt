@@ -6,7 +6,7 @@
 如 unreal_clean = [1,0,0.1] 代表，unreal数据占比1份，数据大小会在2k*2**1~2k*2**1.1，即2k的1-1.14倍之间变动，使用数据增强可以有效加强模型鲁棒性和数据量
 
 2.数据准备，使用mm/algo/conversion_tools/unreal_train_data_processor.py来准备数据，对导出的源exr数据使用即可，
-如python mm/algo/conversion_tools/unreal_train_data_processor.py root save_path(注，该功能会删除除finalimage.exr外所有垃圾文件，最后生成image,mv1,ori三个文件夹)，最后将其放入训练集的Unreal目录下即可
+如python mm/algo/conversion_tools/unreal_train_data_processor.py root save_path(注，该功能会删除除finalimage.exr外所有垃圾文件，最后将不同shot做文件夹区分，生成image,ori两个文件夹)，然后使用mmexrreader --path PATH生成mv1,最后将其放入训练集的Unreal目录下即可
 
 3.开始训练，使用mmtrain（或python mm/3rd/Kousei/train_start.py) tconfig开始训练，tconfig文件为第一步在train/config下目录的文件名，可自由更改
 
