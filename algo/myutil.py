@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-10-16 09:53:32
+LastEditTime: 2026-04-28 10:57:28
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -859,7 +859,7 @@ def get_resize_rate(algorithm,h,w):
     if '-v' in algorithm:
         if 'v0' in algorithm:
             resize_rate_x = 1920/w if w > 1920 else 1
-            resize_rate_y = 880/h if h > 880 else 1
+            resize_rate_y = 1072/h if h > 1072 else 1
             # resize_rate_x = 1920/w 
             # resize_rate_y = 880/h 
         elif 'v1' in algorithm:

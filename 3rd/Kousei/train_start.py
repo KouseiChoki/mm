@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:01:48
+LastEditTime: 2026-04-29 10:13:12
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -192,19 +192,21 @@ def train(cfg):
             images = images.to(torch.device(cfg.gpu_type))
             flows = flows.to(torch.device(cfg.gpu_type))
             valids = valids.to(torch.device(cfg.gpu_type))
+            if valids.mean().item()<0.05: #pass bad mv
+                continue
 
             output = {}
             flow_predictions = model(images, output)
             loss, metrics, NAN_flag = loss_func(flow_predictions, flows, valids, cfg)
-            if NAN_flag:
-                if single_save:
-                    single_save = False
-                    sp = train_root+'/train_checkpoints/'+cfg.name
-                    mkdir(sp)
-                    PATH = sp+'/%d_last_ff.pth' % (total_steps)
-                    torch.save(model.state_dict(), PATH)
+            # if NAN_flag:
+            #     if single_save:
+            #         single_save = False
+            #         sp = train_root+'/train_checkpoints/'+cfg.name
+            #         mkdir(sp)
+            #         PATH = sp+'/%d_last_ff.pth' % (total_steps)
+            #         torch.save(model.state_dict(), PATH)
 
-                print('error!')
+            #     print('error!')
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.trainer.clip)
@@ -226,7 +228,7 @@ def train(cfg):
                 avgepe = sum(epe_arr)/100
                 epe_arr = []
 
-            if total_steps % args.vis_iter == 0 or metrics['epe']>avgepe*2:
+            if total_steps % args.vis_iter:
                 if total_steps - pre_record >= min(args.vis_iter,50000): #interval
                     pre_record = total_steps
                     sp =os.path.join(train_root,'vis',cfg.name,'{:0>6}'.format(total_steps))
@@ -235,6 +237,16 @@ def train(cfg):
                     fp = flow_predictions[-1].detach().cpu().numpy()[0].transpose(0,2,3,1)
                     vd = valids[0].detach().cpu().numpy()
                     save_vis(images[0].detach().cpu().numpy(),fp,fg,fgs,sp,vd)
+            # 🚨 防炸
+            if not torch.isfinite(loss):
+                print(f"NaN loss at step {total_steps}")
+                optimizer.zero_grad(set_to_none=True)
+                sp =os.path.join(train_root,'vis',cfg.name,'bad_flow'+ '{:0>6}'.format(total_steps))
+                fgs = flows.detach()[0].cpu().numpy().transpose(0,2,3,1)
+                fg = (flows[0]*valids[0][:,None,:,:]).detach().cpu().numpy().transpose(0,2,3,1)
+                fp = flow_predictions[-1].detach().cpu().numpy()[0].transpose(0,2,3,1)
+                vd = valids[0].detach().cpu().numpy()
+                save_vis(images[0].detach().cpu().numpy(),fp,fg,fgs,sp,vd)
 
             if total_steps > 0 and total_steps%args.save_iter == 0:
                 sp = os.path.join(train_root,'train_checkpoints',cfg.name,'{:0>6}'.format(total_steps))

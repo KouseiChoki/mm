@@ -68,7 +68,9 @@ class FlowDatasetKousei(data.Dataset):
         imgs = [read(self.data_root+path,type=self.img_type,OPENEXR=self.OPENEXR) for path in self.image_list[index]]
         mv0s = [read(self.data_root+path,type='flo',OPENEXR=self.OPENEXR)[...,:2] if path is not None else None for path in self.mv0_list[index]]
         mv1s = [read(self.data_root+path,type='flo',OPENEXR=self.OPENEXR)[...,:2] if path is not None else None for path in self.mv1_list[index]]
-        masks = [(255*read(self.data_root+path,type='mask',OPENEXR=self.OPENEXR)).astype('uint8') if (path is not None and self.mask_type is not None) else None for path in self.mask_list[index]]
+        masks =[None] * len(imgs)
+        if self.mask_list[index]:
+            masks = [(255*read(self.data_root+path,type='mask',OPENEXR=self.OPENEXR)).astype('uint8') if (path is not None and self.mask_type is not None) else None for path in self.mask_list[index]]
         h,w,_ = imgs[0].shape
         if np.random.rand() < self.repeat_frame_rate: #add repeat frame case
             if self.input_frames >3:
