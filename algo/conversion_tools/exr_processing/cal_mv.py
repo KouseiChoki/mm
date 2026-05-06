@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2026-02-06 16:00:12
+LastEditTime: 2026-04-30 12:53:02
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -82,6 +82,7 @@ def init_param():
     parser.add_argument('--check_mode',action='store_true', help="check invalid data")
     parser.add_argument('--exrformat',action='store_true', help="check invalid data")
     parser.add_argument('--enable_colour_output',action='store_true', help="check invalid data")
+    parser.add_argument('--mask_only',action='store_true', help="check invalid data")
     args = parser.parse_args()
     if args.depth_only or args.colormap:
         args.dump_depth = True
@@ -234,7 +235,7 @@ def exr_read_worldpos(filePath):
             fnmv0_B = key
         if 'MV0.A' in key:
             fnmv0_A = key
-        if 'ObjMask.R' in key:
+        if 'ObjMask.R' in key or 'PWMask.R' in key:
             fnmask_R = key
     if depth_R is None:
         worldpos = None
@@ -597,6 +598,10 @@ def mv_cal_core(datas):
         return
     mv0_sp,mv1_sp = os.path.join(save_path,f'mv{(step-1)*2}'),os.path.join(save_path,f'mv{(step-1)*2+1}')
     hdr_image,depth,data_debug,data1,objmv0_,objmv1,mask,dtype = exr_read_worldpos(file_name[i])
+    if mask is not None:
+        mvwrite(os.path.join(save_path,'Mask',os.path.basename(img)),np.repeat(mask[...,None],4,axis=2))
+    if args.mask_only:
+        return
     if extra_depth is not None:
         depth = read(extra_depth)[...,0]*100
     if depth is None:
@@ -676,9 +681,7 @@ def mv_cal_core(datas):
         image_path = os.path.join(save_path,'image',os.path.basename(img))
         if not os.path.isfile(image_path) and args.onlymv:
             mvwrite(image_path,image)
-    #mask
-    if mask is not None:
-        mvwrite(os.path.join(save_path,'Mask',os.path.basename(img)),np.repeat(mask[...,None],4,axis=2))
+    
     
 
     if args.dump_depth or args.dump_ply:
