@@ -13,3 +13,12 @@
 4.查看训练结果:
 a.使用mmtb或者(conda activate mm && tensorboard --logdir MMROOT/mm/train/logs)，启动成功后在提示的网页端(localhost:6006)中查看
 b.结果模型文件保存在train/train_checkpoints下，出错的mv图片保存在train/vis目录下
+
+5.1单次评估
+使用python mm/evaluation/evaluate_core.py SOURCE_ROOT TARGET_ROOT进行单次评估，SOURCE需要包含image，mv1(mv0)文件夹，TARGET需要包含结果mv
+
+5.2.评估训练模型
+使用mmevaluate --algo XXXX (或python mm/evaluation/mm_evaluate.py)即可开始评估
+a.初次使用需修改mm/evaluation/config_evaluation中的部分参数，包括gpu,测试文件路径等
+b.运行后会跑mm并将结果进行5.1的单次评估,所以config_evaluation中的source文件需要包含groundtruth的mv
+c.结果会以日期+xlsx的形式保存在evaluation目录下
