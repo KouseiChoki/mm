@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-04-11 13:55:07
 LastEditors: Qing Hong
-LastEditTime: 2026-01-20 14:46:43
+LastEditTime: 2026-05-07 12:06:53
 Description: file content
 '''
 import os,sys
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     target_path = sys.argv[2]
     # for i in range(len(source_paths)):
     print(source_path,target_path)
-    res = mm_evaluate(source_path,target_path)
+    res,_ = mm_evaluate(source_path,target_path)
     now = datetime.datetime.now()
     # 格式化为年月日小时分钟秒
     formatted_date = now.strftime("%Y%m%d_%H%M%S")  # 输出格式类似 '20220429_153142'

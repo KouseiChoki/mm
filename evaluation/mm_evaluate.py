@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2022-05-25 17:35:01
 LastEditors: Qing Hong
-LastEditTime: 2024-07-19 10:00:52
+LastEditTime: 2026-05-07 12:06:43
 Description: file content
 '''
 import os,sys
@@ -37,7 +37,7 @@ def run(args,skip=False,att=None):
             obj_mode = True
             if '-bg-' in args.algorithm:
                 fg = False
-        res = mm_evaluate(args.output,args.root,obj_mode=obj_mode,fg=fg)
+        res,_ = mm_evaluate(args.output,args.root,obj_mode=obj_mode,fg=fg)
         now = datetime.datetime.now()
         # 格式化为年月日小时分钟秒
         formatted_date = now.strftime("%Y%m%d_%H%M%S")  # 输出格式类似 '20220429_153142'
