@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2026-01-15 10:22:25
+LastEditTime: 2026-05-18 15:36:07
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -266,7 +266,7 @@ if __name__ == '__main__':
     # else:   
     #     filenames = glob.glob(os.path.join(args.root, f'**/{args.img_folder_name}/*'), recursive=True)
     # filenames = glob.glob(os.path.join(args.root, '*'))
-    exts = ["*.png", "*.exr"]
+    exts = ["*.png", "*.exr","*.tif"]
     filenames = []
     for ext in exts:
         filenames.extend(glob.glob(os.path.join(args.root, "**", ext), recursive=True))
