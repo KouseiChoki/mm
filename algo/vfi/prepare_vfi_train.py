@@ -32,7 +32,7 @@ VFI Training Data Preparation Script (两阶段低内存版)
     # 只跑阶段二（分类，阶段一已完成）
     python prepare_vfi_data.py ... --stage classify
 """
-
+# python prepare_vfi_train.py --input_dir /Volumes/optflow_ssd/Youtube/y4m --output_dir /Volumes/optflow_ssd/vfi_train_data_y4m
 import re
 import cv2
 import json
