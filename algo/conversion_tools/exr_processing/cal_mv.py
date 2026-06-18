@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2026-04-30 12:53:02
+LastEditTime: 2026-06-18 09:24:45
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -329,7 +329,7 @@ def exr_read_worldpos_next(filePath):
     data_cur['pitch'] = float(img_exr.header()['unreal/camera/curRot/pitch'])
     data_cur['roll'] = float(img_exr.header()['unreal/camera/curRot/roll'])
     data_cur['yaw'] = float(img_exr.header()['unreal/camera/curRot/yaw'])
-    if 'MV0.R' in img_exr.header()['channels']:
+    if 'FinalImagePWMV0.R' in img_exr.header()['channels']:
         mv0_x = np.array(array.array('f', img_exr.channel('FinalImagePWMV0.R',pt))).reshape(size)
         mv0_y = np.array(array.array('f', img_exr.channel('FinalImagePWMV0.G',pt))).reshape(size)
         mv0_z = np.array(array.array('f', img_exr.channel('FinalImagePWMV0.B',pt))).reshape(size)
