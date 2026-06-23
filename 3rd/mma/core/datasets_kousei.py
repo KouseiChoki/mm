@@ -174,6 +174,7 @@ class FlowDatasetKousei(data.Dataset):
         else:
             flows = mv1s
             imgs = imgs[:2][::-1]
+            masks = masks[:2][::-1]
         # grayscale images
         # if len(imgs[0].shape) == 2:
         #     imgs = [np.tile(img[...,None], (1, 1, 3)) for img in imgs]
@@ -264,7 +265,12 @@ class FlowDatasetKousei(data.Dataset):
                     # imgs[i]*=mask[None,...]
                     if mask.max().item() > 0: #no obj case
                         for k in range(3):
-                            imgs[i][k,...][torch.where(mask==0)] = -100                          
+                            imgs[i][k,...][torch.where(mask==0)] = -100        
+            
+            #single mode
+            if len(valids) == 1:
+                valids[0] = masks[0]
+                  
 
         if np.random.rand() < self.reverse_rate:
             return torch.stack(imgs[::-1]), torch.stack(flows[::-1]), torch.stack(valids[::-1])
