@@ -217,7 +217,7 @@ def main():
                         choices=['mp4', 'avi'])
     parser.add_argument('--dump_data',   action='store_true')
     parser.add_argument('--old_version', action='store_true')
-    parser.add_argument('--server',      default='http://10.35.116.93:8088', type=str)
+    parser.add_argument('--server',      default='http://10.35.180.69:80', type=str)
     args = parser.parse_args()
 
     assert args.model in ['VFIMamba_S', 'VFIMamba', 'VFIMamba_KouSei'], 'Model not exists!'

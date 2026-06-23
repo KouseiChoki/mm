@@ -3,7 +3,7 @@ s_DIR=$(cd "$(dirname "$0")"; pwd)
  # @Author: Qing Hong
  # @Date: 2023-12-12 13:16:48
  # @LastEditors: Qing Hong
- # @LastEditTime: 2024-12-11 17:30:16
+ # @LastEditTime: 2026-06-23 12:28:56
  # @Description: file content
 ### 
 PARENT_DIR=$(dirname "$s_DIR")
@@ -228,6 +228,33 @@ else
         cd '"$PARENT_DIR"'
         cd 3rd/denoise
         export PYTORCH_ENABLE_MPS_FALLBACK=1 && python ignore start.py "$@"
+    }' >> ~/.zshrc
+fi
+
+
+if grep -q "mm3drp()" ~/.zshrc; then
+    echo "命令 'mm3drp()' 已存在于 ~/.zshrc 中，跳过添加。"
+else
+    # 如果命令不存在，则添加到 ~/.zshrc
+    echo "添加命令 'mm3drp()' 到 ~/.zshrc。"
+    echo 'mm3drp(){
+        conda activate mm
+        cd '"$PARENT_DIR"'
+        cd algo/threedrp
+        python mm3drp.py "$@"
+    }' >> ~/.zshrc
+fi
+
+if grep -q "mmvfi()" ~/.zshrc; then
+    echo "命令 'mmvfi()' 已存在于 ~/.zshrc 中，跳过添加。"
+else
+    # 如果命令不存在，则添加到 ~/.zshrc
+    echo "添加命令 'mmvfi()' 到 ~/.zshrc。"
+    echo 'mmvfi(){
+        conda activate mm
+        cd '"$PARENT_DIR"'
+        cd 3rd/vfi
+        python start.py "$@"
     }' >> ~/.zshrc
 fi
 
