@@ -119,11 +119,11 @@ def check_and_download_pth_file(file_path, download_url):
 
 
 def define_model(args):
-    mkdir(os.path.join(args.fp,'checkpoints'))
-    ckpt_path = os.path.join(args.fp,'checkpoints',args.algo)
+    ckpt_path = os.path.join(args.fp,args.algo)
     if '.pth' not in ckpt_path:
         ckpt_path+='.pth'
     if not os.path.isfile(ckpt_path):
+        mkdir(args.fp)
         download_url = ckpt_path
         md = args.server
         md += '/vfi'
@@ -206,7 +206,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model',       default='VFIMamba_KouSei', type=str,
                         choices=['VFIMamba_S', 'VFIMamba', 'VFIMamba_KouSei'])
-    parser.add_argument('--ckpt',        default='/home/zhenying/qhong/repo/VFIMamba/ckpt/0622/VFIMamba_0.pkl', type=str)
     parser.add_argument('--algo',        default='VFIKousei_TEST', type=str)
     parser.add_argument('--root', '--path', required=True, type=str)
     parser.add_argument('--output',      required=True, type=str)
