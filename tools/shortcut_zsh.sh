@@ -254,7 +254,7 @@ else
         conda activate mm
         cd '"$PARENT_DIR"'
         cd 3rd/vfi
-        python start.py "$@"
+        export PYTORCH_ENABLE_MPS_FALLBACK=1 && python start.py "$@"
     }' >> ~/.zshrc
 fi
 
