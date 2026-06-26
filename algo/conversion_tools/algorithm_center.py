@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2026-04-22 11:19:31
+LastEditTime: 2026-06-23 11:23:08
 Description: file content
 '''
 import os,sys
@@ -68,6 +68,7 @@ def get_all_pth(url):
     depth= list(filter(lambda x:'.pth' in x,getlink(url + '/depth')))
     mma_fm = list(filter(lambda x:'.pth' in x,getlink(url + '/mma_fm')))
     denoise = list(filter(lambda x:'.pth' in x,getlink(url + '/denoise')))
+    vfi = list(filter(lambda x:'.pth' in x,getlink(url + '/vfi')))
     response = getsetsumei(url+'/setsumei.txt')
     for p in [fm,fg,bg,mix,depth,mma_fm,denoise]:
         if p ==fm:
@@ -84,6 +85,8 @@ def get_all_pth(url):
             print('--------------depth algorithm--------------')
         if p ==denoise:
             print('--------------denoise algorithm--------------')
+        if p ==vfi:
+            print('--------------vfi algorithm--------------')
         for pp in p:
             pp = pp.replace('.pth','')
             setsu = 'No describe' if pp not in response else response[response.index(pp)+1]
