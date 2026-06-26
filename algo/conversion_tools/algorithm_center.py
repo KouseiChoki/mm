@@ -2,7 +2,7 @@
 Author: Qing Hong
 Date: 2024-01-09 11:14:18
 LastEditors: Qing Hong
-LastEditTime: 2026-06-23 11:23:08
+LastEditTime: 2026-06-26 10:02:17
 Description: file content
 '''
 import os,sys
@@ -70,7 +70,7 @@ def get_all_pth(url):
     denoise = list(filter(lambda x:'.pth' in x,getlink(url + '/denoise')))
     vfi = list(filter(lambda x:'.pth' in x,getlink(url + '/vfi')))
     response = getsetsumei(url+'/setsumei.txt')
-    for p in [fm,fg,bg,mix,depth,mma_fm,denoise]:
+    for p in [fm,fg,bg,mix,depth,mma_fm,denoise,vfi]:
         if p ==fm:
             print('--------------mm frame algorithm--------------')
         if p ==mma_fm:

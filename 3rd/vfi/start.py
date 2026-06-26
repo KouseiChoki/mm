@@ -213,6 +213,8 @@ def main():
     parser.add_argument('--output_mode', default='image', type=str,
                         choices=['image', 'video', 'both'])
     parser.add_argument('--fps',         default=24, type=float)
+    parser.add_argument('--max_w',         default=1920, type=int)
+    parser.add_argument('--max_h',         default=1080, type=int)
     parser.add_argument('--video_ext',   default='mp4', type=str,
                         choices=['mp4', 'avi'])
     parser.add_argument('--dump_data',   action='store_true')
@@ -244,8 +246,8 @@ def main():
         os.makedirs(save_folder, exist_ok=True)
 
         # 读取 & 预处理
-        I0 = to_float(resize_if_needed(read(src0, type='image')))
-        I2 = to_float(resize_if_needed(read(src1, type='image')))
+        I0 = to_float(resize_if_needed(read(src0, type='image'),max_w=args.max_w,max_h=args.max_h))
+        I2 = to_float(resize_if_needed(read(src1, type='image'),max_w=args.max_w,max_h=args.max_h))
 
         I0_ = torch.tensor(I0.transpose(2, 0, 1)).to(model._dev).unsqueeze(0)
         I2_ = torch.tensor(I2.transpose(2, 0, 1)).to(model._dev).unsqueeze(0)
