@@ -30,19 +30,11 @@ def get_mv_name(folder, keyword):
 
 
 def load_mask(path):
-    """
-    读取 mask 图像，返回 [H, W] float32，值域 0~1。
-    1 = 有效区域（前景或需要参与计算的区域）
-    0 = 无效区域（背景 border、遮挡区等）
-    支持单通道和多通道图像，多通道取均值后二值化。
-    """
     mask = read(path, type='image').astype(np.float32)
     if mask.ndim == 3:
         mask = mask.mean(axis=-1)
-    # 归一化到 0~1
     if mask.max() > 1.0:
         mask = mask / 255.0
-    # 二值化：> 0.5 为有效区域
     return (mask > 0.5).astype(np.float32)
 
 
@@ -54,7 +46,6 @@ def calc_psnr(img_a, img_b):
 
 
 def calc_psnr_masked(img_a, img_b, mask_valid):
-    """只在 mask_valid=1 的像素上计算 PSNR"""
     if mask_valid.sum() == 0:
         return None
     mask3 = mask_valid[..., np.newaxis]
@@ -77,23 +68,10 @@ def save_metrics(save_path, metrics: dict):
 # ── 核心处理 ──────────────────────────────────────────────────────────
 def run_immc(folder_image, folder_mv, folder_mask,
              save_path, args, direction):
-    """
-    执行 immc，同时统计：
-      - 全图 PSNR（原始指标）
-      - mask 区域 PSNR（用外部 Mask 文件夹的 mask）
-      - mask 覆盖占比
-
-    folder_mask: Mask 文件夹的文件列表，与 folder_image 一一对应。
-                 若为 None 则只计算全图 PSNR。
-    """
     os.makedirs(save_path, exist_ok=True)
     dtype = 'hdr' if args.hdr else 'image'
     n     = len(folder_image)
-
-    psnr_full_list   = []
-    psnr_masked_list = []
-    mask_ratio_list  = []
-    psnr_per_frame   = {}
+    frames = {}
 
     for i in tqdm(range(n), desc=os.path.basename(save_path)):
         frame_name = os.path.basename(folder_image[i])
@@ -118,88 +96,64 @@ def run_immc(folder_image, folder_mv, folder_mask,
             tgt_img = read(folder_image[i],       type=dtype)
             out     = immc(src_img, mv)
 
-            # ── 全图 PSNR ─────────────────────────────────────────────
-            psnr_full = calc_psnr(tgt_img, out)
-            psnr_full_list.append(psnr_full)
-
-            # ── 外部 mask 区域 PSNR ───────────────────────────────────
+            psnr_full   = calc_psnr(tgt_img, out)
             psnr_masked = None
             mask_ratio  = None
 
             if folder_mask is not None and i < len(folder_mask):
-                mask       = load_mask(folder_mask[i])
-                mask_ratio = float(mask.mean())
-
-                # mask 尺寸和图像不一致时 resize
+                mask = load_mask(folder_mask[i])
                 if mask.shape[:2] != (h, w):
                     import cv2
-                    mask = cv2.resize(mask, (w, h),
-                                      interpolation=cv2.INTER_NEAREST)
-
+                    mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+                mask_ratio  = float(mask.mean())
                 psnr_masked = calc_psnr_masked(tgt_img, out, mask)
-                if psnr_masked is not None:
-                    psnr_masked_list.append(psnr_masked)
-                mask_ratio_list.append(mask_ratio)
 
-            psnr_per_frame[frame_name] = {
-                'psnr_full':   round(psnr_full,   4),
-                'psnr_masked': round(psnr_masked, 4) if psnr_masked is not None else None,
-                'mask_ratio':  round(mask_ratio,  4) if mask_ratio  is not None else None,
+            frames[frame_name] = {
+                'frame':             frame_name,
+                'index':             i,
+                'boundary':          False,
+                'psnr_full':         round(psnr_full,   4),
+                'psnr_masked':       round(psnr_masked, 4) if psnr_masked is not None else None,
+                'mask_ratio':        round(mask_ratio,  4) if mask_ratio  is not None else None,
+                'fb_epe_full':       None,
+                'fb_epe_masked':     None,
+                'abnormal':          False,
+                'abnormal_reasons':  [],
             }
-
         else:
             ref_img = read(folder_image[ref_idx], type=dtype)
             out     = np.zeros_like(ref_img)
-            psnr_per_frame[frame_name] = {
-                'psnr_full':   None,
-                'psnr_masked': None,
-                'mask_ratio':  None,
-                'note':        'boundary frame',
+            frames[frame_name] = {
+                'frame':             frame_name,
+                'index':             i,
+                'boundary':          True,
+                'psnr_full':         None,
+                'psnr_masked':       None,
+                'mask_ratio':        None,
+                'fb_epe_full':       None,
+                'fb_epe_masked':     None,
+                'abnormal':          False,
+                'abnormal_reasons':  ['boundary frame'],
             }
 
         write(os.path.join(save_path, frame_name), out)
 
-    metrics = {
-        'direction': direction,
-        'n_frames':  n,
-        'n_valid':   len(psnr_full_list),
-        # 原始指标（全图）
-        'psnr_full_avg': round(float(np.mean(psnr_full_list)),  4) if psnr_full_list else None,
-        'psnr_full_min': round(float(np.min(psnr_full_list)),   4) if psnr_full_list else None,
-        'psnr_full_max': round(float(np.max(psnr_full_list)),   4) if psnr_full_list else None,
-        # mask 区域指标
-        'psnr_masked_avg': round(float(np.mean(psnr_masked_list)), 4) if psnr_masked_list else None,
-        'psnr_masked_min': round(float(np.min(psnr_masked_list)),  4) if psnr_masked_list else None,
-        'psnr_masked_max': round(float(np.max(psnr_masked_list)),  4) if psnr_masked_list else None,
-        # mask 覆盖占比
-        'mask_ratio_avg': round(float(np.mean(mask_ratio_list)), 4) if mask_ratio_list else None,
-        'mask_ratio_max': round(float(np.max(mask_ratio_list)),  4) if mask_ratio_list else None,
-        # 逐帧明细
-        'psnr_per_frame': psnr_per_frame,
-    }
-    return metrics
+    return frames
 
 
-def check_fb_consistency(folder_mv0, folder_mv1, folder_mask):
-    """
-    前向-后向一致性检验，同时报告：
-      - 全图 EPE（原始指标）
-      - mask 区域 EPE（用外部 Mask）
-      - mask 覆盖占比
-    """
-    n     = min(len(folder_mv0), len(folder_mv1))
-    errors = {}
+def calc_fb_per_frame(folder_mv0, folder_mv1, folder_mask, folder_image):
+    n      = min(len(folder_mv0), len(folder_mv1), len(folder_image))
+    result = {}
 
-    epe_full_list   = []
-    epe_masked_list = []
-    mask_ratio_list = []
+    for i in tqdm(range(n), desc='fb_epe'):
+        frame_name = os.path.basename(folder_image[i])
 
-    for i in tqdm(range(n - 1), desc='fb_consistency'):
-        mv0_raw = read(folder_mv0[i],   'flo').astype(np.float32)
-        mv1_raw = read(folder_mv1[i+1], 'flo').astype(np.float32)
+        mv0_raw = read(folder_mv0[i], 'flo').astype(np.float32)
+        mv1_raw = read(folder_mv1[i], 'flo').astype(np.float32)
 
         if mv0_raw.shape != mv1_raw.shape:
-            print(f'  [WARN] shape mismatch at frame {i}, skipped')
+            print(f'  [WARN] fb shape mismatch at frame {i}, skipped')
+            result[frame_name] = {'fb_epe_full': None, 'fb_epe_masked': None}
             continue
 
         h, w = mv0_raw.shape[:2]
@@ -207,57 +161,143 @@ def check_fb_consistency(folder_mv0, folder_mv1, folder_mask):
         mv1  = mv1_raw.copy(); mv1[..., 0] *= w; mv1[..., 1] *= h
 
         diff    = mv0 + mv1
-        epe_map = np.sqrt((diff ** 2).sum(-1))   # [H, W]
+        epe_map = np.sqrt((diff ** 2).sum(-1))
 
         epe_full   = float(epe_map.mean())
         epe_masked = None
-        mask_ratio = None
 
         if folder_mask is not None and i < len(folder_mask):
             mask = load_mask(folder_mask[i])
             if mask.shape[:2] != (h, w):
                 import cv2
-                mask = cv2.resize(mask, (w, h),
-                                  interpolation=cv2.INTER_NEAREST)
+                mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
             mask_bool  = mask.astype(bool)
-            mask_ratio = float(mask.mean())
             epe_masked = float(epe_map[mask_bool].mean()) if mask_bool.any() else None
-            if epe_masked is not None:
-                epe_masked_list.append(epe_masked)
-            mask_ratio_list.append(mask_ratio)
 
-        epe_full_list.append(epe_full)
-
-        errors[f'frame_{i:06d}'] = {
+        result[frame_name] = {
             'fb_epe_full':   round(epe_full,   6),
             'fb_epe_masked': round(epe_masked, 6) if epe_masked is not None else None,
-            'mask_ratio':    round(mask_ratio, 4) if mask_ratio is not None else None,
         }
 
-    metrics = {
-        'n_pairs': n - 1,
-        'n_valid': len(epe_full_list),
-        # 原始指标（全图）
-        'fb_epe_full_avg': round(float(np.mean(epe_full_list)),  6) if epe_full_list else None,
-        'fb_epe_full_min': round(float(np.min(epe_full_list)),   6) if epe_full_list else None,
-        'fb_epe_full_max': round(float(np.max(epe_full_list)),   6) if epe_full_list else None,
-        # mask 区域指标
-        'fb_epe_masked_avg': round(float(np.mean(epe_masked_list)), 6) if epe_masked_list else None,
-        'fb_epe_masked_min': round(float(np.min(epe_masked_list)),  6) if epe_masked_list else None,
-        'fb_epe_masked_max': round(float(np.max(epe_masked_list)),  6) if epe_masked_list else None,
-        # mask 覆盖占比
-        'mask_ratio_avg': round(float(np.mean(mask_ratio_list)), 4) if mask_ratio_list else None,
-        'mask_ratio_max': round(float(np.max(mask_ratio_list)),  4) if mask_ratio_list else None,
-        # 逐帧明细
-        'fb_epe_per_pair': errors,
+    return result
+
+
+def merge_and_judge(frames: dict, fb_map: dict, args) -> tuple:
+    """
+    1. 合并 fb_epe 进 frames
+    2. 用场景内所有有效帧的均值和标准差计算动态阈值
+       psnr_masked  异常条件：< mean - k_sigma * std
+       fb_epe_masked 异常条件：> mean + k_sigma * std
+    3. 逐帧打标，汇总 summary
+    """
+    # ── Step 1: 合并 fb_epe ──────────────────────────────────────────
+    for fname, rec in frames.items():
+        if not rec['boundary'] and fname in fb_map:
+            rec['fb_epe_full']   = fb_map[fname]['fb_epe_full']
+            rec['fb_epe_masked'] = fb_map[fname]['fb_epe_masked']
+
+    # ── Step 2: 收集有效帧的指标，计算场景统计量 ─────────────────────
+    psnr_masked_vals  = []
+    epe_masked_vals   = []
+    psnr_full_vals    = []
+    epe_full_vals     = []
+
+    for rec in frames.values():
+        if rec['boundary']:
+            continue
+        if rec['psnr_full']    is not None: psnr_full_vals.append(rec['psnr_full'])
+        if rec['psnr_masked']  is not None: psnr_masked_vals.append(rec['psnr_masked'])
+        if rec['fb_epe_full']  is not None: epe_full_vals.append(rec['fb_epe_full'])
+        if rec['fb_epe_masked'] is not None: epe_masked_vals.append(rec['fb_epe_masked'])
+
+    def scene_stats(vals):
+        if not vals:
+            return None, None, None, None
+        a = np.array(vals, dtype=np.float64)
+        return float(a.mean()), float(a.std()), float(a.min()), float(a.max())
+
+    pm_mean, pm_std, pm_min, pm_max = scene_stats(psnr_masked_vals)
+    em_mean, em_std, em_min, em_max = scene_stats(epe_masked_vals)
+
+    # 动态阈值：均值 ± k_sigma 倍标准差
+    k = args.k_sigma
+    psnr_thr = (pm_mean - k * pm_std) if (pm_mean is not None and pm_std is not None) else None
+    epe_thr  = (em_mean + k * em_std) if (em_mean is not None and em_std is not None) else None
+
+    dynamic_thresholds = {
+        'k_sigma':              k,
+        'psnr_masked_mean':     round(pm_mean, 4) if pm_mean is not None else None,
+        'psnr_masked_std':      round(pm_std,  4) if pm_std  is not None else None,
+        'psnr_masked_thr':      round(psnr_thr,4) if psnr_thr is not None else None,
+        'fb_epe_masked_mean':   round(em_mean, 4) if em_mean is not None else None,
+        'fb_epe_masked_std':    round(em_std,  4) if em_std  is not None else None,
+        'fb_epe_masked_thr':    round(epe_thr, 4) if epe_thr is not None else None,
     }
-    return metrics
+
+    # ── Step 3: 逐帧异常判断 ─────────────────────────────────────────
+    abnormal_frames = []
+
+    for rec in frames.values():
+        if rec['boundary']:
+            continue
+
+        reasons = []
+
+        if psnr_thr is not None and rec['psnr_masked'] is not None:
+            if rec['psnr_masked'] < psnr_thr:
+                reasons.append(
+                    f'psnr_masked={rec["psnr_masked"]:.2f} < '
+                    f'scene_mean-{k}σ ({psnr_thr:.2f})'
+                )
+
+        if epe_thr is not None and rec['fb_epe_masked'] is not None:
+            if rec['fb_epe_masked'] > epe_thr:
+                reasons.append(
+                    f'fb_epe_masked={rec["fb_epe_masked"]:.2f} > '
+                    f'scene_mean+{k}σ ({epe_thr:.2f})'
+                )
+
+        rec['abnormal']         = len(reasons) > 0
+        rec['abnormal_reasons'] = reasons
+
+        if rec['abnormal']:
+            abnormal_frames.append({
+                'frame':             rec['frame'],
+                'index':             rec['index'],
+                'psnr_masked':       rec['psnr_masked'],
+                'fb_epe_masked':     rec['fb_epe_masked'],
+                'abnormal_reasons':  reasons,
+            })
+
+    # ── Step 4: 汇总 summary ─────────────────────────────────────────
+    def safe_stats(vals):
+        if not vals:
+            return {'avg': None, 'min': None, 'max': None, 'std': None}
+        a = np.array(vals)
+        return {
+            'avg': round(float(a.mean()), 4),
+            'std': round(float(a.std()),  4),
+            'min': round(float(a.min()),  4),
+            'max': round(float(a.max()),  4),
+        }
+
+    summary = {
+        'n_frames':          len(frames),
+        'n_valid':           len(psnr_full_vals),
+        'n_abnormal':        len(abnormal_frames),
+        'psnr_full':         safe_stats(psnr_full_vals),
+        'psnr_masked':       safe_stats(psnr_masked_vals),
+        'fb_epe_full':       safe_stats(epe_full_vals),
+        'fb_epe_masked':     safe_stats(epe_masked_vals),
+        'dynamic_thresholds': dynamic_thresholds,
+    }
+
+    return summary, abnormal_frames
 
 
 def process_folder(folder, args):
     image_name = 'video' if args.hdr else 'image'
 
-    # 找 image 文件夹
     img_dir = os.path.join(folder, image_name)
     if not os.path.isdir(img_dir):
         img_dir = folder
@@ -266,7 +306,6 @@ def process_folder(folder, args):
         print(f'[SKIP] 无图像文件: {folder}')
         return
 
-    # 找 mv1（必须有）
     mv1_name   = get_mv_name(folder, 'mv1')
     mv1_dir    = os.path.join(folder, mv1_name)
     folder_mv1 = jhelp_file(mv1_dir) if os.path.isdir(mv1_dir) else None
@@ -274,69 +313,84 @@ def process_folder(folder, args):
         print(f'[SKIP] 找不到 mv1: {folder}')
         return
 
-    # 找 mv0（可选）
     mv0_name   = get_mv_name(folder, 'mv0')
     mv0_dir    = os.path.join(folder, mv0_name)
     folder_mv0 = jhelp_file(mv0_dir) if os.path.isdir(mv0_dir) else None
 
-    # 找 Mask（可选）
     mask_dir    = os.path.join(folder, 'Mask')
     folder_mask = jhelp_file(mask_dir) if os.path.isdir(mask_dir) else None
     if folder_mask:
         print(f'  [Mask] 已找到 {len(folder_mask)} 个 mask 文件')
         assert len(folder_mask) == len(folder_image), \
-            f'Mask({len(folder_mask)}) 和 image({len(folder_image)}) 数量不一致: {folder}'
+            f'Mask({len(folder_mask)}) 和 image({len(folder_image)}) 数量不一致'
     else:
         print('  [Mask] 未找到 Mask 文件夹，仅计算全图指标')
 
     assert len(folder_image) == len(folder_mv1), \
-        f'image({len(folder_image)}) 和 mv1({len(folder_mv1)}) 数量不一致: {folder}'
+        f'image({len(folder_image)}) 和 mv1({len(folder_mv1)}) 数量不一致'
     if folder_mv0:
         assert len(folder_image) == len(folder_mv0), \
-            f'image({len(folder_image)}) 和 mv0({len(folder_mv0)}) 数量不一致: {folder}'
+            f'image({len(folder_image)}) 和 mv0({len(folder_mv0)}) 数量不一致'
 
-    save_base   = os.path.join(folder, 'immc')
-    all_metrics = {
-        'folder':      folder,
-        'has_mask':    folder_mask is not None,
-    }
+    save_base = os.path.join(folder, 'immc')
 
-    # ── from1 ────────────────────────────────────────────────────────
     print('  运行 from1...')
-    m1 = run_immc(folder_image, folder_mv1, folder_mask,
-                  os.path.join(save_base, 'from1'), args, direction='from1')
-    per_frame_m1 = m1.pop('psnr_per_frame')
-    all_metrics['from1'] = m1
-    all_metrics['from1_psnr_per_frame'] = per_frame_m1
-    print(f'  from1  psnr_full={m1["psnr_full_avg"]}  '
-          f'psnr_masked={m1["psnr_masked_avg"]}  '
-          f'mask_ratio={m1["mask_ratio_avg"]}')
+    frames_m1 = run_immc(folder_image, folder_mv1, folder_mask,
+                         os.path.join(save_base, 'from1'), args, direction='from1')
 
-    # ── from0（若有 mv0）─────────────────────────────────────────────
+    frames_m0 = None
+    fb_map    = {}
+
     if folder_mv0:
         print('  运行 from0...')
-        m0 = run_immc(folder_image, folder_mv0, folder_mask,
-                      os.path.join(save_base, 'from0'), args, direction='from0')
-        per_frame_m0 = m0.pop('psnr_per_frame')
-        all_metrics['from0'] = m0
-        all_metrics['from0_psnr_per_frame'] = per_frame_m0
-        print(f'  from0  psnr_full={m0["psnr_full_avg"]}  '
-              f'psnr_masked={m0["psnr_masked_avg"]}  '
-              f'mask_ratio={m0["mask_ratio_avg"]}')
-
-        # ── fb_consistency ────────────────────────────────────────────
-        print('  计算 fb_consistency...')
-        fb = check_fb_consistency(folder_mv0, folder_mv1, folder_mask)
-        per_pair = fb.pop('fb_epe_per_pair')
-        all_metrics['fb_consistency'] = fb
-        all_metrics['fb_epe_per_pair'] = per_pair
-        print(f'  fb_epe_full={fb["fb_epe_full_avg"]}  '
-              f'fb_epe_masked={fb["fb_epe_masked_avg"]}  '
-              f'mask_ratio={fb["mask_ratio_avg"]}')
+        frames_m0 = run_immc(folder_image, folder_mv0, folder_mask,
+                             os.path.join(save_base, 'from0'), args, direction='from0')
+        print('  计算逐帧 fb_epe...')
+        fb_map = calc_fb_per_frame(folder_mv0, folder_mv1, folder_mask, folder_image)
     else:
-        print('  [INFO] 无 mv0，跳过 from0 和 fb_consistency')
+        print('  [INFO] 无 mv0，跳过 from0 和 fb_epe')
 
-    save_metrics(save_base, all_metrics)
+    summary_m1, abnormal_m1 = merge_and_judge(frames_m1, fb_map, args)
+    thr1 = summary_m1['dynamic_thresholds']
+    print(f'  from1  psnr_masked={summary_m1["psnr_masked"]["avg"]}  '
+          f'(thr<{thr1["psnr_masked_thr"]})  '
+          f'fb_epe_masked={summary_m1["fb_epe_masked"]["avg"]}  '
+          f'(thr>{thr1["fb_epe_masked_thr"]})  '
+          f'异常帧={summary_m1["n_abnormal"]}')
+
+    output = {
+        'folder':   folder,
+        'has_mask': folder_mask is not None,
+        'from1': {
+            'summary':         summary_m1,
+            'abnormal_frames': abnormal_m1,
+            'frames':          list(frames_m1.values()),
+        },
+    }
+
+    if frames_m0 is not None:
+        summary_m0, abnormal_m0 = merge_and_judge(frames_m0, fb_map, args)
+        thr0 = summary_m0['dynamic_thresholds']
+        print(f'  from0  psnr_masked={summary_m0["psnr_masked"]["avg"]}  '
+              f'(thr<{thr0["psnr_masked_thr"]})  '
+              f'fb_epe_masked={summary_m0["fb_epe_masked"]["avg"]}  '
+              f'(thr>{thr0["fb_epe_masked_thr"]})  '
+              f'异常帧={summary_m0["n_abnormal"]}')
+        output['from0'] = {
+            'summary':         summary_m0,
+            'abnormal_frames': abnormal_m0,
+            'frames':          list(frames_m0.values()),
+        }
+
+    save_metrics(save_base, output)
+
+    all_abnormal = abnormal_m1 + (abnormal_m0 if frames_m0 else [])
+    if all_abnormal:
+        print(f'\n  ⚠ 共发现 {len(all_abnormal)} 个异常帧：')
+        for rec in all_abnormal[:10]:
+            print(f'    [{rec["index"]:04d}] {rec["frame"]}  {rec["abnormal_reasons"]}')
+        if len(all_abnormal) > 10:
+            print(f'    ... 更多见 metrics.json')
 
 
 # ── 主函数 ────────────────────────────────────────────────────────────
@@ -345,6 +399,10 @@ def main():
     parser.add_argument('--path', '--root', required=True, help='根目录')
     parser.add_argument('--hdr',   action='store_true', help='使用 HDR 图像')
     parser.add_argument('--debug', action='store_true', help='Debug 模式')
+    parser.add_argument('--k_sigma', default=2.0, type=float,
+                        help='异常判定的标准差倍数 k，默认 2.0\n'
+                             '  psnr_masked  < mean - k*std → 异常\n'
+                             '  fb_epe_masked > mean + k*std → 异常')
     args = parser.parse_args()
 
     folders = find_valid_folders(args.path)
@@ -352,7 +410,7 @@ def main():
         print(f'[ERROR] 未找到包含 image + mv1 的子文件夹: {args.path}')
         return
 
-    print(f'找到 {len(folders)} 个有效文件夹')
+    print(f'找到 {len(folders)} 个有效文件夹  k_sigma={args.k_sigma}')
     for folder in folders:
         print(f'\n处理: {folder}')
         try:
