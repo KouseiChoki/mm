@@ -6,11 +6,11 @@ Pillow
 scikit-image==0.24.0
 scikit-learn==1.6.1
 scipy==1.13.1
-torch
-torchvision
+torch==2.8.0
+torchvision==0.23.0
 tqdm==4.62.3
 yacs==0.1.8
-opencv-python
+opencv-python==4.5.5.62
 imageio
 timm==0.6.13
 OpenEXR
