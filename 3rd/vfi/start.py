@@ -210,6 +210,7 @@ def main():
     parser.add_argument('--root', '--path', required=True, type=str)
     parser.add_argument('--output',      required=True, type=str)
     parser.add_argument('--scale',       default=0, type=float)
+    parser.add_argument('--timestep',       default=0.5, type=float)
     parser.add_argument('--output_mode', default='image', type=str,
                         choices=['image', 'video', 'both'])
     parser.add_argument('--fps',         default=24, type=float)
@@ -258,7 +259,7 @@ def main():
         # 推理
         with torch.no_grad():
             mid, flow, mask, merged, res, warp0, warp1 = model.inference(
-                I0_, I2_, True, TTA=TTA, fast_TTA=TTA, scale=args.scale
+                I0_, I2_, True, TTA=TTA, fast_TTA=TTA, scale=args.scale,timestep=args.timestep
             )
 
         mid_np = padder.unpad(mid)[0].detach().cpu().numpy().transpose(1, 2, 0)
