@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2026-07-01 13:15:36
+LastEditTime: 2026-07-01 15:23:45
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -572,10 +572,10 @@ def check_type(exr): #not finished, only check acescg and rec709 now 2024/04/29
                 loss = loss_
                 dtype = item
     elif 'unreal/colorSpace/destination' in exr.header():
-        if 'aces' in str(exr.header()['unreal/colorSpace/destination'].lower()): #0701 ADD
-            dtype = 'acescg'
         if 'acescg' in str(exr.header()['unreal/colorSpace/destination'].lower()):
             dtype = 'acescg'
+    if 'pw_prm' in dtype.lower():#2026.0701add
+        dtype = 'acescg'
     assert dtype.lower() in ['rec709','acescg'],f'not supported algorithm {dtype}'
     return dtype
 
