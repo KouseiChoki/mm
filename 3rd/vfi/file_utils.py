@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2024-07-09 16:05:01
+LastEditTime: 2026-04-21 16:51:27
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -36,6 +36,7 @@ import os
 import Imath,OpenEXR
 import array
 from collections import defaultdict
+# from conversion_tools.exr_processing.color_convertion.colorutil import Color_transform
 cv2.setNumThreads(0)
 cv2.ocl.setUseOpenCL(False)
 FLOAT = Imath.PixelType(Imath.PixelType.FLOAT)
@@ -64,12 +65,20 @@ _default_channel_names = {
 }
 TAG_CHAR = np.array([202021.25], np.float32)
 
-def jhelp(c):
-	return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
-def jhelp_folder(c):
-    return list(filter(lambda x:os.path.isdir(x),jhelp(c)))
-def jhelp_file(c):
-    return list(filter(lambda x:not os.path.isdir(x),jhelp(c)))
+def extract_number(file_path):
+    file_name = os.path.basename(file_path)  # 获取文件名
+    number = re.findall(r'\d+', file_name)   # 提取文件名中的数字
+    return int(number[-1]) if number else 0   # 返回数字用于排序
+def jhelp(c,restrict=False):
+    if restrict:
+        return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c),key=extract_number)))]
+    else:
+	    return [os.path.join(c,i) for i in list(filter(lambda x:x[0]!='.',sorted(os.listdir(c))))]
+def jhelp_folder(c,restrict=False):
+    return list(filter(lambda x:os.path.isdir(x),jhelp(c,restrict)))
+def jhelp_file(c,restrict=True):
+    return list(filter(lambda x:not os.path.isdir(x),jhelp(c,restrict)))
+    
 def mkdir(path):
     if  not os.path.exists(path):
         os.makedirs(path,exist_ok=True)
@@ -329,7 +338,7 @@ def mvread2(path):
 
 def read(path,type='flo',lut_file=None,self_mask=False,OPENEXR=True,Unrealmode=False,color_space=None):
     mvr = mvread3 if OPENEXR else mvread
-    if path == None or path.lower()=='none':
+    if path is None or path.lower()=='none' or not os.path.isfile(path):
         return None
     res = None
     if type.lower() == 'flo':
@@ -376,9 +385,11 @@ def read(path,type='flo',lut_file=None,self_mask=False,OPENEXR=True,Unrealmode=F
             res = LUT.apply(tmp,interpolator=colour.algebra.table_interpolation_trilinear)*255
         else:
             if '.exr' in path:
-                res = mvr(path)
+              res = mvr(path)
+            elif '.tif' in path:
+              res = cv2.imread(path,-1)[...,::-1]/65535
             else:
-                res = cv2.imread(path)[...,::-1]/255
+              res = cv2.imread(path)[...,::-1]/255
         if type.lower() == 'image':
            res = (np.clip(res,0,1)*255).astype('uint8')
         res = res[...,:3]
@@ -526,7 +537,7 @@ def mvwrite2(path,flow,compress='piz',precision = FLOAT):
         cpm = NO_COMPRESSION
     mvwrite_helper(path, flow, precision = precision, compression = cpm)
 
-def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
+def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'half'):
     if precision.lower() == 'half':
       precision_ = HALF
     elif precision.lower() == 'uint':
@@ -544,6 +555,18 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
         writer(path,flow,compress,precision_)
     elif '.flo' in path:
         write_flo_file(flow[...,:2],path)
+    elif '.tif' in path:
+        if len(flow.shape) == 2:
+          flow = np.repeat(flow[...,None],3,axis=2)
+        if flow.shape[2] == 2:
+          flow = np.insert(flow,2,0,axis=2)
+        flow = np.clip(flow,-1,1)
+        flow *= 65535
+        flow = flow.astype('uint16')
+        if flow.shape[2] ==4:
+          Image.fromarray(flow).save(path)
+        else:
+          cv2.imwrite(path,flow[...,:3][...,::-1])
     else:
         if len(flow.shape) == 2:
             flow = np.repeat(flow[...,None],3,axis=2)
@@ -561,7 +584,10 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'float'):
 def write(path,flow,compress='piz'):
     if flow is None or path is None:
       return
-    mvwrite(path,flow,compress)
+    if type(path) == str:
+      mvwrite(path,flow,compress)
+    else:
+      mvwrite(flow,path,compress)
 
     #front masked area set to 0.5 and back to 1 
 def save_mv_file(save_name,opt,valid,args):
@@ -917,3 +943,31 @@ def yuv_from_picture(filename, height, width):
       
     fp.close()
     return img
+
+
+def find_folders_with_subfolder(root_path, keys = [], path_keys = [] ,excs = [] ,path_excs =[]):
+    """
+    Find all folders in the root_path that contain a subfolder with the name subfolder_name.
+    """
+    folders_with_subfolder = []
+
+    # Walk through the directory
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        # Check if the subfolder_name is in the list of directories
+        flag = True
+        for key in keys:
+            if key not in dirnames:
+                flag = False
+        for path_key in path_keys:
+            if path_key not in dirpath:
+                flag = False
+        for exc in excs:
+            if exc in dirnames:
+                flag = False
+        for exc in path_excs:
+            if exc in dirpath:
+                flag = False
+        if flag:
+            folders_with_subfolder.append(dirpath)
+
+    return folders_with_subfolder
