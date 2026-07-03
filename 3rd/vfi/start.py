@@ -224,7 +224,7 @@ def main():
 
     assert args.model in ['VFIMamba_S', 'VFIMamba', 'VFIMamba_KouSei'], 'Model not exists!'
 
-    TTA = False
+    TTA = True
     fast_TTA = False
 
     # 模型

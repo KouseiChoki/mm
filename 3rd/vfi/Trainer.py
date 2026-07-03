@@ -211,6 +211,6 @@ class Model:
             return self.unpad(preds, pr, pb),None,None,None,None,None,None
         _,_,_,_,_,_, pred2 = self.net(imgs.flip(2).flip(3), timestep=timestep,
                                   scale=scale, local=local)
-        return self.unpad((pred + pred2.flip(2).flip(3)) / 2, pr, pb),flow_list[-1], mask_list[-1],merged[-1],res,warp0,warp1
+        return self.unpad((preds + pred2.flip(2).flip(3)) / 2, pr, pb),flow_list[-1], mask_list[-1],merged[-1],res,warp0,warp1
 
 
