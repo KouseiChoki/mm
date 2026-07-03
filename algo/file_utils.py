@@ -2,7 +2,7 @@
 Author: Qing Hong
 FirstEditTime: This function has been here since 1987. DON'T FXXKING TOUCH IT
 LastEditors: Qing Hong
-LastEditTime: 2026-04-21 14:18:22
+LastEditTime: 2026-07-03 11:05:51
 Description: 
          ▄              ▄
         ▌▒█           ▄▀▒▌     
@@ -561,7 +561,7 @@ def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'half'):
         if flow.shape[2] == 2:
           flow = np.insert(flow,2,0,axis=2)
         flow = np.clip(flow,-1,1)
-        flow *= 65535
+        flow = ((flow + 1) / 2 * 65535).astype('uint16')
         flow = flow.astype('uint16')
         if flow.shape[2] ==4:
           Image.fromarray(flow).save(path)
