@@ -10,7 +10,6 @@ import glob
 import re
 import torch.nn.functional as F
 import requests
-sys.path.append('.')
 import config as cfg
 from Trainer import Model
 from file_utils import read, write,mkdir
@@ -226,6 +225,7 @@ def main():
     assert args.model in ['VFIMamba_S', 'VFIMamba', 'VFIMamba_KouSei'], 'Model not exists!'
 
     TTA = False
+    fast_TTA = False
 
     # 模型
     model = build_model(args)
@@ -259,7 +259,7 @@ def main():
         # 推理
         with torch.no_grad():
             mid, flow, mask, merged, res, warp0, warp1 = model.inference(
-                I0_, I2_, True, TTA=TTA, fast_TTA=TTA, scale=args.scale,timestep=args.timestep
+                I0_, I2_, True, TTA=TTA, fast_TTA=fast_TTA, scale=args.scale,timestep=args.timestep
             )
 
         mid_np = padder.unpad(mid)[0].detach().cpu().numpy().transpose(1, 2, 0)
