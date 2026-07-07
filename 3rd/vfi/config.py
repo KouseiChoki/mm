@@ -68,7 +68,7 @@ MODEL_CONFIG = {
     'LOGNAME': LOG,
     'MODEL_TYPE': (mamba_extractor, mamba_estimation),
     'MODEL_ARCH': init_model_config(
-        F = 24, #32
+        F = 32, #32
         depth = [2, 2, 2, 3, 3],
         M = False,
         version = 1

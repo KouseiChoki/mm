@@ -137,17 +137,20 @@ def define_model(args):
 
 # ── 模型初始化 ────────────────────────────────────────────────────────
 def build_model(args):
-    if args.model == 'VFIMamba':
+    if 'vfimamba' in args.algo.lower():
         cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMamba'
         cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
             F=32, depth=[2, 2, 2, 3, 3]
         )
-    elif args.model == 'VFIMamba_KouSei':
+    elif 'kousei' in args.algo.lower():
         cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMambaKouSei'
         cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-            F=24, depth=[2, 2, 2, 3, 3]
+            F=32, depth=[2, 2, 2, 3, 3]
         )
-    cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1 if args.old_version else 2
+        cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1
+    else:
+        raise NotImplementedError('wrong algorithm')
+        sys.exit(0)
 
     model = Model(-1)
     args.fp = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../checkpoints"))
@@ -203,8 +206,6 @@ def dump_debug_data(save_folder, mid_idx, ext,
 # ── 主函数 ────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model',       default='VFIMamba_KouSei', type=str,
-                        choices=['VFIMamba_S', 'VFIMamba', 'VFIMamba_KouSei'])
     parser.add_argument('--algo',        default='VFIKousei_TEST', type=str)
     parser.add_argument('--root', '--path', required=True, type=str)
     parser.add_argument('--output',      required=True, type=str)
@@ -221,8 +222,6 @@ def main():
     parser.add_argument('--old_version', action='store_true')
     parser.add_argument('--server',      default='http://10.35.180.69:80', type=str)
     args = parser.parse_args()
-
-    assert args.model in ['VFIMamba_S', 'VFIMamba', 'VFIMamba_KouSei'], 'Model not exists!'
 
     TTA = True
     fast_TTA = False
