@@ -215,7 +215,7 @@ def main():
                         choices=['image', 'video', 'both'])
     parser.add_argument('--fps',         default=24, type=float)
     parser.add_argument('--max_w',         default=4096, type=int)
-    parser.add_argument('--max_h',         default=1716, type=int)
+    parser.add_argument('--max_h',         default=4096, type=int)
     parser.add_argument('--video_ext',   default='mp4', type=str,
                         choices=['mp4', 'avi'])
     parser.add_argument('--dump_data',   action='store_true')

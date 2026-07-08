@@ -23,14 +23,17 @@ VFI Training Data Preparation Script (两阶段低内存版)
     brew install ffmpeg          # 处理 10bit / y4m
 
 用法:
-    # 完整两阶段
-    python prepare_vfi_data.py --input_dir /raw --output_dir /out --width 448 --height 256
+    # 完整两阶段（默认不做场景检测，整段视频 → scene_0000）
+    python prepare_vfi_data.py --input_dir /raw --output_dir /out
+
+    # 启用场景切换检测并按场景分目录
+    python prepare_vfi_data.py --input_dir /raw --output_dir /out --scene_change_detection
 
     # 只跑阶段一（解码）
     python prepare_vfi_data.py ... --stage decode
 
     # 只跑阶段二（分类，阶段一已完成）
-    python prepare_vfi_data.py ... --stage classify
+    python prepare_vfi_data.py ... --stage classify --scene_change_detection
 """
 
 import re
@@ -164,7 +167,7 @@ def decode_video_ffmpeg_pipe(
 def decode_video_opencv_pipe(
     video_path: Path,
     out_dir: Path,
-    resize :bool,
+    resize: bool,
     width: int,
     height: int,
     fmt: str,
@@ -305,10 +308,12 @@ def stage_classify(
     threshold: float,
     min_scene_frames: int,
     use_symlink: bool,
+    scene_change_detection: bool = False,
 ) -> None:
     """
-    阶段二：遍历 raw_dir 下每个视频目录，
-    读小图做场景检测，将帧按场景整理到 scene_dir_root。
+    阶段二：遍历 raw_dir 下每个视频目录，整理帧到 scene_dir_root。
+    scene_change_detection=True  时：读小图做场景检测，按场景分目录；
+    scene_change_detection=False 时：跳过检测，整段视频整理为单一 scene_0000。
     """
     video_dirs = sorted(p for p in raw_dir.iterdir() if p.is_dir())
     if not video_dirs:
@@ -317,7 +322,8 @@ def stage_classify(
 
     logger.info(
         f"[阶段二] {len(video_dirs)} 个视频目录 → {scene_dir_root}\n"
-        f"  缩略图尺寸={thumb_size}  阈值={threshold}  "
+        f"  场景检测={'开' if scene_change_detection else '关'}  "
+        f"缩略图尺寸={thumb_size}  阈值={threshold}  "
         f"最少帧={min_scene_frames}  symlink={use_symlink}"
     )
 
@@ -335,9 +341,13 @@ def stage_classify(
 
         logger.info(f"  {vdir.name}: {len(frame_paths)} 帧")
 
-        boundaries = detect_scene_boundaries(frame_paths, thumb_size, threshold)
-        n_raw_scenes = len(boundaries) - 1
-        scene_out    = scene_dir_root / vdir.name
+        if scene_change_detection:
+            boundaries = detect_scene_boundaries(frame_paths, thumb_size, threshold)
+        else:
+            boundaries = [0, len(frame_paths)]  # 整段视频作为单一场景
+
+        n_raw_scenes  = len(boundaries) - 1
+        scene_out     = scene_dir_root / vdir.name
         scene_counter = 0
 
         for start, end in zip(boundaries[:-1], boundaries[1:]):
@@ -377,23 +387,24 @@ def run(args: argparse.Namespace) -> None:
             height      = args.height,
             fmt         = args.format,
             jpg_quality = args.jpg_quality,
-            resize = args.resize,
+            resize      = args.resize,
         )
 
     if args.stage in ("classify", "both"):
         stage_classify(
-            raw_dir          = raw_dir,
-            scene_dir_root   = scene_dir,
-            thumb_size       = thumb_size,
-            threshold        = args.threshold,
-            min_scene_frames = args.min_scene_frames,
-            use_symlink      = args.symlink,
+            raw_dir                = raw_dir,
+            scene_dir_root         = scene_dir,
+            thumb_size             = thumb_size,
+            threshold              = args.threshold,
+            min_scene_frames       = args.min_scene_frames,
+            use_symlink            = args.symlink,
+            scene_change_detection = args.scene_change_detection,
         )
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="VFI 两阶段数据预处理：①解码写盘  ②小图场景检测分类"
+        description="VFI 两阶段数据预处理：①解码写盘  ②整理（可选场景检测分类）"
     )
     p.add_argument("--input_dir",        type=str, required=True,
                    help="原始视频根目录")
@@ -404,25 +415,27 @@ def parse_args() -> argparse.Namespace:
                    help="执行阶段 (默认 both)")
 
     g1 = p.add_argument_group("阶段一：解码参数")
-    g1.add_argument("--resize",         action="store_true",)
+    g1.add_argument("--resize",          action="store_true",
+                    help="启用resize到目标分辨率；不加则保留原始分辨率")
     g1.add_argument("--width",           type=int, default=1920,  help="目标宽度")
     g1.add_argument("--height",          type=int, default=1080,  help="目标高度")
     g1.add_argument("--format",          type=str, default="png", choices=["png", "jpg"],
                     help="帧保存格式")
     g1.add_argument("--jpg_quality",     type=int, default=100,   help="jpg 质量 1~100")
 
-    g2 = p.add_argument_group("阶段二：场景检测参数")
+    g2 = p.add_argument_group("阶段二：整理/场景检测参数")
+    g2.add_argument("--scene_change_detection", action="store_true",
+                    help="启用场景切换检测并按场景分目录；不加则整段视频整理为单一场景 (scene_0000)")
     g2.add_argument("--thumb_width",     type=int,   default=64,
                     help="场景检测用缩略图宽度（越小越快，默认 64）")
     g2.add_argument("--thumb_height",    type=int,   default=36,
                     help="场景检测用缩略图高度（默认 36）")
     g2.add_argument("--threshold",       type=float, default=8.0,
                     help="帧差阈值（小图上的均值差，默认 8.0）")
-    g2.add_argument("--min_scene_frames",type=int,   default=5,
+    g2.add_argument("--min_scene_frames", type=int,  default=5,
                     help="场景最少帧数，低于此值丢弃（默认 5）")
     g2.add_argument("--symlink",         action="store_true",
                     help="用软链接代替移动文件（保留 raw_frames 原件）")
-    
 
     return p.parse_args()
 
