@@ -13,7 +13,7 @@ import requests
 import config as cfg
 from Trainer import Model
 from file_utils import read, write,mkdir
-
+torch._dynamo.config.recompile_limit = 1280
 
 # ── Padder ───────────────────────────────────────────────────────────
 class InputPadder:

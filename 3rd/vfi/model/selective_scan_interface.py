@@ -534,7 +534,7 @@ def selective_scan_compiled(
     global _compiled_chunked
     if _compiled_chunked is None:
         try:
-            _compiled_chunked = torch.compile(selective_scan_chunked, dynamic=True)
+            _compiled_chunked = torch.compile(selective_scan_chunked, dynamic=False)
         except Exception:
             # torch.compile not available in this build — fall back gracefully
             _compiled_chunked = selective_scan_chunked
@@ -544,4 +544,3 @@ def selective_scan_compiled(
 
 # Public alias used by feature_extractor.py (imported as selective_scan_fn)
 selective_scan_fn = selective_scan_compiled
-# selective_scan_fn = selective_scan_chunked
