@@ -543,4 +543,5 @@ def selective_scan_compiled(
 
 
 # Public alias used by feature_extractor.py (imported as selective_scan_fn)
-selective_scan_fn = selective_scan_compiled
+# selective_scan_fn = selective_scan_compiled
+selective_scan_fn = selective_scan_chunked
