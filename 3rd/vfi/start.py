@@ -163,7 +163,7 @@ def build_model(args):
 
 # ── pair 收集 ─────────────────────────────────────────────────────────
 def collect_pairs(root, out_root):
-    exts = ["*.png", "*.exr", "*.tif"]
+    exts = ["*.png", "*.exr", "*.tif","*.jpg"]
     seq_dict = defaultdict(list)
     for ext in exts:
         for f in glob.glob(os.path.join(root, "**", ext), recursive=True):
