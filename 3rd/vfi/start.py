@@ -189,10 +189,14 @@ def dump_debug_data(save_folder, mid_idx, ext,
         os.makedirs(os.path.join(save_folder, d), exist_ok=True)
 
     def to_np(t):
-        return padder.unpad(t)[0].detach().cpu().numpy().transpose(1, 2, 0)
+        if len(t.shape)==4:
+            tmp = padder.unpad(t)[0]
+        else:
+            tmp = padder.unpad(t)
+        return tmp.detach().cpu().numpy().transpose(1, 2, 0)
 
     flow_np  = flow[0].detach().cpu().numpy().transpose(1, 2, 0)
-    mv0, mv1 = flow_np[..., :2], flow_np[..., 2:]
+    mv0, mv1 = flow_np[..., 2:], flow_np[..., :2]
 
     write(os.path.join(save_folder, 'warp0',  f"{mid_idx:06d}{ext}"), to_np(warp0))
     write(os.path.join(save_folder, 'warp1',  f"{mid_idx:06d}{ext}"), to_np(warp1[0]))

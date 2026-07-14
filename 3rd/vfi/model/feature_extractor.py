@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import math
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-# from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, selective_scan_ref
-from model.selective_scan_interface import selective_scan_fn, selective_scan_ref
+from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, selective_scan_ref
+# from model.selective_scan_interface import selective_scan_fn, selective_scan_ref
 from einops import rearrange, repeat
 from typing import Optional, Callable
 from functools import partial
