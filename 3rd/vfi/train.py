@@ -27,7 +27,7 @@ from torch.cuda.amp import GradScaler, autocast
 
 import config as cfg
 from Trainer import Model
-from dataset import MixedTierDataset, TierDataset
+from kousei_dataset import MixedTierDataset, TierDataset
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -89,6 +89,52 @@ class SpikeDetector:
         return is_spike
 
 
+class AnomalyDumper:
+    """异常batch落盘: 图像(img0/gt/img1/pred) + flow_gt(.npy) + 元信息, 用于事后归因。"""
+
+    def __init__(self, dump_dir='anomaly_dumps', max_dumps=50):
+        self.dump_dir = dump_dir
+        self.max_dumps = max_dumps
+        self.count = 0
+        os.makedirs(dump_dir, exist_ok=True)
+
+    def dump(self, step, reason, frames, timestep, flow_gt, has_mv,
+             pred=None, loss=None, loss_flow=None):
+        """frames: [B,9,H,W] float 0~1 (device上); flow_gt: [B,4,H,W]; has_mv: [B]。"""
+        if self.count >= self.max_dumps:
+            if self.count == self.max_dumps:
+                print(f'[AnomalyDumper] 已达上限 {self.max_dumps}, 停止落盘')
+                self.count += 1
+            return
+        self.count += 1
+        d = os.path.join(self.dump_dir, f'step{step:07d}_{reason}')
+        os.makedirs(d, exist_ok=True)
+
+        import cv2
+        frames_np = (frames.detach().cpu().clamp(0, 1) * 255).byte().numpy()
+        pred_np = (pred.detach().cpu().clamp(0, 1) * 255).byte().numpy() \
+            if pred is not None else None
+        t_np = timestep.detach().cpu().numpy().reshape(-1)
+        hm_np = has_mv.detach().cpu().numpy().reshape(-1)
+
+        meta = [f'step={step} reason={reason} loss={loss} loss_flow={loss_flow}']
+        for b in range(frames_np.shape[0]):
+            for name, sl in (('img0', slice(0, 3)), ('img1', slice(3, 6)),
+                             ('gt', slice(6, 9))):
+                img = frames_np[b, sl].transpose(1, 2, 0)[..., ::-1]   # RGB→BGR
+                cv2.imwrite(os.path.join(d, f'b{b}_{name}.png'), img)
+            if pred_np is not None:
+                cv2.imwrite(os.path.join(d, f'b{b}_pred.png'),
+                            pred_np[b].transpose(1, 2, 0)[..., ::-1])
+            if hm_np[b] > 0:                                           # 仅有效mv落盘
+                np.save(os.path.join(d, f'b{b}_flow_gt.npy'),
+                        flow_gt[b].detach().cpu().numpy())
+            meta.append(f'b{b}: t={t_np[b]:.4f} has_mv={int(hm_np[b])}')
+        with open(os.path.join(d, 'meta.txt'), 'w') as f:
+            f.write('\n'.join(meta) + '\n')
+        print(f'[AnomalyDumper #{self.count}] {reason} → {d}')
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 评估
 # ─────────────────────────────────────────────────────────────────────────────
@@ -122,6 +168,9 @@ def train(C, restore_ckpt=None):
     writer = SummaryWriter(f'log/train_{exp}')
     spike_det = SpikeDetector(spike_ratio=mon['spike_ratio'],
                               spike_dir=mon['spike_dir'])
+    dumper = AnomalyDumper(dump_dir=mon.get('dump_dir', 'anomaly_dumps'),
+                           max_dumps=mon.get('dump_max', 50))
+    flow_dump_thresh = mon.get('flow_loss_dump_threshold', 30.0)
 
     use_amp = opt.get('amp', False) and torch.cuda.is_available()
     scaler = GradScaler(enabled=use_amp)
@@ -135,14 +184,9 @@ def train(C, restore_ckpt=None):
         F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'])
     model = Model(0, loss_type=m['loss_type'],
                   flow_loss_weight=m.get('flow_loss_weight', 0.0))
-    start_epoch, start_step = 0, 0
     if restore_ckpt:
-        start_epoch, start_step = model.load_model(restore_ckpt, resume=True)
-    step = start_step
-    # 种子按起始epoch偏移: 保证可复现性的同时, 续训不重放同一序列
-    effective_seed = seed + start_epoch * 10007
-    random.seed(effective_seed); np.random.seed(effective_seed)
-    torch.manual_seed(effective_seed)
+        model.load_model(restore_ckpt)
+        print(f'restore ckpt from {restore_ckpt}')
 
     # ── 数据 ────────────────────────────────────────────────────────────────
     lists_dir = d['lists_dir']
@@ -215,7 +259,16 @@ def train(C, restore_ckpt=None):
                 time_stamp = time.time()
 
                 loss_ema = loss if loss_ema is None else 0.98 * loss_ema + 0.02 * loss
-                # spike_det.check(loss, step, writer)
+                is_spike = spike_det.check(loss, step, writer)
+
+                # 异常样本落盘: flow loss超阈值 或 loss spike
+                if loss_flow > flow_dump_thresh:
+                    dumper.dump(step, f'flowloss{loss_flow:.0f}', frames, timestep,
+                                flow_gt, has_mv, pred=pred, loss=loss, loss_flow=loss_flow)
+                # elif is_spike:
+                #     dumper.dump(step, f'spike{loss / max(loss_ema, 1e-8):.1f}x',
+                #                 frames, timestep, flow_gt, has_mv,
+                #                 pred=pred, loss=loss, loss_flow=loss_flow)
 
                 if step % mon['log_every_steps'] == 0:
                     writer.add_scalar('loss/raw', loss, step)

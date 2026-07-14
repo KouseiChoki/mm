@@ -26,22 +26,22 @@ data:
     #- [400, 400]
   framesteps: [1, 2]
   t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
-  mv_prob: 0.5                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
+  mv_prob: 1                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
   mv_sign: [1, 1]              # !! 必须先用 verify_mv_convention.py 实证后填 !!
 
 # ── 训练阶段 (顺序执行, 配比可切换) ──────────────────────────────────────────
 phases:
   - name: base                 # Phase 1: easy+normal 为主
     epochs: 10000
-    ratios: {easy: 0.50, normal: 0, hard: 0, teacher: 0.50}
+    ratios: {easy: 0, normal: 0, hard: 0, teacher: 1}
   - name: hard_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
     epochs: 0
     ratios: {easy: 0.10, normal: 0.25, hard: 0.50, teacher: 0.15}
 
 # ── 优化 ─────────────────────────────────────────────────────────────────────
 optim:
-  lr_max: 1.0e-4
-  lr_min: 1.0e-5
+  lr_max: 2.5e-5
+  lr_min: 2.5e-6
   warmup_steps: 500
   finetune: false              # true: 沿用旧逻辑 lr/4
   amp: false                    # CUDA下启用FP16

@@ -1,14 +1,25 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, selective_scan_ref
-# from model.selective_scan_interface import selective_scan_fn, selective_scan_ref
 from einops import rearrange, repeat
 from typing import Optional, Callable
 from functools import partial
 
-import torch.nn.functional as F
+if torch.backends.mps.is_available():
+    from model.selective_scan_interface import selective_scan_fn, selective_scan_ref
+    _SCAN_BACKEND = 'mps_chunked'
+else:
+    try:
+        from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, selective_scan_ref
+        _SCAN_BACKEND = 'mamba_ssm_cuda'
+    except ImportError:
+        from model.selective_scan_interface import selective_scan_fn, selective_scan_ref
+        _SCAN_BACKEND = 'fallback_chunked'
+print(f'[selective_scan] backend = {_SCAN_BACKEND}')
+
+
 
 
 class ChannelAttention(nn.Module):

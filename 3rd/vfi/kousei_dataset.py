@@ -98,6 +98,8 @@ class TierDataset(Dataset):
                  t_half_prob: float = 0.6,
                  mv_prob: float = 0.5,
                  mv_sign: Tuple[int, int] = (1, 1),
+                 occ_alpha: float = 0.05,
+                 occ_beta: float = 1.0,
                  augment: bool = True):
         self.root = Path(root)
         self.split = split
@@ -106,6 +108,8 @@ class TierDataset(Dataset):
         self.t_half_prob = t_half_prob
         self.mv_prob = mv_prob
         self.mv_sign = mv_sign
+        self.occ_alpha = occ_alpha          # 遮挡判定: |mv0+mv1| < alpha*(|mv0|+|mv1|) + beta
+        self.occ_beta = occ_beta
         self.do_augment = augment and split == 'train'
 
         self.scenes: List[dict] = []
@@ -167,7 +171,10 @@ class TierDataset(Dataset):
 
     def _read_mv_pair(self, scene: dict, gt_path: Path,
                       h: int, w: int) -> Optional[np.ndarray]:
-        """读取 gt 帧的 mv1/mv0, 反归一化到像素。损坏/缺失返回 None (由上层降级处理)。"""
+        """读取 gt 帧的 mv1/mv0, 反归一化到像素, 并由双向对称性生成遮挡有效性mask。
+        返回 [H,W,5] = (mv1(2), mv0(2), valid(1)); 损坏/缺失返回 None。
+        valid=0 的像素为遮挡/uncover区: 该处flow无合法对应点, 监督在物理上病态,
+        由 Trainer 的逐像素加权EPE跳过。"""
         if not _HAS_FILE_UTILS:
             return None
         try:
@@ -184,8 +191,14 @@ class TierDataset(Dataset):
         for mv in (mv1, mv0):
             mv[..., 0] *= sx * w                                # 归一化 → 像素
             mv[..., 1] *= sy * h
+
+        # 遮挡mask: t=0.5线性运动下 mv0 ≈ -mv1; 不对称像素即遮挡/uncover区
+        sym = np.linalg.norm(mv1 + mv0, axis=-1)                # [H,W]
+        mag = np.linalg.norm(mv1, axis=-1) + np.linalg.norm(mv0, axis=-1)
+        valid = (sym < self.occ_alpha * mag + self.occ_beta).astype(np.float32)
+
         # 网络约定: flow[:, :2]=F_t→0=mv1(gt→上一帧),  flow[:,2:4]=F_t→1=mv0(gt→下一帧)
-        return np.concatenate([mv1, mv0], axis=-1)              # [H,W,4]
+        return np.concatenate([mv1, mv0, valid[..., None]], axis=-1)   # [H,W,5]
 
     # ── 采样 ────────────────────────────────────────────────────────────────
     def _pick_scene(self, index: int) -> dict:
@@ -212,26 +225,16 @@ class TierDataset(Dataset):
         return i0, ig, i0 + 2 * s, t, False
 
     # ── 增强 (与 mv 联动) ────────────────────────────────────────────────────
-    def _crop(self, arrs: List[np.ndarray], has_flow: bool = False):
-        """随机裁剪到 self.crop_hw; 源图不足时reflect-pad补齐。
-        返回 (arrs, mv_still_valid): pad过的样本flow监督失效。"""
+    def _crop(self, arrs: List[np.ndarray]) -> List[np.ndarray]:
         if self.crop_hw is None:
-            return arrs, True
+            return arrs
         h, w = self.crop_hw
         ih, iw = arrs[0].shape[:2]
-        mv_ok = True
-        if ih < h or iw < w:
-            ph, pw = max(h - ih, 0), max(w - iw, 0)
-            arrs = [cv2.copyMakeBorder(a, 0, ph, 0, pw, cv2.BORDER_REFLECT)
-                    for a in arrs]
-            if has_flow:
-                mv_ok = False                      # pad区flow无效, 丢弃监督
-            ih, iw = arrs[0].shape[:2]
-        if ih == h and iw == w:
-            return arrs, mv_ok
+        if ih <= h or iw <= w:
+            return arrs
         x = np.random.randint(0, ih - h + 1)
         y = np.random.randint(0, iw - w + 1)
-        return [a[x:x + h, y:y + w] for a in arrs], mv_ok
+        return [a[x:x + h, y:y + w] for a in arrs]
 
     def _augment(self, img0, gt, img1, t, mv):
         if random.random() < 0.5:                               # rotate180
@@ -240,12 +243,12 @@ class TierDataset(Dataset):
             img1 = cv2.rotate(img1, cv2.ROTATE_180)
             if mv is not None:
                 mv = cv2.rotate(mv, cv2.ROTATE_180)
-                mv = mv * -1.0                                  # 位移方向全部反转
+                mv[..., :4] = mv[..., :4] * -1.0                # 位移反转; valid通道(第5)不变
         if random.random() < 0.5:                               # 时序翻转
             img0, img1 = img1, img0
             t = 1.0 - t
             if mv is not None:
-                mv = mv[..., [2, 3, 0, 1]]                      # F_t→0 ↔ F_t→1
+                mv = mv[..., [2, 3, 0, 1, 4]]                   # F_t→0 ↔ F_t→1; valid不动
         return img0, gt, img1, t, mv
 
     # ── Dataset 接口 ────────────────────────────────────────────────────────
@@ -274,9 +277,9 @@ class TierDataset(Dataset):
             mv = self._read_mv_pair(scene, frames[ig], h, w)    # 读取失败→None
 
         arrs = [img0, gt, img1] + ([mv] if mv is not None else [])
-        arrs, mv_ok = self._crop(arrs, has_flow=(mv is not None))
+        arrs = self._crop(arrs)
         img0, gt, img1 = arrs[0], arrs[1], arrs[2]
-        mv = arrs[3] if (mv is not None and mv_ok) else None
+        mv = arrs[3] if mv is not None else None
 
         if self.do_augment:
             img0, gt, img1, t, mv = self._augment(img0, gt, img1, t, mv)
@@ -292,7 +295,7 @@ class TierDataset(Dataset):
             flow_gt = torch.from_numpy(np.ascontiguousarray(mv)).permute(2, 0, 1).float()
             has_mv = torch.tensor(1.0)
         else:
-            flow_gt = torch.zeros(4, h, w)
+            flow_gt = torch.zeros(5, h, w)                      # 第5通道valid=0
             has_mv = torch.tensor(0.0)
 
         return frames_t, timestep, flow_gt, has_mv

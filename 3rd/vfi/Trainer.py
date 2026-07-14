@@ -73,21 +73,19 @@ class Model:
 
     # ── checkpoint ────────────────────────────────────────────────────────────
 
-    def save_model(self, sp, epoch, step=0):
-        ckpt = {'net': self.net.state_dict(),
-                'optim': self.optimG.state_dict(),
-                'epoch': epoch, 'step': step}
-        torch.save(ckpt, ckpt_path)
+    def load_model(self, ckpt_path, rank=0, real=False):
+        self.net.load_state_dict(
+            convert(torch.load(ckpt_path, map_location='cpu')), strict=True
+        )
 
-    def load_model(self, ckpt_path, resume=False):
-        ckpt = torch.load(ckpt_path, map_location='cpu')
-        if 'net' in ckpt:                      # 新格式
-            self.net.load_state_dict(convert(ckpt['net']), strict=True)
-            if resume and 'optim' in ckpt:
-                self.optimG.load_state_dict(ckpt['optim'])
-            return ckpt.get('epoch', 0), ckpt.get('step', 0)
-        self.net.load_state_dict(convert(ckpt), strict=True)   # 旧格式兼容
-        return 0, 0
+    def save_model(self, sp, epoch, rank=0):
+        ckpt_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f'ckpt/{sp}/{self.name}_{str(epoch)}.pkl'
+        )
+        os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+        torch.save(self.net.state_dict(), ckpt_path)
+        print(f"model saved -> {ckpt_path}")
 
     # ── loss ──────────────────────────────────────────────────────────────────
 
@@ -99,18 +97,23 @@ class Model:
         return (pred - gt).abs().mean() + self.lap_loss(pred, gt)   # l1+lap
 
     @staticmethod
-    def _flow_epe_masked(flow_pred, flow_gt, has_mv):
+    def _flow_epe_masked(flow_pred, flow_gt, has_mv, epe_clamp=50.0):
         """
-        flow_pred/flow_gt : [B, 4, H, W] 像素位移 (前2通道 F_t→0, 后2通道 F_t→1)
-        has_mv            : [B] 1=该样本flow_gt有效
-        返回 masked EPE (仅在有效样本上平均); 无有效样本返回 0。
+        flow_pred : [B, 4, H, W] 像素位移 (前2通道 F_t→0, 后2通道 F_t→1)
+        flow_gt   : [B, 5, H, W] 前4通道同上, 第5通道为遮挡有效性mask
+                    (valid=0 的uncover区无合法对应点, 监督病态, 逐像素跳过)
+        has_mv    : [B] 1=该样本flow_gt有效
+        epe_clamp : 单像素EPE贡献上界 (mask漏网时的兜底, 压平病态梯度)
+        返回 双重mask (样本级has_mv × 像素级valid) 下的EPE均值。
         """
         n_valid = has_mv.sum()
         if n_valid < 1:
             return flow_pred.sum() * 0.0
-        epe0 = torch.norm(flow_pred[:, 0:2] - flow_gt[:, 0:2], dim=1)   # [B,H,W]
+        valid = flow_gt[:, 4]                                            # [B,H,W]
+        epe0 = torch.norm(flow_pred[:, 0:2] - flow_gt[:, 0:2], dim=1)
         epe1 = torch.norm(flow_pred[:, 2:4] - flow_gt[:, 2:4], dim=1)
-        per_sample = (epe0 + epe1).mean(dim=(1, 2)) * 0.5               # [B]
+        epe = ((epe0 + epe1) * 0.5).clamp(max=epe_clamp) * valid         # [B,H,W]
+        per_sample = epe.sum(dim=(1, 2)) / valid.sum(dim=(1, 2)).clamp(min=1)
         return (per_sample * has_mv).sum() / n_valid
 
     # ── train / eval step ─────────────────────────────────────────────────────
