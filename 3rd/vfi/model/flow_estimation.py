@@ -43,24 +43,51 @@ class Head(nn.Module):
         return flow, mask
 
 class IFBlock(nn.Module):
-    def __init__(self, in_planes, c, scale):
+    """局部精化块。
+
+    scale : 输入预下采样倍率 (2=在1/2分辨率图像上工作, 1=全分辨率图像)
+    down  : conv主体的内部下采样倍率:
+              4 = 原版行为 (conv0两次stride2, 卷积主体在 输入/4 分辨率)
+              2 = 浅下采样 (卷积主体在 输入/2 分辨率, 小物体细节保留更多)
+              1 = 零下采样 (卷积主体在 输入原分辨率, 计算/显存开销最大)
+    blocks: convblock 层数 (down=1 时建议减少以控制全分辨率下的计算量)
+
+    卷积主体的实际工作分辨率 = 全分辨率 / (scale * down)。
+    """
+
+    def __init__(self, in_planes, c, scale, down=4, blocks=8):
         super(IFBlock, self).__init__()
-        self.conv0 = nn.Sequential(
-            conv(in_planes, c//2, 3, 2, 1),
-            conv(c//2, c, 3, 2, 1),
-            )
-        self.convblock = nn.Sequential(
-            conv(c, c),
-            conv(c, c),
-            conv(c, c),
-            conv(c, c),
-            conv(c, c),
-            conv(c, c),
-            conv(c, c),
-            conv(c, c),
-        )
-        self.lastconv = nn.ConvTranspose2d(c, 5, 4, 2, 1)
+        assert down in (1, 2, 4), f'down must be 1/2/4, got {down}'
         self.scale = scale
+        self.down = down
+
+        if down == 4:
+            self.conv0 = nn.Sequential(
+                conv(in_planes, c//2, 3, 2, 1),
+                conv(c//2, c, 3, 2, 1),
+                )
+        elif down == 2:
+            self.conv0 = nn.Sequential(
+                conv(in_planes, c//2, 3, 2, 1),
+                conv(c//2, c, 3, 1, 1),
+                )
+        else:                                   # down == 1: 全分辨率卷积主体
+            self.conv0 = nn.Sequential(
+                conv(in_planes, c//2, 3, 1, 1),
+                conv(c//2, c, 3, 1, 1),
+                )
+
+        self.convblock = nn.Sequential(*[conv(c, c) for _ in range(blocks)])
+
+        if down == 1:
+            self.lastconv = nn.Conv2d(c, 5, 3, 1, 1)          # 已在目标分辨率, 无需转置上采样
+        else:
+            self.lastconv = nn.ConvTranspose2d(c, 5, 4, 2, 1)  # ×2
+
+        # 预测网格 → 全分辨率 的上采样倍率 (同时也是flow数值的还原倍率):
+        #   down>=2: 预测网格 = 全分辨率/(scale*down/2)
+        #   down==1: 预测网格 = 全分辨率/scale
+        self.up_factor = scale * down // 2 if down > 1 else scale
 
     def forward(self, x, flow):
         scale = self.scale
@@ -71,8 +98,9 @@ class IFBlock(nn.Module):
         x = self.conv0(x)
         x = self.convblock(x) + x
         tmp = self.lastconv(x)
-        tmp = F.interpolate(tmp, scale_factor = scale * 2, mode="bilinear", align_corners=False)
-        flow = tmp[:, :4] * scale * 2
+        if self.up_factor != 1:
+            tmp = F.interpolate(tmp, scale_factor = self.up_factor, mode="bilinear", align_corners=False)
+        flow = tmp[:, :4] * self.up_factor
         mask = tmp[:, 4:5]
         return flow, mask
     
@@ -80,14 +108,29 @@ class MultiScaleFlow(nn.Module):
     def __init__(self, backbone, **kargs):
         super(MultiScaleFlow, self).__init__()
         self.flow_num_stage = len(kargs['hidden_dims'])
-        self.local_num = kargs['local_num']
         self.feature_bone = backbone
         self.block = nn.ModuleList([Head( kargs['embed_dims'][-1-i], 
                             kargs['scales'][-1-i], 
                             kargs['hidden_dims'][-1-i],
                             7 if i==0 else 18) 
                             for i in range(self.flow_num_stage)])
-        self.local_block = nn.ModuleList([IFBlock(17, c=kargs['local_hidden_dims'], scale=2-i) for i in range(self.local_num)])
+
+        # 局部精化配置: 每级 [scale, down, c倍率, blocks]
+        #   卷积主体工作分辨率 = 1/(scale*down); flow输入含timestep通道(18)
+        #   默认两级: 等效原版工作分辨率 (1/8, 1/4)
+        #   开启全分辨率级 (config的multiscalecfg里传):
+        #     'local_cfg': [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+        #     → 工作分辨率 1/8 → 1/2 → 1/1; 全分辨率级用半宽通道+4层控制开销
+        local_cfg = kargs.get('local_cfg', None)
+        if local_cfg is None:
+            local_cfg = [[2, 4, 1.0, 8], [1, 4, 1.0, 8]]
+        self.local_num = len(local_cfg)
+        base_c = kargs['local_hidden_dims']
+        self.local_block = nn.ModuleList([
+            IFBlock(18, c=max(int(base_c * cr) // 2 * 2, 16), scale=s, down=d, blocks=b)
+            for (s, d, cr, b) in local_cfg
+        ])
+
         if kargs['version'] == 1:
             self.unet = UnetWithAttention(kargs['c'] * 2, kargs['M'])
         else:
@@ -133,23 +176,12 @@ class MultiScaleFlow(nn.Module):
                 warped_img0 = warp(img0, flow[:, :2])
                 warped_img1 = warp(img1, flow[:, 2:4])
 
-                flow_d, mask_d = self.local_block[i](torch.cat((img0, img1, warped_img0, warped_img1, mask), 1), flow)
+                flow_d, mask_d = self.local_block[i](
+                    torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1), flow)
                 flow = flow + flow_d
                 mask = mask + mask_d
 
         return flow, mask
-
-    # def coraseWarp_and_Refine(self, imgs, af, flow, mask):
-    #     img0, img1 = imgs[:, :3], imgs[:, 3:6]
-    #     warped_img0 = warp(img0, flow[:, :2])
-    #     warped_img1 = warp(img1, flow[:, 2:4])
-    #     c0, c1 = self.warp_features(af, flow)
-    #     tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
-    #     res = tmp[:, :3] * 2 - 1
-    #     mask_ = torch.sigmoid(mask)
-    #     merged = warped_img0 * mask_ + warped_img1 * (1 - mask_)
-    #     pred = torch.clamp(merged + res, 0, 1)
-    #     return pred
 
     def coraseWarp_and_Refine(self, imgs, af, flow, mask):
         img0, img1 = imgs[:, :3], imgs[:, 3:6]
@@ -199,6 +231,8 @@ class MultiScaleFlow(nn.Module):
             scale = img0.shape[3] / flow.shape[3]
             flow = F.interpolate(flow, scale_factor = scale, mode="bilinear", align_corners=False) * scale
             mask = F.interpolate(mask, scale_factor = scale, mode="bilinear", align_corners=False)
+            # timestep 常数图与图像尺寸保持同步 (scale>0 + local 时必需)
+            timestep = F.interpolate(timestep, scale_factor = scale, mode="bilinear", align_corners=False)
             mask_ = torch.sigmoid(mask)
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
@@ -210,7 +244,8 @@ class MultiScaleFlow(nn.Module):
             mask_list = []
             
             for i in range(self.local_num):
-                flow_d, mask_d = self.local_block[i](torch.cat((img0, img1, warped_img0, warped_img1, mask), 1), flow)
+                flow_d, mask_d = self.local_block[i](
+                    torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1), flow)
                 flow = flow + flow_d
                 mask = mask + mask_d
 
@@ -227,4 +262,4 @@ class MultiScaleFlow(nn.Module):
         tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
         res = tmp[:, :3] * 2 - 1
         pred = torch.clamp(merged[-1] + res, 0, 1)
-        return flow_list, mask_list,res,warped_img0,warped_img1,merged,pred
+        return flow_list, mask_list, res, warped_img0, warped_img1, merged, pred
