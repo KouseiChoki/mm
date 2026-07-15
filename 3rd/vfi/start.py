@@ -198,12 +198,12 @@ def dump_debug_data(save_folder, mid_idx, ext,
     flow_np  = flow[0].detach().cpu().numpy().transpose(1, 2, 0)
     mv0, mv1 = flow_np[..., 2:], flow_np[..., :2]
 
-    write(os.path.join(save_folder, 'warp0',  f"{mid_idx:06d}{ext}"), to_np(warp0))
-    write(os.path.join(save_folder, 'warp1',  f"{mid_idx:06d}{ext}"), to_np(warp1[0]))
+    write(os.path.join(save_folder, 'warp0',  f"{mid_idx:06d}{ext}"), to_np(warp0), dtype='image')
+    write(os.path.join(save_folder, 'warp1',  f"{mid_idx:06d}{ext}"), to_np(warp1[0]), dtype='image')
     write(os.path.join(save_folder, 'mv0',    f"{mid_idx:06d}.exr"),  mv0)
     write(os.path.join(save_folder, 'mv1',    f"{mid_idx:06d}.exr"),  mv1)
-    write(os.path.join(save_folder, 'mask',   f"{mid_idx:06d}.exr"),  to_np(mask))
-    write(os.path.join(save_folder, 'merged', f"{mid_idx:06d}{ext}"), to_np(merged))
+    write(os.path.join(save_folder, 'mask',   f"{mid_idx:06d}.exr"),  to_np(mask), dtype='image')
+    write(os.path.join(save_folder, 'merged', f"{mid_idx:06d}{ext}"), to_np(merged), dtype='image')
     write(os.path.join(save_folder, 'res',    f"{mid_idx:06d}.exr"),  to_np(res))
 
 
