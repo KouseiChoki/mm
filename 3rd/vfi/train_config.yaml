@@ -1,7 +1,7 @@
 # VFIMamba 训练配置 (train.py 唯一超参来源)
 # 用法: python train.py --config train_config.yaml [--restore_ckpt xxx.pkl]
 
-exp_name: Kousei_phase1_0714_e5t5_epoch130          # 实验名: log目录/ckpt目录/TensorBoard 均用它
+exp_name: Kousei_phase1_0716_e5t5_epoch300          # 实验名: log目录/ckpt目录/TensorBoard 均用它
 
 seed: 1234
 
@@ -9,7 +9,7 @@ seed: 1234
 model:
   F: 32
   depth: [2, 2, 2, 3, 3]
-  version: 2                   # Mamba2
+  version: 2                   # 1 unet. 2 unet_with_attention
   M: false
   loss_type: l1                # l1 | lap | l1+lap
   flow_loss_weight: 0.01       # teacher flow监督权重, 0=关闭

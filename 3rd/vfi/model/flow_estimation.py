@@ -131,7 +131,7 @@ class MultiScaleFlow(nn.Module):
             for (s, d, cr, b) in local_cfg
         ])
 
-        if kargs['version'] == 1:
+        if kargs['version'] == 2:
             self.unet = UnetWithAttention(kargs['c'] * 2, kargs['M'])
         else:
             self.unet = Unet(kargs['c'] * 2, kargs['M'])

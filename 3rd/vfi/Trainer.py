@@ -73,10 +73,38 @@ class Model:
 
     # ── checkpoint ────────────────────────────────────────────────────────────
 
-    def load_model(self, ckpt_path, rank=0, real=False):
-        self.net.load_state_dict(
-            convert(torch.load(ckpt_path, map_location='cpu')), strict=True
-        )
+    # def load_model(self, ckpt_path, rank=0, real=False):
+    #     self.net.load_state_dict(
+    #         convert(torch.load(ckpt_path, map_location='cpu')), strict=False
+    #     )
+
+    def load_model(self, ckpt_path, resume=False):
+        ckpt = torch.load(ckpt_path, map_location='cpu')
+        state = ckpt['net'] if 'net' in ckpt else ckpt          # 兼容新旧格式
+        state = convert(state)
+
+        # 过滤形状不匹配的键 (strict=False不处理size mismatch, 必须手动剔除)
+        model_state = self.net.state_dict()
+        dropped = []
+        filtered = {}
+        for k, v in state.items():
+            if k in model_state and model_state[k].shape != v.shape:
+                dropped.append(f'{k}: ckpt{tuple(v.shape)} vs model{tuple(model_state[k].shape)}')
+            else:
+                filtered[k] = v
+        if dropped:
+            print(f'[load_model] {len(dropped)} 个键形状不匹配, 保持新初始化:')
+            for d in dropped:
+                print(f'    {d}')
+
+        missing, unexpected = self.net.load_state_dict(filtered, strict=False)
+        if missing:
+            print(f'[load_model] {len(missing)} 个键未从checkpoint加载(新初始化): '
+                f'{missing[:4]}{"..." if len(missing) > 4 else ""}')
+
+        if resume and 'optim' in ckpt:
+            self.optimG.load_state_dict(ckpt['optim'])
+        return ckpt.get('epoch', 0), ckpt.get('step', 0)
 
     def save_model(self, sp, epoch, rank=0):
         ckpt_path = os.path.join(
