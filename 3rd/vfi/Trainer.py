@@ -1,328 +1,200 @@
-'''
-VFIMamba 训练入口 (yaml配置版)
-================================
-对接:
-  kousei_dataset.MixedTierDataset / TierDataset  (四元组: frames, timestep, flow_gt, has_mv)
-  Trainer.Model.update                            (三返回: pred, loss, loss_flow)
-  build_lists.py 生成的清单                        (<lists_dir>/{easy,normal,hard,teacher}_train.txt, val.txt)
-
-全部超参来自 yaml (train_config.yaml), 命令行只留 --config 与 --restore_ckpt。
-
-用法:
-  python train.py --config train_config.yaml
-  python train.py --config train_config.yaml --restore_ckpt ckpt/base/VFIMamba_100.pkl
-'''
 import os
-import math
-import time
-import random
-import argparse
 
-import yaml
-import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from torch.cuda.amp import GradScaler, autocast
+import torch.nn.functional as F
+import torch.optim as optim
 
-import config as cfg
-from Trainer import Model
-from kousei_dataset import MixedTierDataset, TierDataset
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+from model.loss import LapLoss
+from config import *
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 工具
-# ─────────────────────────────────────────────────────────────────────────────
-
-def load_config(path):
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
-def get_learning_rate(step, total_steps, opt):
-    """warmup + cosine, 跨全部phase统一调度。"""
-    warmup = opt['warmup_steps']
-    lr_max, lr_min = float(opt['lr_max']), float(opt['lr_min'])
-    if opt.get('finetune', False):
-        progress = (step - warmup) / max(total_steps - warmup, 1)
-        cosine = math.cos(math.pi * min(progress, 1.0)) * 0.5 + 0.5
-        return (lr_min + (lr_max - lr_min) * cosine) / 4
-    if step < warmup:
-        return lr_max * step / max(warmup, 1)
-    progress = (step - warmup) / max(total_steps - warmup, 1)
-    cosine = math.cos(math.pi * min(progress, 1.0)) * 0.5 + 0.5
-    return lr_min + (lr_max - lr_min) * cosine
+def convert(param):
+    return {
+        k.replace("module.", ""): v
+        for k, v in param.items()
+        if 'attn_mask' not in k and 'HW' not in k
+    }
 
 
-def get_grad_norm(net):
-    total = 0.0
-    for p in net.parameters():
-        if p.grad is not None:
-            total += p.grad.data.norm(2).item() ** 2
-    return total ** 0.5
+class Model:
+    def __init__(self, local_rank=0, loss_type='lap', flow_loss_weight=0.01):
+        """
+        loss_type        : 'l1' | 'lap' | 'l1+lap'
+        flow_loss_weight : teacher flow 监督 (masked EPE) 的权重, 0=关闭
+        """
+        backbonetype, multiscaletype = MODEL_CONFIG['MODEL_TYPE']
+        backbonecfg, multiscalecfg = MODEL_CONFIG['MODEL_ARCH']
+        self.net = multiscaletype(backbonetype(**backbonecfg), **multiscalecfg)
+        self.name = MODEL_CONFIG['LOGNAME']
+        self.local = LOCAL
 
+        self.device()
 
-class SpikeDetector:
-    def __init__(self, window=50, spike_ratio=3.0, spike_dir='spike_samples'):
-        self.window = window
-        self.spike_ratio = spike_ratio
-        self.history = []
-        self.spike_count = 0
-        os.makedirs(spike_dir, exist_ok=True)
+        assert loss_type in ('l1', 'lap', 'l1+lap'), \
+            f"loss_type 须为 'l1'/'lap'/'l1+lap'，got {loss_type}"
+        self.loss_type = loss_type
+        self.lap_loss = (
+            LapLoss(max_levels=5, channels=3).to(self._dev)
+            if loss_type in ('lap', 'l1+lap') else None
+        )
+        self.flow_loss_weight = flow_loss_weight
 
-    def check(self, loss, step, writer):
-        self.history.append(loss)
-        if len(self.history) > self.window:
-            self.history.pop(0)
-        if len(self.history) < 10:
-            return False
-        mean_loss = np.mean(self.history[:-1])
-        is_spike = (mean_loss > 0) and (loss > mean_loss * self.spike_ratio)
-        if is_spike:
-            self.spike_count += 1
-            print(f'\n[SPIKE #{self.spike_count}] step={step}  '
-                  f'loss={loss:.4f}  window_mean={mean_loss:.4f}  '
-                  f'ratio={loss / mean_loss:.1f}x')
-            writer.add_scalar('spike/loss', loss, step)
-        return is_spike
+        self.optimG = optim.AdamW(self.net.parameters(), lr=1e-6, weight_decay=1e-4)
 
+    def train(self): self.net.train()
+    def eval(self):  self.net.eval()
 
-class AnomalyDumper:
-    """异常batch落盘: 图像(img0/gt/img1/pred) + flow_gt(.npy) + 元信息, 用于事后归因。"""
+    def device(self):
+        if torch.cuda.is_available():
+            self._dev = torch.device('cuda')
+        elif torch.backends.mps.is_available():
+            self._dev = torch.device('mps')
+        else:
+            self._dev = torch.device('cpu')
+        self.net.to(self._dev)
 
-    def __init__(self, dump_dir='anomaly_dumps', max_dumps=50):
-        self.dump_dir = dump_dir
-        self.max_dumps = max_dumps
-        self.count = 0
-        os.makedirs(dump_dir, exist_ok=True)
+    # ── pad / unpad ───────────────────────────────────────────────────────────
 
-    def dump(self, step, reason, frames, timestep, flow_gt, has_mv,
-             pred=None, loss=None, loss_flow=None):
-        """frames: [B,9,H,W] float 0~1 (device上); flow_gt: [B,4,H,W]; has_mv: [B]。"""
-        if self.count >= self.max_dumps:
-            if self.count == self.max_dumps:
-                print(f'[AnomalyDumper] 已达上限 {self.max_dumps}, 停止落盘')
-                self.count += 1
-            return
-        self.count += 1
-        d = os.path.join(self.dump_dir, f'step{step:07d}_{reason}')
-        os.makedirs(d, exist_ok=True)
+    @staticmethod
+    def pad_to_multiple(tensor, multiple=16):
+        _, _, h, w = tensor.shape
+        pad_h = (multiple - h % multiple) % multiple
+        pad_w = (multiple - w % multiple) % multiple
+        if pad_h == 0 and pad_w == 0:
+            return tensor, (0, 0)
+        return F.pad(tensor, (0, pad_w, 0, pad_h), mode='reflect'), (pad_w, pad_h)
 
-        import cv2
-        frames_np = (frames.detach().cpu().clamp(0, 1) * 255).byte().numpy()
-        pred_np = (pred.detach().cpu().clamp(0, 1) * 255).byte().numpy() \
-            if pred is not None else None
-        t_np = timestep.detach().cpu().numpy().reshape(-1)
-        hm_np = has_mv.detach().cpu().numpy().reshape(-1)
+    @staticmethod
+    def unpad(tensor, pad_right, pad_bottom):
+        h, w = tensor.shape[-2], tensor.shape[-1]
+        return tensor[...,
+                      :h - pad_bottom if pad_bottom else h,
+                      :w - pad_right if pad_right else w]
 
-        meta = [f'step={step} reason={reason} loss={loss} loss_flow={loss_flow}']
-        for b in range(frames_np.shape[0]):
-            for name, sl in (('img0', slice(0, 3)), ('img1', slice(3, 6)),
-                             ('gt', slice(6, 9))):
-                img = frames_np[b, sl].transpose(1, 2, 0)[..., ::-1]   # RGB→BGR
-                cv2.imwrite(os.path.join(d, f'b{b}_{name}.png'), img)
-            if pred_np is not None:
-                cv2.imwrite(os.path.join(d, f'b{b}_pred.png'),
-                            pred_np[b].transpose(1, 2, 0)[..., ::-1])
-            if hm_np[b] > 0:                                           # 仅有效mv落盘
-                np.save(os.path.join(d, f'b{b}_flow_gt.npy'),
-                        flow_gt[b].detach().cpu().numpy())
-            meta.append(f'b{b}: t={t_np[b]:.4f} has_mv={int(hm_np[b])}')
-        with open(os.path.join(d, 'meta.txt'), 'w') as f:
-            f.write('\n'.join(meta) + '\n')
-        print(f'[AnomalyDumper #{self.count}] {reason} → {d}')
+    # ── checkpoint ────────────────────────────────────────────────────────────
 
+    def load_model(self, ckpt_path, rank=0, real=False):
+        self.net.load_state_dict(
+            convert(torch.load(ckpt_path, map_location='cpu')), strict=True
+        )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 评估
-# ─────────────────────────────────────────────────────────────────────────────
+    def save_model(self, sp, epoch, rank=0):
+        ckpt_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f'ckpt/{sp}/{self.name}_{str(epoch)}.pkl'
+        )
+        os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
+        torch.save(self.net.state_dict(), ckpt_path)
+        print(f"model saved -> {ckpt_path}")
 
-@torch.no_grad()
-def evaluate(model, val_loader, nr_eval, writer, use_amp):
-    psnr_list = []
-    for frames, timestep, _, _ in val_loader:
-        frames = frames.to(device, non_blocking=True).float() / 255.
-        timestep = timestep.to(device, non_blocking=True)
-        imgs, gt = frames[:, :6], frames[:, 6:9]
-        with autocast(enabled=use_amp):
-            pred, _, _ = model.update(imgs, gt, timestep=timestep, training=False)
-        for j in range(gt.shape[0]):
-            mse = ((gt[j] - pred[j]) ** 2).mean().cpu().item()
-            if mse > 0:
-                psnr_list.append(-10 * math.log10(mse))
-    if psnr_list:
-        psnr = float(np.mean(psnr_list))
-        print(f'[eval {nr_eval}] PSNR: {psnr:.4f}')
-        writer.add_scalar('val/psnr', psnr, nr_eval)
+    # ── loss ──────────────────────────────────────────────────────────────────
 
+    def _pixel_loss(self, pred, gt):
+        if self.loss_type == 'l1':
+            return (pred - gt).abs().mean()
+        if self.loss_type == 'lap':
+            return self.lap_loss(pred, gt)
+        return (pred - gt).abs().mean() + self.lap_loss(pred, gt)   # l1+lap
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 训练
-# ─────────────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _flow_epe_masked(flow_pred, flow_gt, has_mv, epe_clamp=50.0):
+        """
+        flow_pred : [B, 4, H, W] 像素位移 (前2通道 F_t→0, 后2通道 F_t→1)
+        flow_gt   : [B, 5, H, W] 前4通道同上, 第5通道为遮挡有效性mask
+                    (valid=0 的uncover区无合法对应点, 监督病态, 逐像素跳过)
+        has_mv    : [B] 1=该样本flow_gt有效
+        epe_clamp : 单像素EPE贡献上界 (mask漏网时的兜底, 压平病态梯度)
+        返回 双重mask (样本级has_mv × 像素级valid) 下的EPE均值。
+        """
+        n_valid = has_mv.sum()
+        if n_valid < 1:
+            return flow_pred.sum() * 0.0
+        valid = flow_gt[:, 4]                                            # [B,H,W]
+        epe0 = torch.norm(flow_pred[:, 0:2] - flow_gt[:, 0:2], dim=1)
+        epe1 = torch.norm(flow_pred[:, 2:4] - flow_gt[:, 2:4], dim=1)
+        epe = ((epe0 + epe1) * 0.5).clamp(max=epe_clamp) * valid         # [B,H,W]
+        per_sample = epe.sum(dim=(1, 2)) / valid.sum(dim=(1, 2)).clamp(min=1)
+        return (per_sample * has_mv).sum() / n_valid
 
-def train(C, restore_ckpt=None, config_path=None):
-    exp = C['exp_name']
-    # 约定: 配置yaml随checkpoint归档, 推理侧读同目录model.yaml构建同构模型
-    ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'ckpt/{exp}')
-    os.makedirs(ckpt_dir, exist_ok=True)
-    if config_path:
-        import shutil
-        shutil.copy(config_path, os.path.join(ckpt_dir, 'model.yaml'))
-        print(f'[archive] 配置已归档 → {ckpt_dir}/model.yaml')
-    d, opt, mon = C['data'], C['optim'], C['monitor']
-    writer = SummaryWriter(f'log/train_{exp}')
-    spike_det = SpikeDetector(spike_ratio=mon['spike_ratio'],
-                              spike_dir=mon['spike_dir'])
-    dumper = AnomalyDumper(dump_dir=mon.get('dump_dir', 'anomaly_dumps'),
-                           max_dumps=mon.get('dump_max', 50))
-    flow_dump_thresh = mon.get('flow_loss_dump_threshold', 100.0)
+    # ── train / eval step ─────────────────────────────────────────────────────
 
-    use_amp = opt.get('amp', False) and torch.cuda.is_available()
-    scaler = GradScaler(enabled=use_amp)
-    if use_amp:
-        print('[AMP] 半精度训练已启用')
+    def update(self, imgs, gt, timestep=0.5, learning_rate=0, training=True,
+               scaler=None, flow_gt=None, has_mv=None):
+        """
+        imgs     : [B, 6, H, W] float 0~1  (img0, img1)
+        gt       : [B, 3, H, W] float 0~1
+        timestep : float 或 [B,1,1,1] 张量 (来自Dataset, 任意timestep训练必须传)
+        flow_gt  : [B, 4, H, W] 像素位移 (teacher样本), 可为 None
+        has_mv   : [B] flow_gt有效性mask, 可为 None
+        """
+        if torch.is_tensor(timestep):
+            timestep = timestep.to(self._dev)
 
-    # ── 模型 ────────────────────────────────────────────────────────────────
-    m = C['model']
-    cfg.MODEL_CONFIG['LOGNAME'] = exp
-    _train_keys = ('loss_type', 'flow_loss_weight')          # 训练侧消费, 不进结构
-    _extra = {k: v for k, v in m.items()
-              if k not in ('F', 'depth', 'M', 'version') + _train_keys}
-    cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-        F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'],
-        **_extra)
-    model = Model(0, loss_type=m['loss_type'],
-                  flow_loss_weight=m.get('flow_loss_weight', 0.0))
-    if restore_ckpt:
-        model.load_model(restore_ckpt)
-        print(f'restore ckpt from {restore_ckpt}')
+        imgs_pad, (pr, pb) = self.pad_to_multiple(imgs, 16)
 
-    # ── 数据 ────────────────────────────────────────────────────────────────
-    lists_dir = d['lists_dir']
-    lists = {t: os.path.join(lists_dir, f'{t}_train.txt')
-             for t in ('easy', 'normal', 'hard', 'teacher')
-             if os.path.exists(os.path.join(lists_dir, f'{t}_train.txt'))}
-    crop_sizes = [tuple(c) for c in d['crop_sizes']]
+        if training:
+            self.train()
+            for pg in self.optimG.param_groups:
+                pg['lr'] = learning_rate
 
-    train_set = MixedTierDataset(
-        d['root'], lists,
-        ratios=C['phases'][0]['ratios'],
-        crop_hw=crop_sizes[0],
-        framesteps=tuple(d['framesteps']),
-        t_half_prob=d['t_half_prob'],
-        mv_prob=d['mv_prob'],
-        mv_sign=tuple(d['mv_sign']),
-    )
-    val_set = TierDataset(d['root'], os.path.join(lists_dir, 'val.txt'), split='val')
-    val_loader = DataLoader(val_set, batch_size=1,
-                            num_workers=d['num_workers'], pin_memory=True)
+            flow_list, _, _, _, _, merged, pred_pad = self.net(
+                imgs_pad, timestep=timestep, scale=0, local=self.local)
 
-    total_epochs = sum(p['epochs'] for p in C['phases'])
-    # 名义 step/epoch: 固定值保证LR调度可预期 (Mixed数据集名义长度过大, 不直接用)
-    steps_per_epoch = C.get('steps_per_epoch',
-                            min(len(train_set), 2000 * d['batch_size'])) // d['batch_size']
-    total_steps = total_epochs * steps_per_epoch
-    print(f'training... phases={[(p["name"], p["epochs"]) for p in C["phases"]]} '
-          f'steps/epoch={steps_per_epoch} total_steps={total_steps}')
+            pred = self.unpad(pred_pad, pr, pb)
+            loss = self._pixel_loss(pred, gt)
+            for merge in merged:
+                loss = loss + self._pixel_loss(self.unpad(merge, pr, pb), gt)
 
-    step, nr_eval, loss_ema = 0, 0, None
-    epoch_global = 0
-    time_stamp = time.time()
+            # teacher flow 监督 (masked EPE, 仅对 has_mv=1 的样本生效)
+            loss_flow = torch.zeros((), device=self._dev)
+            if (self.flow_loss_weight > 0 and flow_gt is not None
+                    and has_mv is not None and has_mv.sum() > 0):
+                flow_pred = self.unpad(flow_list[-1], pr, pb)
+                loss_flow = self._flow_epe_masked(
+                    flow_pred, flow_gt.to(self._dev), has_mv.to(self._dev))
+                loss = loss + self.flow_loss_weight * loss_flow
 
-    for phase in C['phases']:
-        print(f'\n════════ Phase [{phase["name"]}] {phase["epochs"]} epochs ════════')
-        train_set.set_ratios(phase['ratios'])
+            self.optimG.zero_grad()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(self.optimG)
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=1.0)
+                scaler.step(self.optimG)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=1.0)
+                self.optimG.step()
 
-        for _ in range(phase['epochs']):
-            # 多尺度: 每epoch换一次crop尺寸 (worker副本重建时生效)
-            train_set.set_crop_size(random.choice(crop_sizes))
-            train_loader = DataLoader(
-                train_set, batch_size=d['batch_size'],
-                num_workers=d['num_workers'], pin_memory=True,
-                drop_last=True, shuffle=True)
-            it = iter(train_loader)
+            return pred.detach(), loss.item(), loss_flow.item()
 
-            for i in range(steps_per_epoch):
-                try:
-                    frames, timestep, flow_gt, has_mv = next(it)
-                except StopIteration:
-                    it = iter(train_loader)
-                    frames, timestep, flow_gt, has_mv = next(it)
+        else:
+            self.eval()
+            with torch.no_grad():
+                _, _, _, _, _, _, pred_pad = self.net(
+                    imgs_pad, timestep=timestep, scale=0, local=self.local)
+                pred = self.unpad(pred_pad, pr, pb)
+                loss = self._pixel_loss(pred, gt)
+            return pred, loss.item(), 0.0
 
-                data_time = time.time() - time_stamp
-                time_stamp = time.time()
+    # ── inference ─────────────────────────────────────────────────────────────
 
-                frames = frames.to(device, non_blocking=True).float() / 255.
-                timestep = timestep.to(device, non_blocking=True)
-                imgs, gt = frames[:, :6], frames[:, 6:9]
-
-                lr = get_learning_rate(step, total_steps, opt)
-
-                with autocast(enabled=use_amp):
-                    pred, loss, loss_flow = model.update(
-                        imgs, gt, timestep=timestep, learning_rate=lr,
-                        training=True, scaler=scaler if use_amp else None,
-                        flow_gt=flow_gt, has_mv=has_mv)
-
-                train_time = time.time() - time_stamp
-                time_stamp = time.time()
-
-                loss_ema = loss if loss_ema is None else 0.98 * loss_ema + 0.02 * loss
-                is_spike = spike_det.check(loss, step, writer)
-
-                # 异常样本落盘: flow loss超阈值 或 loss spike
-                if loss_flow > flow_dump_thresh:
-                    dumper.dump(step, f'flowloss{loss_flow:.0f}', frames, timestep,
-                                flow_gt, has_mv, pred=pred, loss=loss, loss_flow=loss_flow)
-                elif is_spike:
-                    dumper.dump(step, f'spike{loss / max(loss_ema, 1e-8):.1f}x',
-                                frames, timestep, flow_gt, has_mv,
-                                pred=pred, loss=loss, loss_flow=loss_flow)
-
-                if step % mon['log_every_steps'] == 0:
-                    writer.add_scalar('loss/raw', loss, step)
-                    writer.add_scalar('loss/ema', loss_ema, step)
-                    writer.add_scalar('loss/flow_epe', loss_flow, step)
-                    writer.add_scalar('train/lr', lr, step)
-                    writer.add_scalar('train/grad_norm', get_grad_norm(model.net), step)
-                    if use_amp:
-                        writer.add_scalar('amp/scale', scaler.get_scale(), step)
-
-                print(f'[{phase["name"]}] epoch:{epoch_global} {i}/{steps_per_epoch} '
-                      f'time:{data_time:.2f}+{train_time:.2f} '
-                      f'loss:{loss:.4f} ema:{loss_ema:.4f} flow:{loss_flow:.3f}')
-                step += 1
-
-            epoch_global += 1
-            nr_eval += 1
-            if nr_eval % mon['eval_every_epochs'] == 0:
-                evaluate(model, val_loader, nr_eval, writer, use_amp)
-            if epoch_global % mon['save_every_epochs'] == 0:
-                model.save_model(exp, epoch_global, 0)
-
-    model.save_model(exp, epoch_global, 0)          # 收尾存档
-    print('════════ 训练完成 ════════')
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', required=True, type=str,
-                        help='yaml配置文件 (全部超参来源)')
-    parser.add_argument('--restore_ckpt', type=str, default=None)
-    args = parser.parse_args()
-
-    C = load_config(args.config)
-
-    seed = C.get('seed', 1234)
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = True
-
-    os.makedirs('log', exist_ok=True)
-    train(C, restore_ckpt=args.restore_ckpt, config_path=args.config)
+    @torch.no_grad()
+    def inference(self, img0, img1, local, TTA=False, timestep=0.5,
+                  scale=0, fast_TTA=False):
+        imgs = torch.cat((img0, img1), 1)
+        imgs, (pr, pb) = self.pad_to_multiple(imgs, 16)
+        if fast_TTA:
+            imgs_ = imgs.flip(2).flip(3)
+            flow_list, mask_list, res, warp0, warp1, merged, preds = self.net(
+                torch.cat((imgs, imgs_), 0), local=local, timestep=timestep, scale=scale)
+            return (self.unpad((preds[0] + preds[1].flip(1).flip(2)).unsqueeze(0) / 2., pr, pb),
+                    flow_list[-1], mask_list[-1], merged[-1], res, warp0, warp1)
+        flow_list, mask_list, res, warp0, warp1, merged, preds = self.net(
+            imgs, timestep=timestep, scale=scale, local=local)
+        if not TTA:
+            return self.unpad(preds, pr, pb), None, None, None, None, None, None
+        _, _, _, _, _, _, pred2 = self.net(imgs.flip(2).flip(3), timestep=timestep,
+                                           scale=scale, local=local)
+        return (self.unpad((preds + pred2.flip(2).flip(3)) / 2, pr, pb),
+                flow_list[-1], mask_list[-1], merged[-1], res, warp0, warp1)

@@ -162,15 +162,22 @@ def evaluate(model, val_loader, nr_eval, writer, use_amp):
 # 训练
 # ─────────────────────────────────────────────────────────────────────────────
 
-def train(C, restore_ckpt=None):
+def train(C, restore_ckpt=None, config_path=None):
     exp = C['exp_name']
+    # 约定: 配置yaml随checkpoint归档, 推理侧读同目录model.yaml构建同构模型
+    ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'ckpt/{exp}')
+    os.makedirs(ckpt_dir, exist_ok=True)
+    if config_path:
+        import shutil
+        shutil.copy(config_path, os.path.join(ckpt_dir, 'model.yaml'))
+        print(f'[archive] 配置已归档 → {ckpt_dir}/model.yaml')
     d, opt, mon = C['data'], C['optim'], C['monitor']
     writer = SummaryWriter(f'log/train_{exp}')
     spike_det = SpikeDetector(spike_ratio=mon['spike_ratio'],
                               spike_dir=mon['spike_dir'])
     dumper = AnomalyDumper(dump_dir=mon.get('dump_dir', 'anomaly_dumps'),
                            max_dumps=mon.get('dump_max', 50))
-    flow_dump_thresh = mon.get('flow_loss_dump_threshold', 30.0)
+    flow_dump_thresh = mon.get('flow_loss_dump_threshold', 100.0)
 
     use_amp = opt.get('amp', False) and torch.cuda.is_available()
     scaler = GradScaler(enabled=use_amp)
@@ -180,8 +187,12 @@ def train(C, restore_ckpt=None):
     # ── 模型 ────────────────────────────────────────────────────────────────
     m = C['model']
     cfg.MODEL_CONFIG['LOGNAME'] = exp
+    _train_keys = ('loss_type', 'flow_loss_weight')          # 训练侧消费, 不进结构
+    _extra = {k: v for k, v in m.items()
+              if k not in ('F', 'depth', 'M', 'version') + _train_keys}
     cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-        F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'])
+        F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'],
+        **_extra)
     model = Model(0, loss_type=m['loss_type'],
                   flow_loss_weight=m.get('flow_loss_weight', 0.0))
     if restore_ckpt:
@@ -265,10 +276,10 @@ def train(C, restore_ckpt=None):
                 if loss_flow > flow_dump_thresh:
                     dumper.dump(step, f'flowloss{loss_flow:.0f}', frames, timestep,
                                 flow_gt, has_mv, pred=pred, loss=loss, loss_flow=loss_flow)
-                # elif is_spike:
-                #     dumper.dump(step, f'spike{loss / max(loss_ema, 1e-8):.1f}x',
-                #                 frames, timestep, flow_gt, has_mv,
-                #                 pred=pred, loss=loss, loss_flow=loss_flow)
+                elif is_spike:
+                    dumper.dump(step, f'spike{loss / max(loss_ema, 1e-8):.1f}x',
+                                frames, timestep, flow_gt, has_mv,
+                                pred=pred, loss=loss, loss_flow=loss_flow)
 
                 if step % mon['log_every_steps'] == 0:
                     writer.add_scalar('loss/raw', loss, step)
@@ -314,4 +325,4 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
 
     os.makedirs('log', exist_ok=True)
-    train(C, restore_ckpt=args.restore_ckpt)
+    train(C, restore_ckpt=args.restore_ckpt, config_path=args.config)
