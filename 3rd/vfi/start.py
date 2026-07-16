@@ -10,6 +10,7 @@ import glob
 import re
 import torch.nn.functional as F
 import requests
+import yaml
 import config as cfg
 from Trainer import Model
 from file_utils import read, write,mkdir
@@ -136,25 +137,85 @@ def define_model(args):
 
 
 # ── 模型初始化 ────────────────────────────────────────────────────────
+_TRAIN_ONLY_KEYS = ('loss_type', 'flow_loss_weight')      # 训练侧消费, 不进结构
+_NAMED_KEYS = ('F', 'depth', 'M', 'version')
+
+
+def arch_from_model_section(m):
+    """yaml的model段 → (backbonecfg, multiscalecfg)。与train.py透传逻辑同一份约定:
+    F/depth/M/version 具名, 训练键排除, 其余字段 (local_cfg等) 全部透传覆盖。"""
+    extra = {k: v for k, v in m.items()
+             if k not in _NAMED_KEYS + _TRAIN_ONLY_KEYS}
+    return cfg.init_model_config(
+        F=m.get('F', 32),
+        depth=m.get('depth', [2, 2, 2, 3, 3]),
+        M=m.get('M', False),
+        version=m.get('version', 2),
+        **extra)
+
+
+def resolve_model_yaml(ckpt_path, args):
+    """按优先级定位模型结构yaml, 找不到返回None:
+      1. --model_yaml 显式指定 (不存在则报错)
+      2. checkpoint 同名yaml     (../../checkpoints/{algo}.yaml, 与.pth同stem)
+      3. checkpoint 同目录 model.yaml (训练侧 ckpt/{exp}/ 归档布局)
+    """
+    explicit = getattr(args, 'model_yaml', None)
+    if explicit:
+        if not os.path.isfile(explicit):
+            raise FileNotFoundError(f'--model_yaml 指定的文件不存在: {explicit}')
+        return explicit
+    stem_yaml = os.path.splitext(ckpt_path)[0] + '.yaml'
+    if not os.path.isfile(stem_yaml):
+        # 软尝试: 从checkpoint服务器同步 {algo}.yaml (失败不致命, 走回退)
+        try:
+            check_and_download_pth_file(stem_yaml,
+                                        f'{args.server}/vfi/{args.algo}.yaml')
+        except Exception:
+            pass
+    if os.path.isfile(stem_yaml):
+        return stem_yaml
+    dir_yaml = os.path.join(os.path.dirname(os.path.abspath(ckpt_path)), 'model.yaml')
+    return dir_yaml if os.path.isfile(dir_yaml) else None
+
+
 def build_model(args):
-    if 'vfimamba' in args.algo.lower():
-        cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMamba'
-        cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-            F=32, depth=[2, 2, 2, 3, 3]
-        )
-    elif 'kousei' in args.algo.lower():
-        cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMambaKouSei'
-        cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-            F=32, depth=[2, 2, 2, 3, 3]
-        )
-        cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1
+    args.fp = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../checkpoints"))
+    ckpt = define_model(args)                 # 先定位checkpoint, 再找配套yaml
+
+    yaml_path = resolve_model_yaml(ckpt, args)
+    if yaml_path is not None:
+        # 约定路径: 结构完全由训练归档的yaml决定, 与训练逐字段对齐
+        with open(yaml_path) as f:
+            conf = yaml.safe_load(f)
+        m = conf.get('model', conf)           # 兼容整份train_config或裸model段
+        cfg.MODEL_CONFIG['LOGNAME'] = conf.get('exp_name', args.algo)
+        cfg.MODEL_CONFIG['MODEL_ARCH'] = arch_from_model_section(m)
+        print(f'[build_model] 结构来自yaml: {yaml_path}  '
+              f'(version={m.get("version", 2)}, '
+              f'local_cfg={"自定义" if "local_cfg" in m else "默认"})')
     else:
-        raise NotImplementedError('wrong algorithm')
-        sys.exit(0)
+        # 回退路径: 历史checkpoint (无yaml), 保持旧的按算法名分支行为
+        if 'vfimamba' in args.algo.lower():
+            cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMamba'
+            cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
+                F=32, depth=[2, 2, 2, 3, 3]
+            )
+        elif 'kousei' in args.algo.lower():
+            cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMambaKouSei'
+            cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
+                F=32, depth=[2, 2, 2, 3, 3]
+            )
+            cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1
+        else:
+            raise NotImplementedError('wrong algorithm')
+        if getattr(args, 'old_version', False):
+            cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1
+        print(f'[build_model] 未找到结构yaml, 回退按算法名构建 '
+              f'(version={cfg.MODEL_CONFIG["MODEL_ARCH"][1]["version"]}); '
+              f'新checkpoint请将训练归档的model.yaml以 {args.algo}.yaml 上传至checkpoint目录/服务器')
 
     model = Model(-1)
-    args.fp = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../checkpoints"))
-    ckpt = define_model(args) 
     model.load_model(ckpt)
     model.eval()
     model.device()
@@ -224,6 +285,8 @@ def main():
                         choices=['mp4', 'avi'])
     parser.add_argument('--dump_data',   action='store_true')
     parser.add_argument('--old_version', action='store_true')
+    parser.add_argument('--model_yaml',  default=None, type=str,
+                        help='模型结构yaml; 缺省时自动找 {algo}.yaml / model.yaml, 都没有则回退旧分支')
     parser.add_argument('--server',      default='http://10.35.180.69:80', type=str)
     args = parser.parse_args()
 
