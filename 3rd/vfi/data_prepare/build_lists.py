@@ -30,7 +30,7 @@ framestep/timestep 动态采样三元组使用。大数据集只需扫描一次,
     - teacher: image/mv0/mv1 三方按帧号配对, 配对率 < 90% 的 scene 剔除并记录
 
 用法:
-    python build_lists.py --root /data/vfi_root --max_framestep 4
+    python build_lists.py --root /home/zhenying/qhong/data/ssd/vfi_database --max_framestep 2
 '''
 import os
 import re
@@ -142,6 +142,7 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
                  pair_ratio: float, broken: list) -> List[dict]:
     base = root / TEACHER_DIR
     rows = []
+    
     if not base.is_dir():
         logger.warning(f'目录不存在, 跳过: {base}')
         return rows
@@ -152,6 +153,10 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
         if not {'image', 'mv0', 'mv1'}.issubset(set(dirnames)):
             continue
         sdir = Path(dirpath)
+        fps = fps_from_path(sdir)
+        if args.teacher_fps is not None and fps not in args.teacher_fps:
+            continue
+
         dirnames[:] = []                      # 命中即剪枝, 不再深入
         rel = sdir.relative_to(root)
         pbar.set_postfix(scenes=len(rows) + 1)
@@ -210,6 +215,8 @@ def main() -> None:
                    help='允许帧号断号的scene入库 (默认剔除并记录)')
     p.add_argument('--pair_ratio', type=float, default=0.9,
                    help='teacher scene 的 image/mv 配对率下限 (默认 0.9)')
+    p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
+               help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
     args = p.parse_args()
 
     root = Path(args.root)

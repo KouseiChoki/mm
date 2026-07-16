@@ -1,18 +1,20 @@
 # VFIMamba 训练配置 (train.py 唯一超参来源)
 # 用法: python train.py --config train_config.yaml [--restore_ckpt xxx.pkl]
 
-exp_name: Kousei_phase1_0716_e5t5_epoch300          # 实验名: log目录/ckpt目录/TensorBoard 均用它
+exp_name: Kousei_phase1_0716_mix          # 实验名: log目录/ckpt目录/TensorBoard 均用它
 
 seed: 1234
 
 # ── 模型 (传给 config.init_model_config) ────────────────────────────────────
 model:
-  F: 32
-  depth: [2, 2, 2, 3, 3]
-  version: 2                   # 1 unet. 2 unet_with_attention
-  M: false
-  loss_type: l1                # l1 | lap | l1+lap
-  flow_loss_weight: 0.01       # teacher flow监督权重, 0=关闭
+  F: 48                            # 32→48: 参数~2.25×, 宽度优先
+  depth: [2, 2, 2, 3, 3]           # 深度不动 (一次只动一个宽深维度)
+  version: 2
+  loss_type: l1
+  flow_loss_weight: 0.01
+  local_cfg: [[2, 4, 1.0, 8],      # 1/8 粗精化
+              [1, 2, 1.0, 8],      # 1/2
+              [1, 1, 0.5, 4]]      # 全分辨率级: 半宽通道+4层
 
 # ── 数据 ─────────────────────────────────────────────────────────────────────
 data:
@@ -21,12 +23,12 @@ data:
   batch_size: 5
   num_workers: 8
   crop_sizes:                  # 多尺度: 每个epoch随机选一组 (h, w), 需为16倍数
-    - [432, 768]
-    #- [320, 512]
-    #- [400, 400]
+    - [288, 512, 6]
+    - [432, 768, 3]
+    - [576, 1024, 1]
   framesteps: [1, 2]
   t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
-  mv_prob: 1                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
+  mv_prob: 0.5                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
   mv_sign: [1, 1]              # !! 必须先用 verify_mv_convention.py 实证后填 !!
 
 # ── 训练阶段 (顺序执行, 配比可切换) ──────────────────────────────────────────
@@ -40,9 +42,9 @@ phases:
 
 # ── 优化 ─────────────────────────────────────────────────────────────────────
 optim:
-  lr_max: 2.5e-5
-  lr_min: 2.5e-6
-  warmup_steps: 500
+  lr_max: 5e-5
+  lr_min: 5e-6
+  warmup_steps: 3000
   finetune: false              # true: 沿用旧逻辑 lr/4
   amp: false                    # CUDA下启用FP16
   grad_clip: 1.0
