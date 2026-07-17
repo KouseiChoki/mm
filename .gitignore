@@ -10,6 +10,7 @@ dataset/
 *_bak.py
 result/
 kouseipython/
+log/
 logs/
 *.pt
 test.*
@@ -24,3 +25,6 @@ testdata/
 pattern/
 *.pth
 *.xlsx
+ckpt/
+spike_samples/
+checkpoints/

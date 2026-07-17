@@ -537,80 +537,57 @@ def mvwrite2(path,flow,compress='piz',precision = FLOAT):
         cpm = NO_COMPRESSION
     mvwrite_helper(path, flow, precision = precision, compression = cpm)
 
-def mvwrite(path, flow, compress='piz', OPENEXR=True, precision='half', dtype='auto'):
+def mvwrite(path,flow,compress='piz',OPENEXR=True,precision = 'half'):
     if precision.lower() == 'half':
-        precision_ = HALF
+      precision_ = HALF
     elif precision.lower() == 'uint':
-        precision_ = UINT
+      precision_ = UINT
     else:
-        precision_ = FLOAT
+      precision_ = FLOAT
     writer = mvwrite2 if OPENEXR else mvwrite1
-    if not os.path.exists(os.path.dirname(path)):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-
+    if not os.path.exists(os.path.dirname(path)):  # 判断目录是否存在
+        os.makedirs(os.path.dirname(path),exist_ok=True) 
     if '.exr' in path:
         if len(flow.shape) == 2:
-            flow = np.repeat(flow[..., None], 3, axis=2)
+            flow = np.repeat(flow[...,None],3,axis=2)
         if flow.shape[2] == 2:
-            flow = np.insert(flow, 2, 0, axis=2)
-        writer(path, flow, compress, precision_)
-
+            flow = np.insert(flow,2,0,axis=2)
+        writer(path,flow,compress,precision_)
     elif '.flo' in path:
-        write_flo_file(flow[..., :2], path)
-
+        write_flo_file(flow[...,:2],path)
     elif '.tif' in path:
         if len(flow.shape) == 2:
-            flow = np.repeat(flow[..., None], 3, axis=2)
+          flow = np.repeat(flow[...,None],3,axis=2)
         if flow.shape[2] == 2:
-            flow = np.insert(flow, 2, 0, axis=2)
-        if flow.dtype == np.uint8:
-            pass                                      # 8bit直接写, 不再强制升16bit
-        elif flow.dtype != np.uint16:
-            if dtype == 'flow':                       # flow: [-1,1] → 全范围
-                flow = ((np.clip(flow, -1, 1) + 1) / 2 * 65535).astype('uint16')
-            else:                                     # image: [0,1] → 全范围
-                flow = (np.clip(flow, 0, 1) * 65535).astype('uint16')
-        if flow.shape[2] == 4:
-            Image.fromarray(flow).save(path)
+          flow = np.insert(flow,2,0,axis=2)
+        flow = np.clip(flow,-1,1)
+        flow *= 65535
+        flow = flow.astype('uint16')
+        if flow.shape[2] ==4:
+          Image.fromarray(flow).save(path)
         else:
-            cv2.imwrite(path, flow[..., :3][..., ::-1])
-
-    else:                                             # png / jpg
-        if len(flow.shape) == 2:
-            flow = np.repeat(flow[..., None], 3, axis=2)
-        if flow.shape[2] == 2:
-            flow = np.insert(flow, 2, 0, axis=2)
-
-        if flow.dtype != np.uint8:
-            if dtype == 'image':
-                # 图像: [0,1] → [0,255], 黑保持黑 (修复warp偏白的根因)
-                flow = (np.clip(flow, 0, 1) * 255).astype('uint8')
-            elif dtype == 'flow':
-                # flow可视化: [-1,1] → [0,255], 零位移=中灰128
-                flow = ((np.clip(flow, -1, 1) + 1) / 2 * 255).astype('uint8')
-            else:
-                # auto: 保留旧的猜测逻辑, 仅兼容存量调用 (已知会误伤[0,1]图像!)
-                if flow.min() < -1:
-                    flow = np.clip(flow, -1, 1)
-                if flow.max() <= 1:
-                    flow = ((flow + 1) / 2 * 255).astype('uint8')
-                else:
-                    flow = np.clip(flow, 0, 255).astype('uint8')
-
-        if flow.shape[2] == 4:
-            Image.fromarray(flow).save(path)
-        else:
-            cv2.imwrite(path, flow[..., :3][..., ::-1])
-
-def write(path, flow, compress='piz', dtype='auto'):
-    """dtype: 'image' [0,1]或uint8图像 | 'flow' 位移数据 | 'auto' 兼容旧行为(按数值范围猜)。
-    新代码一律显式传 dtype, 禁止依赖auto。"""
-    if flow is None or path is None:
-        return
-    if type(path) == str:
-        mvwrite(path, flow, compress, dtype=dtype)
+          cv2.imwrite(path,flow[...,:3][...,::-1])
     else:
-        mvwrite(flow, path, compress, dtype=dtype)   # 兼容参数反序的历史调用
+        if len(flow.shape) == 2:
+            flow = np.repeat(flow[...,None],3,axis=2)
+        if flow.shape[2] == 2:
+            flow = np.insert(flow,2,0,axis=2)
+        if flow.min() < -1:
+           flow = np.clip(flow,-1,1)
+        if flow.max() <= 1:
+           flow = ((flow+1)/2 * 255).astype('uint8')
+        if flow.shape[2] ==4:
+           Image.fromarray(flow).save(path)
+        else:
+          cv2.imwrite(path,flow[...,:3][...,::-1])
+
+def write(path,flow,compress='piz'):
+    if flow is None or path is None:
+      return
+    if type(path) == str:
+      mvwrite(path,flow,compress)
+    else:
+      mvwrite(flow,path,compress)
 
     #front masked area set to 0.5 and back to 1 
 def save_mv_file(save_name,opt,valid,args):
