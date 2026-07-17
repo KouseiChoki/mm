@@ -139,9 +139,10 @@ def scan_tier(root: Path, tier_dir: str, tier_label: str,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
-                 pair_ratio: float, broken: list) -> List[dict]:
+                 pair_ratio: float, broken: list ,teacher_fps:list) -> List[dict]:
     base = root / TEACHER_DIR
     rows = []
+    
     
     if not base.is_dir():
         logger.warning(f'目录不存在, 跳过: {base}')
@@ -217,6 +218,8 @@ def main() -> None:
                    help='teacher scene 的 image/mv 配对率下限 (默认 0.9)')
     p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
                help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
+    p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
+               help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
     args = p.parse_args()
 
     root = Path(args.root)
@@ -236,7 +239,7 @@ def main() -> None:
                              f'{sum(r["n"] for r in rows):>9} 帧')
 
     # teacher
-    rows = scan_teacher(root, min_frames, args.allow_gaps, args.pair_ratio, broken)
+    rows = scan_teacher(root, min_frames, args.allow_gaps, args.pair_ratio, broken,args.teacher_fps)
     write_list(out_dir / 'teacher_train.txt', rows)
     fps_dist = {}
     for r in rows:
