@@ -543,4 +543,11 @@ def selective_scan_compiled(
 
 
 # Public alias used by feature_extractor.py (imported as selective_scan_fn)
-selective_scan_fn = selective_scan_compiled
+# 默认直连 chunked: 多stage/多分辨率下形状天然多变, torch.compile(dynamic=False)
+# 会撞 recompile_limit 后整体回退eager (编译成本全付、收益为零)。
+# 如需实验compile: 设环境变量 VFI_SCAN_COMPILE=1 (走 selective_scan_compiled)。
+import os as _os
+if _os.environ.get('VFI_SCAN_COMPILE', '0') == '1':
+    selective_scan_fn = selective_scan_compiled
+else:
+    selective_scan_fn = selective_scan_chunked

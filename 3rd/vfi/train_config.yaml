@@ -1,71 +1,71 @@
 # VFIMamba 训练配置 (train.py 唯一超参来源)
 # 用法: python train.py --config train_config.yaml [--restore_ckpt xxx.pkl]
 
-<<<<<<< HEAD
-exp_name: Kousei_phase1_0716_mix          # 实验名: log目录/ckpt目录/TensorBoard 均用它
-=======
-exp_name: Kousei_phase1_0717_t25_epoch380          # 实验名: log目录/ckpt目录/TensorBoard 均用它
->>>>>>> fb00ae07b38f25b195b7690d19bf7b3c43e4759b
+exp_name: Kousei_phase1_0717_mix          # 实验名: log目录/ckpt目录/TensorBoard 均用它
 
 seed: 1234
 
 # ── 模型 (传给 config.init_model_config) ────────────────────────────────────
 model:
-  F: 48                            # 32→48: 参数~2.25×, 宽度优先
-  depth: [2, 2, 2, 3, 3]           # 深度不动 (一次只动一个宽深维度)
-  version: 2
+  F: 48
+  depth: [2, 2, 2, 3, 3]
+  version: 2                       # unet选择 (语义不变)
+  ssm_version: 2                   # 新: 1=S6(v1/v2现状), 2=Mamba2 SSD
+  ssd_dstate: 64                   # SSD状态维 (S6用16; SSD成本结构不同, 64起步)
+  ssd_headdim: 64                  # d_inner须被整除: F48→stage3/4 d_inner=768/1536 ✓
+  ssd_chunk: 256
   loss_type: l1
   flow_loss_weight: 0.01
-  local_cfg: [[2, 4, 1.0, 8],      # 1/8 粗精化
-              [1, 2, 1.0, 8],      # 1/2
-              [1, 1, 0.5, 4]]      # 全分辨率级: 半宽通道+4层
+  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+
+# 从头训练: lr上调 + 长warmup (区别于续训配置)
+optim:
+  lr_max: 1.0e-4
+  lr_min: 5e-6
+  warmup_steps: 5000
+  finetune: false
+  amp: false
+  grad_clip: 1.0
+# data / phases / monitor 段沿用现有生产yaml
 
 # ── 数据 ─────────────────────────────────────────────────────────────────────
 data:
   root: /home/zhenying/qhong/data/ssd/vfi_database
   lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
-  batch_size: 5
-  num_workers: 8
+  batch_size: 1
+  num_workers: 24
   crop_sizes:                  # 多尺度: 每个epoch随机选一组 (h, w), 需为16倍数
-<<<<<<< HEAD
-    - [288, 512, 6]
-    - [432, 768, 3]
-    - [576, 1024, 1]
-  framesteps: [1, 2]
-  t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
-  mv_prob: 0.5                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
-=======
-    - [288, 512,  12]
-    - [400, 704,  6]
-    #- [432, 768,  4]
+    - [288, 512,  6]
+    - [400, 720,  3]
+    - [480, 880,  2]
+    - [688, 1232, 1]
   framesteps: [1, 2]
   t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
   mv_prob: 0.6                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
->>>>>>> fb00ae07b38f25b195b7690d19bf7b3c43e4759b
   mv_sign: [1, 1]              # !! 必须先用 verify_mv_convention.py 实证后填 !!
 
 # ── 训练阶段 (顺序执行, 配比可切换) ──────────────────────────────────────────
 phases:
   - name: base                 # Phase 1: easy+normal 为主
-    epochs: 10000
-    ratios: {easy: 0.25, normal: 0.5, hard: 0, teacher: 0.25}
+    epochs: 200
+    ratios: {easy: 0.20, normal: 0.10, hard: 0.05, teacher: 0.65}
+  - name: easy_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
+    epochs: 200
+    ratios: {easy: 0.40, normal: 0.10, hard: 0.10, teacher: 0.4}
+  - name: normal_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
+    epochs: 200
+    ratios: {easy: 0.20, normal: 0.40, hard: 0.20, teacher: 0.2}
   - name: hard_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
-    epochs: 0
-    ratios: {easy: 0.10, normal: 0.25, hard: 0.50, teacher: 0.15}
-
-# ── 优化 ─────────────────────────────────────────────────────────────────────
-optim:
-  lr_max: 5e-5
-  lr_min: 5e-6
-  warmup_steps: 3000
-  finetune: false              # true: 沿用旧逻辑 lr/4
-  amp: false                    # CUDA下启用FP16
-  grad_clip: 1.0
+    epochs: 400
+    ratios: {easy: 0.20, normal: 0.30, hard: 0.40, teacher: 0.1}
 
 # ── 监控 / 保存 ──────────────────────────────────────────────────────────────
 monitor:
-  eval_every_epochs: 9999999
+  eval_every_epochs: 10
   save_every_epochs: 10
   log_every_steps: 100
   spike_ratio: 3.0
   spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_max: 1000
+

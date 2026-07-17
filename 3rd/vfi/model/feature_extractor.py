@@ -19,6 +19,11 @@ else:
         _SCAN_BACKEND = 'fallback_chunked'
 print(f'[selective_scan] backend = {_SCAN_BACKEND}')
 
+try:
+    from model.ssd_scan import ssd_scan                    # Mamba2 SSD (ssm_version=2)
+except ImportError:
+    from ssd_scan import ssd_scan                          # 单文件测试回退
+
 
 
 
@@ -274,6 +279,147 @@ class SS2D(nn.Module):
         return out
 
 
+class SS2Dv2(nn.Module):
+    """Mamba2 SSD 版四方向Cross-Scan块 (ssm_version=2)。
+
+    与 SS2D (S6) 的外部行为一致: 输入(B,H,W,C) NHWC, 双帧沿batch拼接,
+    merge_x 逐token交错两帧后做四方向扫描 (Mixed-SSM结构完全保留)。
+    参数化差异 (SSD):
+        Δ逐head:  x_proj 直接输出 (nheads + 2*d_state)
+        A逐head标量: A_log (K*nheads,)
+        D逐head:  (K*nheads,)
+    删除 S6 的 dt_rank 低秩投影 / dt_projs 逐通道展开 / 对角A。
+    """
+
+    def __init__(
+            self,
+            d_model,
+            d_state=64,
+            d_conv=3,
+            expand=2.,
+            headdim=64,
+            ssd_chunk=256,
+            dropout=0.,
+            conv_bias=True,
+            bias=False,
+            device=None,
+            dtype=None,
+            **kwargs,
+    ):
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self.d_model = d_model
+        self.d_state = d_state
+        self.expand = expand
+        self.d_inner = int(self.expand * self.d_model)
+        assert self.d_inner % headdim == 0, \
+            f'd_inner({self.d_inner}) 须被 headdim({headdim}) 整除'
+        self.headdim = headdim
+        self.nheads = self.d_inner // headdim
+        self.ssd_chunk = ssd_chunk
+        K = 4
+
+        self.in_proj = nn.Linear(self.d_model, self.d_inner * 2, bias=bias, **factory_kwargs)
+        self.conv2d = nn.Conv2d(
+            in_channels=self.d_inner, out_channels=self.d_inner,
+            groups=self.d_inner, bias=conv_bias, kernel_size=d_conv,
+            padding=(d_conv - 1) // 2, **factory_kwargs,
+        )
+        self.act = nn.SiLU()
+
+        # 每方向一个投影: d_inner → (dt_head + B + C)
+        proj_out = self.nheads + 2 * self.d_state
+        self.x_proj_weight = nn.Parameter(
+            torch.stack([nn.Linear(self.d_inner, proj_out, bias=False,
+                                   **factory_kwargs).weight for _ in range(K)], dim=0))
+
+        # dt_bias: Mamba2式初始化 (softplus逆映射到[dt_min, dt_max])
+        dt = torch.exp(torch.rand(K * self.nheads, **factory_kwargs)
+                       * (math.log(0.1) - math.log(0.001)) + math.log(0.001)).clamp(min=1e-4)
+        inv_dt = dt + torch.log(-torch.expm1(-dt))
+        self.dt_bias = nn.Parameter(inv_dt)
+        self.dt_bias._no_weight_decay = True
+
+        # A: 逐head标量, A=-exp(A_log), 初始化 uniform[1,16]
+        A = torch.empty(K * self.nheads, **factory_kwargs).uniform_(1, 16)
+        self.A_log = nn.Parameter(torch.log(A))
+        self.A_log._no_weight_decay = True
+
+        self.D = nn.Parameter(torch.ones(K * self.nheads, **factory_kwargs))
+        self.D._no_weight_decay = True
+
+        self.out_norm = nn.LayerNorm(self.d_inner)
+        self.out_proj = nn.Linear(self.d_inner, self.d_model, bias=bias, **factory_kwargs)
+        self.dropout = nn.Dropout(dropout) if dropout > 0. else None
+
+    def merge_x(self, x):
+        B, C, H, W = x.shape
+        L = 2 * H * W
+        x = x.view(B, -1, L // 2).transpose(1, 2)
+        x = torch.cat([x[:B // 2], x[B // 2:]], dim=-1).reshape(B // 2, L, C)
+        return x.transpose(1, 2).contiguous()
+
+    def forward_core(self, x: torch.Tensor):
+        Bfull, Cdim, H, W = x.shape
+        L = 2 * H * W
+        K = 4
+        Bh = Bfull // 2
+        # 四方向序列构造 (与SS2D完全一致: hw / wh × 正反)
+        x_hwwh = torch.stack([
+            self.merge_x(x),
+            self.merge_x(torch.transpose(x, dim0=2, dim1=3).contiguous())
+        ], dim=1).view(Bh, 2, -1, L)
+        xs = torch.cat([x_hwwh, torch.flip(x_hwwh, dims=[-1])], dim=1)   # (Bh,K,D,L)
+
+        # 投影出 dt/B/C
+        x_dbl = torch.einsum('b k d l, k c d -> b k c l',
+                             xs.view(Bh, K, -1, L), self.x_proj_weight)
+        dts, Bs, Cs = torch.split(
+            x_dbl, [self.nheads, self.d_state, self.d_state], dim=2)
+
+        # 折叠视图: (Bh, K, L, ...) 逐方向调用SSD (各方向独立的A/D/dt_bias参数)
+        xk = rearrange(xs, 'b k (h p) l -> b k l h p',
+                       h=self.nheads, p=self.headdim).float()
+        dtk = rearrange(dts, 'b k h l -> b k l h').float()
+        Bk = rearrange(Bs, 'b k n l -> b k l n').float()
+        Ck = rearrange(Cs, 'b k n l -> b k l n').float()
+        A_log = rearrange(self.A_log, '(k h) -> k h', k=K)
+        D = rearrange(self.D, '(k h) -> k h', k=K)
+        dt_bias = rearrange(self.dt_bias, '(k h) -> k h', k=K)
+        ys = []
+        for k in range(K):
+            yk = ssd_scan(xk[:, k], dtk[:, k], A_log[k], Bk[:, k], Ck[:, k],
+                          D[k], dt_bias[k], chunk_size=self.ssd_chunk)
+            ys.append(rearrange(yk, 'b l h p -> b (h p) l'))
+        out_y = torch.stack(ys, dim=1)                                    # (Bh,K,D,L)
+        assert out_y.dtype == torch.float
+
+        inv_y = torch.flip(out_y[:, 2:4], dims=[-1]).view(Bh, 2, -1, L)
+        wh_y = torch.transpose(out_y[:, 1].view(Bh, -1, W, H), dim0=2, dim1=3
+                               ).contiguous().view(Bh, -1, L)
+        invwh_y = torch.transpose(inv_y[:, 1].view(Bh, -1, W, H), dim0=2, dim1=3
+                                  ).contiguous().view(Bh, -1, L)
+        return out_y[:, 0], inv_y[:, 0], wh_y, invwh_y
+
+    def forward(self, x: torch.Tensor, **kwargs):
+        B, H, W, C = x.shape
+        xz = self.in_proj(x)
+        x, z = xz.chunk(2, dim=-1)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        x = self.act(self.conv2d(x))
+        y1, y2, y3, y4 = self.forward_core(x)
+        y = y1 + y2 + y3 + y4
+        y = torch.transpose(y, dim0=1, dim1=2).contiguous().view(
+            B // 2, H * W, 2, int(self.expand * C))
+        y = torch.cat([y[:, :, 0], y[:, :, 1]], 0).view(B, H, W, int(self.expand * C))
+        y = self.out_norm(y)
+        y = y * F.silu(z)
+        out = self.out_proj(y)
+        if self.dropout is not None:
+            out = self.dropout(out)
+        return out
+
+
 class VSSBlock(nn.Module):
     def __init__(
             self,
@@ -287,7 +433,15 @@ class VSSBlock(nn.Module):
     ):
         super().__init__()
         self.ln_1 = norm_layer(hidden_dim)
-        self.self_attention = SS2D(d_model=hidden_dim, d_state=d_state,expand=mlp_ratio,dropout=attn_drop_rate, **kwargs)
+        ssm_version = kwargs.pop('ssm_version', 1)
+        if ssm_version == 2:
+            self.self_attention = SS2Dv2(d_model=hidden_dim,
+                                         d_state=kwargs.pop('ssd_dstate', 64),
+                                         headdim=kwargs.pop('ssd_headdim', 64),
+                                         ssd_chunk=kwargs.pop('ssd_chunk', 256),
+                                         expand=mlp_ratio, dropout=attn_drop_rate, **kwargs)
+        else:
+            self.self_attention = SS2D(d_model=hidden_dim, d_state=d_state,expand=mlp_ratio,dropout=attn_drop_rate, **kwargs)
         self.skip_scale= nn.Parameter(torch.ones(hidden_dim))
         self.conv_blk = CAB(hidden_dim)
         self.ln_2 = nn.LayerNorm(hidden_dim)
@@ -310,7 +464,8 @@ class BiMambaBlock(nn.Module):
                  depth,
                  norm_layer=nn.LayerNorm,
                  downsample=None,
-                 use_checkpoint=False):
+                 use_checkpoint=False,
+                 **ssm_kwargs):
 
         super().__init__()
         self.dim = dim
@@ -321,6 +476,7 @@ class BiMambaBlock(nn.Module):
                 hidden_dim=dim,
                 norm_layer=nn.LayerNorm,
                 d_state=16,
+                **ssm_kwargs,
             ))
 
 
@@ -419,7 +575,11 @@ class MambaFeature(nn.Module):
                     )
                     block = ConvBlock(embed_dims[i],embed_dims[i],depths[i])
                 else:
-                    block = BiMambaBlock(embed_dims[i], depths[i])
+                    block = BiMambaBlock(embed_dims[i], depths[i],
+                                         ssm_version=kwargs.get('ssm_version', 1),
+                                         ssd_dstate=kwargs.get('ssd_dstate', 64),
+                                         ssd_headdim=kwargs.get('ssd_headdim', 64),
+                                         ssd_chunk=kwargs.get('ssd_chunk', 256))
                     patch_embed = OverlapPatchEmbed(patch_size=3,
                                                     stride=2,
                                                     in_chans=embed_dims[i - 1],

@@ -9,6 +9,7 @@ LOCAL = 2
 
 '''==========Model config=========='''
 def init_model_config(F=32, W=7, depth=[2, 2, 2, 4, 4], M=False, version=1,
+                      ssm_version=1, ssd_dstate=64, ssd_headdim=64, ssd_chunk=256,
                       **overrides):
     '''结构展开器: 从少量参数推导完整架构dict。
     推导公式与类绑定固定在本文件; 一切实验可变的结构字段通过 **overrides
@@ -32,7 +33,11 @@ def init_model_config(F=32, W=7, depth=[2, 2, 2, 4, 4], M=False, version=1,
         'depths': depth,
         'window_sizes': [W for i in range(len(depth)-3)],
         'conv_stages': 3,
-        'version': version
+        'version': version,
+        'ssm_version': ssm_version,   # 1=S6(Mamba1/现状), 2=SSD(Mamba2); 改动=backbone全量重训
+        'ssd_dstate': ssd_dstate,
+        'ssd_headdim': ssd_headdim,
+        'ssd_chunk': ssd_chunk,
     }
     multiscalecfg = {
         'embed_dims': [(2**i)*F for i in range(len(depth))],

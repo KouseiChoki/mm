@@ -1,0 +1,26 @@
+# v3 大版本示例: Mamba2(SSD) + F48 + 三级local(含全分辨率) —— 从头训练
+exp_name: Kousei_v3_mamba2_F48
+
+seed: 1234
+
+model:
+  F: 48
+  depth: [2, 2, 2, 3, 3]
+  version: 2                       # unet选择 (语义不变)
+  ssm_version: 2                   # 新: 1=S6(v1/v2现状), 2=Mamba2 SSD
+  ssd_dstate: 64                   # SSD状态维 (S6用16; SSD成本结构不同, 64起步)
+  ssd_headdim: 64                  # d_inner须被整除: F48→stage3/4 d_inner=768/1536 ✓
+  ssd_chunk: 256
+  loss_type: l1
+  flow_loss_weight: 0.01
+  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+
+# 从头训练: lr上调 + 长warmup (区别于续训配置)
+optim:
+  lr_max: 1.0e-4
+  lr_min: 5e-6
+  warmup_steps: 5000
+  finetune: false
+  amp: false
+  grad_clip: 1.0
+# data / phases / monitor 段沿用现有生产yaml
