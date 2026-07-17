@@ -342,7 +342,7 @@ def main():
 
         for frame_idx, img_f32 in frames_to_write:
             if need_image:
-                out_path = os.path.join(save_folder, f"{frame_idx:06d}{ext}")
+                out_path = os.path.join(save_folder,'vfi', f"{frame_idx:06d}{ext}")
                 write(out_path, img_f32 if is_exr else to_uint8(img_f32))
             if need_video:
                 video_writer.add_frame(save_folder, frame_idx, img_f32)

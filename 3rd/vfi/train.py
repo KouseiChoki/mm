@@ -92,7 +92,7 @@ class SpikeDetector:
 class AnomalyDumper:
     """异常batch落盘: 图像(img0/gt/img1/pred) + flow_gt(.npy) + 元信息, 用于事后归因。"""
 
-    def __init__(self, dump_dir='anomaly_dumps', max_dumps=50):
+    def __init__(self, dump_dir='anomaly_dumps', max_dumps=500):
         self.dump_dir = dump_dir
         self.max_dumps = max_dumps
         self.count = 0
@@ -177,7 +177,7 @@ def train(C, restore_ckpt=None, config_path=None):
                               spike_dir=mon['spike_dir'])
     dumper = AnomalyDumper(dump_dir=mon.get('dump_dir', 'anomaly_dumps'),
                            max_dumps=mon.get('dump_max', 50))
-    flow_dump_thresh = mon.get('flow_loss_dump_threshold', 100.0)
+    flow_dump_thresh = mon.get('flow_loss_dump_threshold', 30.0)
 
     use_amp = opt.get('amp', False) and torch.cuda.is_available()
     scaler = GradScaler(enabled=use_amp)
@@ -237,11 +237,11 @@ def train(C, restore_ckpt=None, config_path=None):
 
         for _ in range(phase['epochs']):
             # 多尺度: 每epoch换一次crop尺寸 (worker副本重建时生效)
-            train_set.set_crop_size(random.choice(crop_sizes))
-            train_loader = DataLoader(
-                train_set, batch_size=d['batch_size'],
-                num_workers=d['num_workers'], pin_memory=True,
-                drop_last=True, shuffle=True)
+            sel = random.choice(crop_sizes)          # (h, w, bs)
+            train_set.set_crop_size((sel[0], sel[1]))
+            train_loader = DataLoader(train_set, batch_size=sel[2],
+                                    num_workers=d['num_workers'], pin_memory=True,
+                                    drop_last=True, shuffle=True)
             it = iter(train_loader)
 
             for i in range(steps_per_epoch):
@@ -270,16 +270,12 @@ def train(C, restore_ckpt=None, config_path=None):
                 time_stamp = time.time()
 
                 loss_ema = loss if loss_ema is None else 0.98 * loss_ema + 0.02 * loss
-                is_spike = spike_det.check(loss, step, writer)
+                # is_spike = spike_det.check(loss, step, writer)
 
                 # 异常样本落盘: flow loss超阈值 或 loss spike
-                if loss_flow > flow_dump_thresh:
+                if step > 40000 and loss_flow > flow_dump_thresh:
                     dumper.dump(step, f'flowloss{loss_flow:.0f}', frames, timestep,
                                 flow_gt, has_mv, pred=pred, loss=loss, loss_flow=loss_flow)
-                elif is_spike:
-                    dumper.dump(step, f'spike{loss / max(loss_ema, 1e-8):.1f}x',
-                                frames, timestep, flow_gt, has_mv,
-                                pred=pred, loss=loss, loss_flow=loss_flow)
 
                 if step % mon['log_every_steps'] == 0:
                     writer.add_scalar('loss/raw', loss, step)
