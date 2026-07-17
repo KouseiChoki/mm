@@ -143,6 +143,7 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
     base = root / TEACHER_DIR
     rows = []
     
+    
     if not base.is_dir():
         logger.warning(f'目录不存在, 跳过: {base}')
         return rows
@@ -154,7 +155,7 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
             continue
         sdir = Path(dirpath)
         fps = fps_from_path(sdir)
-        if teacher_fps is not None and fps not in teacher_fps:
+        if args.teacher_fps is not None and fps not in args.teacher_fps:
             continue
 
         dirnames[:] = []                      # 命中即剪枝, 不再深入
@@ -215,6 +216,8 @@ def main() -> None:
                    help='允许帧号断号的scene入库 (默认剔除并记录)')
     p.add_argument('--pair_ratio', type=float, default=0.9,
                    help='teacher scene 的 image/mv 配对率下限 (默认 0.9)')
+    p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
+               help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
     p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
                help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
     args = p.parse_args()
