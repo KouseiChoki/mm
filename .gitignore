@@ -28,3 +28,4 @@ pattern/
 ckpt/
 spike_samples/
 checkpoints/
+*test.yaml
