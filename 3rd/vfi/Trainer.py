@@ -17,10 +17,15 @@ def convert(param):
 
 
 class Model:
-    def __init__(self, local_rank=0, loss_type='lap', flow_loss_weight=0.01):
+    def __init__(self, local_rank=0, loss_type='lap', flow_loss_weight=0.01,
+                 flow_stage_gamma=0.8, flow_motion_threshold=1.0,
+                 flow_motion_balance=0.5, flow_motion_gain=1.0,
+                 flow_motion_scale=10.0, flow_motion_weight_cap=4.0,
+                 flow_charbonnier_eps=1e-3):
         """
         loss_type        : 'l1' | 'lap' | 'l1+lap'
-        flow_loss_weight : teacher flow 监督 (masked EPE) 的权重, 0=关闭
+        flow_loss_weight : teacher flow 监督的总权重, 0=关闭
+        flow_stage_gamma : 多阶段监督的递增系数; 越后级权重越高
         """
         backbonetype, multiscaletype = MODEL_CONFIG['MODEL_TYPE']
         backbonecfg, multiscalecfg = MODEL_CONFIG['MODEL_ARCH']
@@ -38,6 +43,16 @@ class Model:
             if loss_type in ('lap', 'l1+lap') else None
         )
         self.flow_loss_weight = flow_loss_weight
+        self.flow_stage_gamma = float(flow_stage_gamma)
+        self.flow_loss_kwargs = {
+            'motion_threshold': float(flow_motion_threshold),
+            'motion_balance': min(max(float(flow_motion_balance), 0.0), 1.0),
+            'motion_gain': float(flow_motion_gain),
+            'motion_scale': float(flow_motion_scale),
+            'motion_weight_cap': float(flow_motion_weight_cap),
+            'charbonnier_eps': float(flow_charbonnier_eps),
+        }
+        self.last_flow_stage_losses = None
 
         self.optimG = optim.AdamW(self.net.parameters(), lr=1e-6, weight_decay=1e-4)
 
@@ -102,6 +117,17 @@ class Model:
             print(f'[load_model] {len(missing)} 个键未从checkpoint加载(新初始化): '
                 f'{missing[:4]}{"..." if len(missing) > 4 else ""}')
 
+        # finetune安全检查: 明确告知原有最后一级(全分辨率)IFBlock是否成功复用。
+        fullres_index = len(self.net.local_block) - 1
+        fullres_prefix = f'local_block.{fullres_index}.'
+        fullres_loaded = sum(k.startswith(fullres_prefix) for k in filtered)
+        if fullres_loaded:
+            print(f'[load_model] 全分辨率IFBlock[{fullres_index}] '
+                  f'已复用checkpoint权重 ({fullres_loaded} tensors)')
+        else:
+            print(f'[load_model] WARNING: checkpoint中未找到全分辨率'
+                  f'IFBlock[{fullres_index}], 该分支将使用零残差初始化')
+
         if resume and 'optim' in ckpt:
             self.optimG.load_state_dict(ckpt['optim'])
         return ckpt.get('epoch', 0), ckpt.get('step', 0)
@@ -125,24 +151,107 @@ class Model:
         return (pred - gt).abs().mean() + self.lap_loss(pred, gt)   # l1+lap
 
     @staticmethod
-    def _flow_epe_masked(flow_pred, flow_gt, has_mv, epe_clamp=50.0):
+    def _flow_region_weights(flow_gt, has_mv, motion_threshold=1.0,
+                             motion_gain=1.0, motion_scale=10.0,
+                             motion_weight_cap=4.0):
+        """预计算与预测无关的前景/背景权重, 供所有flow阶段复用。"""
+        valid = flow_gt[:, 4].clamp(0, 1)                                # [B,H,W]
+        global_flow = torch.zeros(
+            flow_gt.shape[0], 4, 1, 1, dtype=flow_gt.dtype, device=flow_gt.device)
+        for b in range(flow_gt.shape[0]):
+            sparse_valid = valid[b, ::8, ::8] > 0
+            if sparse_valid.any():
+                sparse_flow = flow_gt[b, :4, ::8, ::8]
+                global_flow[b, :, 0, 0] = sparse_flow[:, sparse_valid].median(dim=1).values
+        relative_mag = 0.5 * (
+            torch.linalg.vector_norm(flow_gt[:, 0:2] - global_flow[:, 0:2], dim=1)
+            + torch.linalg.vector_norm(flow_gt[:, 2:4] - global_flow[:, 2:4], dim=1))
+        moving = valid * (relative_mag >= motion_threshold).to(valid.dtype)
+        static = valid * (relative_mag < motion_threshold).to(valid.dtype)
+
+        scale = max(float(motion_scale), 1e-6)
+        motion_factor = torch.clamp(
+            1.0 + motion_gain * relative_mag / scale,
+            max=max(float(motion_weight_cap), 1.0))
+        motion_weight = moving * motion_factor
+        sample_valid = (has_mv > 0) & (valid.sum(dim=(1, 2)) > 0)
+        return motion_weight, static, sample_valid
+
+    @staticmethod
+    def _flow_epe_masked(flow_pred, flow_gt, has_mv,
+                         motion_threshold=1.0, motion_balance=0.5,
+                         motion_gain=1.0, motion_scale=10.0,
+                         motion_weight_cap=4.0, charbonnier_eps=1e-3,
+                         _regions=None):
         """
         flow_pred : [B, 4, H, W] 像素位移 (前2通道 F_t→0, 后2通道 F_t→1)
         flow_gt   : [B, 5, H, W] 前4通道同上, 第5通道为遮挡有效性mask
                     (valid=0 的uncover区无合法对应点, 监督病态, 逐像素跳过)
         has_mv    : [B] 1=该样本flow_gt有效
-        epe_clamp : 单像素EPE贡献上界 (mask漏网时的兜底, 压平病态梯度)
-        返回 双重mask (样本级has_mv × 像素级valid) 下的EPE均值。
+        移动区与静态区分别归一化, 防止小运动物体被背景像素数量淹没。
+        移动区内再按GT位移大小软加权。Charbonnier EPE不做硬clamp,
+        因此大误差像素仍然有梯度。
         """
-        n_valid = has_mv.sum()
+        diff0 = flow_pred[:, 0:2] - flow_gt[:, 0:2]
+        diff1 = flow_pred[:, 2:4] - flow_gt[:, 2:4]
+        eps2 = charbonnier_eps ** 2
+        epe0 = torch.sqrt(diff0.square().sum(dim=1) + eps2)
+        epe1 = torch.sqrt(diff1.square().sum(dim=1) + eps2)
+        epe = (epe0 + epe1) * 0.5                                       # [B,H,W]
+
+        if _regions is None:
+            _regions = Model._flow_region_weights(
+                flow_gt, has_mv, motion_threshold=motion_threshold,
+                motion_gain=motion_gain, motion_scale=motion_scale,
+                motion_weight_cap=motion_weight_cap)
+        motion_weight, static, sample_valid = _regions
+
+        def region_mean(region_weight):
+            denom = region_weight.sum(dim=(1, 2))
+            mean = (epe * region_weight).sum(dim=(1, 2)) / denom.clamp(min=1e-6)
+            return mean, denom > 0
+
+        moving_mean, has_moving = region_mean(motion_weight)
+        static_mean, has_static = region_mean(static)
+        both = has_moving & has_static
+        per_sample = torch.where(
+            both,
+            motion_balance * moving_mean + (1.0 - motion_balance) * static_mean,
+            torch.where(has_moving, moving_mean, static_mean))
+
+        n_valid = sample_valid.sum()
         if n_valid < 1:
             return flow_pred.sum() * 0.0
-        valid = flow_gt[:, 4]                                            # [B,H,W]
-        epe0 = torch.norm(flow_pred[:, 0:2] - flow_gt[:, 0:2], dim=1)
-        epe1 = torch.norm(flow_pred[:, 2:4] - flow_gt[:, 2:4], dim=1)
-        epe = ((epe0 + epe1) * 0.5).clamp(max=epe_clamp) * valid         # [B,H,W]
-        per_sample = epe.sum(dim=(1, 2)) / valid.sum(dim=(1, 2)).clamp(min=1)
-        return (per_sample * has_mv).sum() / n_valid
+        return (per_sample * sample_valid.to(per_sample.dtype)).sum() / n_valid
+
+    def _multistage_flow_loss(self, flow_list, flow_gt, has_mv, pr, pb):
+        """对所有 learned-feature/local flow 阶段做深监督。
+
+        gamma 权重按阶段递增并归一化, 使 flow_loss_weight 的整体量级
+        不因阶段数改变。
+        """
+        n = len(flow_list)
+        if n == 0:
+            self.last_flow_stage_losses = None
+            return flow_gt.sum() * 0.0
+        gamma = min(max(self.flow_stage_gamma, 1e-6), 1.0)
+        weights = flow_gt.new_tensor([gamma ** (n - 1 - i) for i in range(n)])
+        weights = weights / weights.sum()
+        regions = self._flow_region_weights(
+            flow_gt, has_mv,
+            motion_threshold=self.flow_loss_kwargs['motion_threshold'],
+            motion_gain=self.flow_loss_kwargs['motion_gain'],
+            motion_scale=self.flow_loss_kwargs['motion_scale'],
+            motion_weight_cap=self.flow_loss_kwargs['motion_weight_cap'])
+        stage_losses = []
+        for flow_pred in flow_list:
+            flow_pred = self.unpad(flow_pred, pr, pb)
+            stage_losses.append(self._flow_epe_masked(
+                flow_pred, flow_gt, has_mv, _regions=regions,
+                **self.flow_loss_kwargs))
+        stage_losses = torch.stack(stage_losses)
+        self.last_flow_stage_losses = stage_losses.detach()
+        return (stage_losses * weights).sum()
 
     # ── train / eval step ─────────────────────────────────────────────────────
 
@@ -152,7 +261,7 @@ class Model:
         imgs     : [B, 6, H, W] float 0~1  (img0, img1)
         gt       : [B, 3, H, W] float 0~1
         timestep : float 或 [B,1,1,1] 张量 (来自Dataset, 任意timestep训练必须传)
-        flow_gt  : [B, 4, H, W] 像素位移 (teacher样本), 可为 None
+        flow_gt  : [B, 5, H, W] 前4通道为像素位移, 第5通道valid mask
         has_mv   : [B] flow_gt有效性mask, 可为 None
         """
         if torch.is_tensor(timestep):
@@ -173,13 +282,15 @@ class Model:
             for merge in merged:
                 loss = loss + self._pixel_loss(self.unpad(merge, pr, pb), gt)
 
-            # teacher flow 监督 (masked EPE, 仅对 has_mv=1 的样本生效)
+            # teacher flow 多阶段监督 (仅对 has_mv=1 的样本生效)
             loss_flow = torch.zeros((), device=self._dev)
+            self.last_flow_stage_losses = None
             if (self.flow_loss_weight > 0 and flow_gt is not None
                     and has_mv is not None and has_mv.sum() > 0):
-                flow_pred = self.unpad(flow_list[-1], pr, pb)
-                loss_flow = self._flow_epe_masked(
-                    flow_pred, flow_gt.to(self._dev), has_mv.to(self._dev))
+                flow_gt = flow_gt.to(self._dev)
+                has_mv = has_mv.to(self._dev)
+                loss_flow = self._multistage_flow_loss(
+                    flow_list, flow_gt, has_mv, pr, pb)
                 loss = loss + self.flow_loss_weight * loss_flow
 
             self.optimG.zero_grad()

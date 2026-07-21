@@ -137,7 +137,11 @@ def define_model(args):
 
 
 # ── 模型初始化 ────────────────────────────────────────────────────────
-_TRAIN_ONLY_KEYS = ('loss_type', 'flow_loss_weight')      # 训练侧消费, 不进结构
+_TRAIN_ONLY_KEYS = (
+    'loss_type', 'flow_loss_weight', 'flow_stage_gamma',
+    'flow_motion_threshold', 'flow_motion_balance', 'flow_motion_gain',
+    'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
+)                                                        # 训练侧消费, 不进结构
 _NAMED_KEYS = ('F', 'depth', 'M', 'version')
 
 

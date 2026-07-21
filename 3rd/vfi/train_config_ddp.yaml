@@ -1,0 +1,118 @@
+# VFIMamba 多机单卡 DDP 配置
+# 由 train_ddp.py 使用，不影响原 train.py / train_config.yaml。
+
+exp_name: Kousei_smallflow_q4_ddp_finetune
+seed: 1234
+
+# 单机训练的名义 optimizer steps/epoch。
+# preserve_single_node_samples_per_epoch=true 时，DDP会按 world_size*grad_accum_steps 缩减。
+steps_per_epoch: 2000
+
+model:
+  F: 48
+  depth: [2, 2, 2, 3, 3]
+  version: 2
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  loss_type: l1
+  flow_loss_weight: 0.01
+  flow_stage_gamma: 0.8
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.5
+  flow_motion_gain: 1.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: true
+  zero_init_residual_heads: true
+  local_zero_init: true
+  # 保留原有全分辨率 IFBlock
+  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+
+optim:
+  lr_max: 1.0e-4
+  lr_min: 5.0e-6
+  warmup_steps: 1000
+  finetune: true
+  grad_clip: 1.0
+
+  # 5090 推荐 BF16；若自定义算子不支持，改为 fp16。
+  amp: true
+  amp_dtype: bf16
+  grad_accum_steps: 1
+  cudnn_benchmark: true
+  matmul_precision: high
+
+data:
+  # 每台机器上的本地路径需要一致，或者分别保留一份同内容配置。
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  batch_size: 1
+
+  # 这是每台机器的worker数，不是全局数量。
+  num_workers: 6
+  val_num_workers: 2
+  persistent_workers: true
+  prefetch_factor: 2
+
+  # 第3个数是每个rank的batch size。
+  # global batch = 第3个数 * world_size * grad_accum_steps。
+  crop_sizes:
+    - [288, 512,  6]
+    - [400, 720,  3]
+    - [480, 880,  2]
+    - [688, 1232, 1]
+  framesteps: [1, 2]
+  t_half_prob: 1
+  mv_prob: 0.6
+  mv_sign: [1, 1]
+  motion_aware_crop_prob: 0.5
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+
+distributed:
+  backend: nccl
+  timeout_minutes: 30
+  broadcast_buffers: false
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: false
+  bucket_cap_mb: 25
+  # 可选：梯度通信量约减半，但会引入轻微压缩误差；先保持false。
+  fp16_compress_hook: false
+
+  # true: 多机后保持每epoch与单机大致相同的样本量，缩短epoch时间。
+  # false: 保持原steps/epoch，每epoch处理world_size倍数据。
+  preserve_single_node_samples_per_epoch: true
+
+phases:
+  - name: base
+    epochs: 200
+    ratios: {easy: 0.20, normal: 0.10, hard: 0.05, teacher: 0.65}
+  - name: easy_mix
+    epochs: 200
+    ratios: {easy: 0.40, normal: 0.10, hard: 0.10, teacher: 0.40}
+  - name: normal_mix
+    epochs: 200
+    ratios: {easy: 0.20, normal: 0.40, hard: 0.20, teacher: 0.20}
+  - name: hard_mix
+    epochs: 400
+    ratios: {easy: 0.20, normal: 0.30, hard: 0.40, teacher: 0.10}
+
+monitor:
+  eval_every_epochs: 10
+  save_every_epochs: 10
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps_ddp
+  dump_max: 1000

@@ -15,30 +15,48 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
 
 
 class Head(nn.Module):
-    def __init__(self, in_planes, scale, c, in_else=17):
+    def __init__(self, in_planes, scale, c, in_else=17, zero_init=False,
+                 compact_feature=False):
         super(Head, self).__init__()
-        self.upsample = nn.Sequential(nn.PixelShuffle(2), nn.PixelShuffle(2))
         self.scale = scale
+        feature_channels = in_planes * 2 // (4 * 4)
+        if compact_feature:
+            # 1/4 feature head不先PixelShuffle到全分辨率。用1x1投影压通道,
+            # 在1/4网格完成匹配/残差预测, 再上采样flow, 避免全分辨率192c卷积。
+            self.feature_transform = nn.Sequential(
+                nn.Conv2d(in_planes * 2, feature_channels, 1, 1, 0),
+                nn.PReLU(feature_channels),
+            )
+            self.work_scale = scale
+        else:
+            self.feature_transform = nn.Sequential(
+                nn.PixelShuffle(2), nn.PixelShuffle(2))
+            self.work_scale = scale // 4
         self.conv = nn.Sequential(
-                                  conv(in_planes*2 // (4*4) + in_else, c),
+                                  conv(feature_channels + in_else, c),
                                   conv(c, c),
                                   conv(c, 5),
                                   )  
+        if zero_init:
+            nn.init.zeros_(self.conv[-1][0].weight)
+            nn.init.zeros_(self.conv[-1][0].bias)
 
     def forward(self, motion_feature, x, flow): 
-        motion_feature = self.upsample(motion_feature) 
-        if self.scale != 4:
-            x = F.interpolate(x, scale_factor = 4. / self.scale, mode="bilinear", align_corners=False)
-        if flow != None:
-            if self.scale != 4:
-                flow = F.interpolate(flow, scale_factor = 4. / self.scale, mode="bilinear", align_corners=False) * 4. / self.scale
+        motion_feature = self.feature_transform(motion_feature)
+        if self.work_scale != 1:
+            x = F.interpolate(x, scale_factor=1. / self.work_scale,
+                              mode="bilinear", align_corners=False)
+        if flow is not None:
+            if self.work_scale != 1:
+                flow = F.interpolate(flow, scale_factor=1. / self.work_scale,
+                                     mode="bilinear", align_corners=False)
+                flow = flow * (1. / self.work_scale)
             x = torch.cat((x, flow), 1)
         x = self.conv(torch.cat([motion_feature, x], 1))
-        if self.scale != 4:
-            x = F.interpolate(x, scale_factor = self.scale // 4, mode="bilinear", align_corners=False)
-            flow = x[:, :4] * (self.scale // 4)
-        else:
-            flow = x[:, :4]
+        if self.work_scale != 1:
+            x = F.interpolate(x, scale_factor=self.work_scale,
+                              mode="bilinear", align_corners=False)
+        flow = x[:, :4] * self.work_scale
         mask = x[:, 4:5]
         return flow, mask
 
@@ -55,7 +73,7 @@ class IFBlock(nn.Module):
     卷积主体的实际工作分辨率 = 全分辨率 / (scale * down)。
     """
 
-    def __init__(self, in_planes, c, scale, down=4, blocks=8):
+    def __init__(self, in_planes, c, scale, down=4, blocks=8, zero_init=False):
         super(IFBlock, self).__init__()
         assert down in (1, 2, 4), f'down must be 1/2/4, got {down}'
         self.scale = scale
@@ -84,6 +102,10 @@ class IFBlock(nn.Module):
         else:
             self.lastconv = nn.ConvTranspose2d(c, 5, 4, 2, 1)  # ×2
 
+        if zero_init:
+            nn.init.zeros_(self.lastconv.weight)
+            nn.init.zeros_(self.lastconv.bias)
+
         # 预测网格 → 全分辨率 的上采样倍率 (同时也是flow数值的还原倍率):
         #   down>=2: 预测网格 = 全分辨率/(scale*down/2)
         #   down==1: 预测网格 = 全分辨率/scale
@@ -109,10 +131,15 @@ class MultiScaleFlow(nn.Module):
         super(MultiScaleFlow, self).__init__()
         self.flow_num_stage = len(kargs['hidden_dims'])
         self.feature_bone = backbone
+        zero_init_residual_heads = kargs.get('zero_init_residual_heads', False)
+        compact_quarter_head = kargs.get('compact_quarter_head', False)
         self.block = nn.ModuleList([Head( kargs['embed_dims'][-1-i], 
                             kargs['scales'][-1-i], 
                             kargs['hidden_dims'][-1-i],
-                            7 if i==0 else 18) 
+                            7 if i==0 else 18,
+                            zero_init=zero_init_residual_heads and i > 0,
+                            compact_feature=(compact_quarter_head
+                                             and kargs['scales'][-1-i] == 4))
                             for i in range(self.flow_num_stage)])
 
         # 局部精化配置: 每级 [scale, down, c倍率, blocks]
@@ -126,8 +153,10 @@ class MultiScaleFlow(nn.Module):
             local_cfg = [[2, 4, 1.0, 8], [1, 4, 1.0, 8]]
         self.local_num = len(local_cfg)
         base_c = kargs['local_hidden_dims']
+        local_zero_init = kargs.get('local_zero_init', False)
         self.local_block = nn.ModuleList([
-            IFBlock(18, c=max(int(base_c * cr) // 2 * 2, 16), scale=s, down=d, blocks=b)
+            IFBlock(18, c=max(int(base_c * cr) // 2 * 2, 16), scale=s, down=d,
+                    blocks=b, zero_init=local_zero_init)
             for (s, d, cr, b) in local_cfg
         ])
 
@@ -239,7 +268,8 @@ class MultiScaleFlow(nn.Module):
             merged.append(warped_img0 * mask_ + warped_img1 * (1 - mask_))
 
         if local:
-            flow_list = []
+            # flow_list 保留前面 learned-feature heads, 用于所有阶段的flow监督。
+            # mask/merged 仍只返回local阶段, 保持原有图像重建loss量级。
             merged = []
             mask_list = []
             
