@@ -22,7 +22,17 @@ def init_model_config(F=32, W=7, depth=[2, 2, 2, 4, 4], M=False, version=1,
             local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
         → 工作分辨率 1/8 → 1/2 → 1/1
         注意: 改动 local_cfg 即改动网络结构, checkpoint 不兼容, 需体现在 exp_name。
+
+    flow_num_stages 默认2, 对应 1/16→1/8 learned-feature heads;
+        设为3时再加入 1/4 head, 改动网络结构。
     '''
+    # 保留旧模型的两级(1/16,1/8)默认行为; 新训练可在yaml显式设为3,
+    # 启用1/4 learned-feature flow head。这样旧checkpoint推理不会悄悄多出随机分支。
+    flow_num_stages = int(overrides.pop('flow_num_stages', 2))
+    max_flow_stages = len(depth) - 2
+    if not 1 <= flow_num_stages <= max_flow_stages:
+        raise ValueError(f'flow_num_stages must be in [1,{max_flow_stages}], got {flow_num_stages}')
+
     backbonecfg = {
         'embed_dims': [(2**i)*F for i in range(len(depth))],
         'motion_dims': [0, 0, 0, 8*F//depth[-2], 16*F//depth[-1]],
@@ -46,7 +56,7 @@ def init_model_config(F=32, W=7, depth=[2, 2, 2, 4, 4], M=False, version=1,
         'num_heads': [8*(2**i)*F//32 for i in range(len(depth)-3)],
         'window_sizes': [W, W],
         'scales': [4*(2**i) for i in range(len(depth)-2)],
-        'hidden_dims': [4*F for i in range(len(depth)-3)],
+        'hidden_dims': [4*F for _ in range(flow_num_stages)],
         'c': F,
         'M': M,
         'local_hidden_dims': 4*F,

@@ -46,9 +46,9 @@ def get_learning_rate(step, total_steps, opt):
     warmup = opt['warmup_steps']
     lr_max, lr_min = float(opt['lr_max']), float(opt['lr_min'])
     if opt.get('finetune', False):
-        progress = (step - warmup) / max(total_steps - warmup, 1)
-        cosine = math.cos(math.pi * min(progress, 1.0)) * 0.5 + 0.5
-        return (lr_min + (lr_max - lr_min) * cosine) / 4
+        # finetune保留旧分支权重, 使用1/4基础LR; 新增零初始化head仍需warmup。
+        lr_max *= 0.25
+        lr_min *= 0.25
     if step < warmup:
         return lr_max * step / max(warmup, 1)
     progress = (step - warmup) / max(total_steps - warmup, 1)
@@ -99,8 +99,8 @@ class AnomalyDumper:
         os.makedirs(dump_dir, exist_ok=True)
 
     def dump(self, step, reason, frames, timestep, flow_gt, has_mv,
-             pred=None, loss=None, loss_flow=None):
-        """frames: [B,9,H,W] float 0~1 (device上); flow_gt: [B,4,H,W]; has_mv: [B]。"""
+             pred=None, loss=None, loss_flow=None, flow_stage_losses=None):
+        """frames: [B,9,H,W] float 0~1; flow_gt: [B,5,H,W]; has_mv: [B]。"""
         if self.count >= self.max_dumps:
             if self.count == self.max_dumps:
                 print(f'[AnomalyDumper] 已达上限 {self.max_dumps}, 停止落盘')
@@ -118,6 +118,9 @@ class AnomalyDumper:
         hm_np = has_mv.detach().cpu().numpy().reshape(-1)
 
         meta = [f'step={step} reason={reason} loss={loss} loss_flow={loss_flow}']
+        if flow_stage_losses is not None:
+            values = flow_stage_losses.detach().cpu().tolist()
+            meta.append('flow_stage_epe=' + ','.join(f'{v:.6f}' for v in values))
         for b in range(frames_np.shape[0]):
             for name, sl in (('img0', slice(0, 3)), ('img1', slice(3, 6)),
                              ('gt', slice(6, 9))):
@@ -187,14 +190,26 @@ def train(C, restore_ckpt=None, config_path=None):
     # ── 模型 ────────────────────────────────────────────────────────────────
     m = C['model']
     cfg.MODEL_CONFIG['LOGNAME'] = exp
-    _train_keys = ('loss_type', 'flow_loss_weight')          # 训练侧消费, 不进结构
+    _train_keys = (
+        'loss_type', 'flow_loss_weight', 'flow_stage_gamma',
+        'flow_motion_threshold', 'flow_motion_balance', 'flow_motion_gain',
+        'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
+    )                                                        # 训练侧消费, 不进结构
     _extra = {k: v for k, v in m.items()
               if k not in ('F', 'depth', 'M', 'version') + _train_keys}
     cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
         F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'],
         **_extra)
-    model = Model(0, loss_type=m['loss_type'],
-                  flow_loss_weight=m.get('flow_loss_weight', 0.0))
+    model = Model(
+        0, loss_type=m['loss_type'],
+        flow_loss_weight=m.get('flow_loss_weight', 0.0),
+        flow_stage_gamma=m.get('flow_stage_gamma', 0.8),
+        flow_motion_threshold=m.get('flow_motion_threshold', 1.0),
+        flow_motion_balance=m.get('flow_motion_balance', 0.5),
+        flow_motion_gain=m.get('flow_motion_gain', 1.0),
+        flow_motion_scale=m.get('flow_motion_scale', 10.0),
+        flow_motion_weight_cap=m.get('flow_motion_weight_cap', 4.0),
+        flow_charbonnier_eps=m.get('flow_charbonnier_eps', 1e-3))
     if restore_ckpt:
         model.load_model(restore_ckpt)
         print(f'restore ckpt from {restore_ckpt}')
@@ -214,6 +229,11 @@ def train(C, restore_ckpt=None, config_path=None):
         t_half_prob=d['t_half_prob'],
         mv_prob=d['mv_prob'],
         mv_sign=tuple(d['mv_sign']),
+        motion_aware_crop_prob=d.get('motion_aware_crop_prob', 0.0),
+        motion_crop_threshold=d.get('motion_crop_threshold', 1.0),
+        small_motion_min_pixels=d.get('small_motion_min_pixels', 8),
+        small_motion_max_ratio=d.get('small_motion_max_ratio', 0.05),
+        motion_crop_jitter=d.get('motion_crop_jitter', 0.2),
     )
     val_set = TierDataset(d['root'], os.path.join(lists_dir, 'val.txt'), split='val')
     val_loader = DataLoader(val_set, batch_size=1,
@@ -275,12 +295,17 @@ def train(C, restore_ckpt=None, config_path=None):
                 # 异常样本落盘: flow loss超阈值 或 loss spike
                 if step > 40000 and loss_flow > flow_dump_thresh:
                     dumper.dump(step, f'flowloss{loss_flow:.0f}', frames, timestep,
-                                flow_gt, has_mv, pred=pred, loss=loss, loss_flow=loss_flow)
+                                flow_gt, has_mv, pred=pred, loss=loss, loss_flow=loss_flow,
+                                flow_stage_losses=model.last_flow_stage_losses)
 
                 if step % mon['log_every_steps'] == 0:
                     writer.add_scalar('loss/raw', loss, step)
                     writer.add_scalar('loss/ema', loss_ema, step)
                     writer.add_scalar('loss/flow_epe', loss_flow, step)
+                    if model.last_flow_stage_losses is not None:
+                        for si, stage_loss in enumerate(
+                                model.last_flow_stage_losses.cpu().tolist()):
+                            writer.add_scalar(f'loss/flow_stage_{si}', stage_loss, step)
                     writer.add_scalar('train/lr', lr, step)
                     writer.add_scalar('train/grad_norm', get_grad_norm(model.net), step)
                     if use_amp:

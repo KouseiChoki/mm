@@ -1,7 +1,7 @@
 # VFIMamba 训练配置 (train.py 唯一超参来源)
 # 用法: python train.py --config train_config.yaml [--restore_ckpt xxx.pkl]
 
-exp_name: Kousei_phase1_0717_mix          # 实验名: log目录/ckpt目录/TensorBoard 均用它
+exp_name: Kousei_smallflow_q4_finetune_0721  # 新架构finetune独立目录
 
 seed: 1234
 
@@ -16,14 +16,25 @@ model:
   ssd_chunk: 256
   loss_type: l1
   flow_loss_weight: 0.01
+  flow_stage_gamma: 0.8            # 所有flow阶段深监督, 后级权重递增
+  flow_motion_threshold: 1.0       # 像素; 相对全局中位flow的前景运动阈值
+  flow_motion_balance: 0.5         # 移动区在每个样本flow loss中的固定占比
+  flow_motion_gain: 1.0            # 移动区内大位移软加权
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+  flow_num_stages: 3               # 1/16 → 1/8 → 1/4 learned-feature heads
+  compact_quarter_head: true       # 1/4网格预测后上采样, 避免全分辨率重卷积
+  zero_init_residual_heads: true   # 新增残差head从identity开始
+  local_zero_init: true            # 续训时新local级不破坏原输出
   local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
 
-# 从头训练: lr上调 + 长warmup (区别于续训配置)
+# finetune: 实际LR为下列数值的1/4, 保护已训练backbone与全分辨率IFBlock
 optim:
   lr_max: 1.0e-4
   lr_min: 5e-6
-  warmup_steps: 5000
-  finetune: false
+  warmup_steps: 1000
+  finetune: true
   amp: false
   grad_clip: 1.0
 # data / phases / monitor 段沿用现有生产yaml
@@ -43,6 +54,11 @@ data:
   t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
   mv_prob: 0.6                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
   mv_sign: [1, 1]              # !! 必须先用 verify_mv_convention.py 实证后填 !!
+  motion_aware_crop_prob: 0.5  # teacher样本中, 一半裁剪对准小运动物体
+  motion_crop_threshold: 1.0   # 相对全局中位flow的残差阈值(像素)
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05 # 小运动连通域最大占crop面积
+  motion_crop_jitter: 0.2      # 目标中心偏移, 避免总在crop正中
 
 # ── 训练阶段 (顺序执行, 配比可切换) ──────────────────────────────────────────
 phases:
@@ -68,4 +84,3 @@ monitor:
   spike_dir: spike_samples
   flow_loss_dump_threshold: 40
   dump_max: 1000
-

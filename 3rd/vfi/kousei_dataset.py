@@ -27,7 +27,8 @@ flow_gt 语义对齐 (按项目约定 mv1=gt→上一帧, mv0=gt→下一帧):
 __getitem__ 返回:
   frames  : [9, H, W] uint8   (img0, img1, gt 依旧cat, 与旧Trainer一致)
   timestep: [1, 1, 1] float
-  flow_gt : [4, H, W] float32 (像素位移; has_mv=0 时为全零占位, 保证collate形状统一)
+  flow_gt : [5, H, W] float32 (前4通道位移+第5通道valid mask;
+                                has_mv=0 时为全零占位)
   has_mv  : [] float  (1=本样本flow_gt有效, 0=无效, loss侧用它mask)
 
 用法:
@@ -90,6 +91,7 @@ class TierDataset(Dataset):
     t_half_prob : t=0.5 的采样概率 (其余概率均匀采窗口内任意t)
     mv_prob     : teacher scene 采样为 flow监督样本(s=1,t=0.5,带mv) 的概率
     mv_sign     : (sx, sy) mv符号修正, 用 verify_mv_convention.py 的结论填
+    motion_aware_crop_prob : teacher样本以小运动连通域为中心裁剪的概率
     """
 
     def __init__(self, root, list_file, split='train',
@@ -100,6 +102,11 @@ class TierDataset(Dataset):
                  mv_sign: Tuple[int, int] = (1, 1),
                  occ_alpha: float = 0.05,
                  occ_beta: float = 1.0,
+                 motion_aware_crop_prob: float = 0.0,
+                 motion_crop_threshold: float = 1.0,
+                 small_motion_min_pixels: int = 8,
+                 small_motion_max_ratio: float = 0.05,
+                 motion_crop_jitter: float = 0.2,
                  augment: bool = True):
         self.root = Path(root)
         self.split = split
@@ -110,6 +117,11 @@ class TierDataset(Dataset):
         self.mv_sign = mv_sign
         self.occ_alpha = occ_alpha          # 遮挡判定: |mv0+mv1| < alpha*(|mv0|+|mv1|) + beta
         self.occ_beta = occ_beta
+        self.motion_aware_crop_prob = float(motion_aware_crop_prob)
+        self.motion_crop_threshold = float(motion_crop_threshold)
+        self.small_motion_min_pixels = int(small_motion_min_pixels)
+        self.small_motion_max_ratio = float(small_motion_max_ratio)
+        self.motion_crop_jitter = float(motion_crop_jitter)
         self.do_augment = augment and split == 'train'
 
         self.scenes: List[dict] = []
@@ -225,16 +237,78 @@ class TierDataset(Dataset):
         return i0, ig, i0 + 2 * s, t, False
 
     # ── 增强 (与 mv 联动) ────────────────────────────────────────────────────
+    def _motion_crop_origin(self, mv: np.ndarray, crop_h: int, crop_w: int,
+                            image_h: int, image_w: int) -> Optional[Tuple[int, int]]:
+        """返回以小运动连通域为中心的 (top, left), 找不到时返回None。
+
+        使用相对全局中位flow的残差而非绝对位移，避免摄像机平移时
+        整张图被视为一个巨大运动物体。
+        """
+        if mv is None or mv.shape[-1] < 5:
+            return None
+        valid = mv[..., 4] > 0.5
+        if valid.sum() < self.small_motion_min_pixels:
+            return None
+
+        flow = mv[..., :4]
+        # 全局运动只需稀疏估计, 避免对大分辨率valid像素做大量拷贝。
+        flow_sparse = flow[::8, ::8]
+        valid_sparse = valid[::8, ::8]
+        if valid_sparse.any():
+            global_flow = np.median(flow_sparse[valid_sparse], axis=0)
+        else:
+            global_flow = np.median(flow[valid], axis=0)
+        residual0 = np.linalg.norm(flow[..., 0:2] - global_flow[0:2], axis=-1)
+        residual1 = np.linalg.norm(flow[..., 2:4] - global_flow[2:4], axis=-1)
+        motion = 0.5 * (residual0 + residual1)
+        motion_mask = (valid & (motion >= self.motion_crop_threshold)).astype(np.uint8)
+
+        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(
+            motion_mask, connectivity=8)
+        max_area = max(
+            self.small_motion_min_pixels,
+            int(crop_h * crop_w * self.small_motion_max_ratio))
+        candidates = []
+        for label in range(1, num_labels):
+            area = int(stats[label, cv2.CC_STAT_AREA])
+            if self.small_motion_min_pixels <= area <= max_area:
+                candidates.append((label, area))
+        if not candidates:
+            return None
+
+        # 小连通域抽到的概率更高, 但不完全排除稍大的小物体。
+        label, _ = random.choices(
+            candidates, weights=[1.0 / np.sqrt(a) for _, a in candidates], k=1)[0]
+        center_x, center_y = centroids[label]                       # OpenCV: (x, y)
+        jitter_y = int(random.uniform(-1, 1) * crop_h * self.motion_crop_jitter)
+        jitter_x = int(random.uniform(-1, 1) * crop_w * self.motion_crop_jitter)
+        top = int(round(center_y - crop_h / 2 + jitter_y))
+        left = int(round(center_x - crop_w / 2 + jitter_x))
+        top = min(max(top, 0), image_h - crop_h)
+        left = min(max(left, 0), image_w - crop_w)
+        return top, left
+
     def _crop(self, arrs: List[np.ndarray]) -> List[np.ndarray]:
         if self.crop_hw is None:
             return arrs
         h, w = self.crop_hw
         ih, iw = arrs[0].shape[:2]
-        if ih <= h or iw <= w:
+        if ih < h or iw < w:
             return arrs
-        x = np.random.randint(0, ih - h + 1)
-        y = np.random.randint(0, iw - w + 1)
-        return [a[x:x + h, y:y + w] for a in arrs]
+        if ih == h and iw == w:
+            return arrs
+
+        origin = None
+        mv = arrs[3] if len(arrs) > 3 else None
+        if (mv is not None and self.motion_aware_crop_prob > 0
+                and random.random() < self.motion_aware_crop_prob):
+            origin = self._motion_crop_origin(mv, h, w, ih, iw)
+        if origin is None:
+            top = np.random.randint(0, ih - h + 1)
+            left = np.random.randint(0, iw - w + 1)
+        else:
+            top, left = origin
+        return [a[top:top + h, left:left + w] for a in arrs]
 
     def _augment(self, img0, gt, img1, t, mv):
         if random.random() < 0.5:                               # rotate180
