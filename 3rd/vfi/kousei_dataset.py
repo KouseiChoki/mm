@@ -32,8 +32,10 @@ __getitem__ 返回:
   has_mv  : [] float  (1=本样本flow_gt有效, 0=无效, loss侧用它mask)
 
 用法:
-  train_ds = MixedTierDataset(root, lists={'easy':..., 'normal':..., 'hard':..., 'teacher':...},
-                              ratios={'easy':0.4,'normal':0.4,'hard':0.1,'teacher':0.1},
+  train_ds = MixedTierDataset(root, lists={'easy':..., 'normal':..., 'hard':...,
+                              'opensource':..., 'illumination':..., 'noise':..., 'teacher':...},
+                              ratios={'easy':0.3,'normal':0.3,'hard':0.1,'opensource':0.1,
+                                      'illumination':0.05,'noise':0.05,'teacher':0.1},
                               crop_hw=(256,448), framesteps=(1,2), ...)
   val_ds   = TierDataset(root, list_file=root/'lists/val.txt', split='val')
 '''
@@ -61,8 +63,47 @@ except ImportError:
     _HAS_FILE_UTILS = False
     logger.warning('未找到 file_utils, teacher flow 读取不可用')
 
-IMG_EXTS = {'.png', '.jpg', '.jpeg'}
+IMG_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 MV_EXTS = {'.exr'}
+DEFAULT_TRAIN_TIERS = (
+    'easy', 'normal', 'hard',
+    'opensource', 'illumination', 'noise',
+    'teacher',
+)
+
+
+def resolve_train_lists(lists_dir, phases, tiers=None) -> Dict[str, str]:
+    """Resolve configured category names to existing ``*_train.txt`` files.
+
+    Positive-ratio categories are mandatory. Zero-ratio categories may be
+    absent, allowing old datasets/configurations to keep working unchanged.
+    """
+    configured = list(tiers or DEFAULT_TRAIN_TIERS)
+    positive = {
+        name
+        for phase in phases
+        for name, ratio in phase.get('ratios', {}).items()
+        if float(ratio) > 0
+    }
+    for name in positive:
+        if name not in configured:
+            configured.append(name)
+
+    base = Path(lists_dir)
+    resolved = {
+        name: str(base / f'{name}_train.txt')
+        for name in configured
+        if name in positive and (base / f'{name}_train.txt').is_file()
+    }
+    missing = sorted(positive - resolved.keys())
+    if missing:
+        expected = ', '.join(str(base / f'{name}_train.txt') for name in missing)
+        raise FileNotFoundError(
+            f'以下正权重数据分类缺少清单: {expected}. '
+            f'请先运行 data_prepare/build_lists.py 或将该分类ratio设为0.')
+    if not resolved:
+        raise FileNotFoundError(f'未在 {base} 找到任何 *_train.txt 训练清单')
+    return resolved
 
 
 def _list_frames(d: Path, exts) -> List[Path]:
@@ -397,8 +438,17 @@ class MixedTierDataset(Dataset):
         self._epoch_size = sum(len(d) for d in self.datasets.values())
 
     def set_ratios(self, ratios: Dict[str, float]) -> None:
+        negative = [n for n, value in ratios.items() if float(value) < 0]
+        if negative:
+            raise ValueError(f'tier权重不能为负数: {negative}')
+        missing = [n for n, value in ratios.items()
+                   if float(value) > 0 and n not in self.datasets]
+        if missing:
+            raise ValueError(f'正权重tier未加载清单: {missing}')
         names = [n for n in ratios if n in self.datasets and ratios[n] > 0]
         total = sum(ratios[n] for n in names)
+        if total <= 0:
+            raise ValueError('tier配比中至少需要一个正权重分类')
         self._names = names
         self._probs = [ratios[n] / total for n in names]
         logger.info(f'tier配比: {dict(zip(self._names, [round(p,3) for p in self._probs]))}')
@@ -428,12 +478,15 @@ if __name__ == '__main__':
     args = p.parse_args()
 
     lists_dir = Path(args.lists_dir) if args.lists_dir else Path(args.root) / 'lists'
-    lists = {t: str(lists_dir / f'{t}_train.txt')
-             for t in ('easy', 'normal', 'hard', 'teacher')
-             if (lists_dir / f'{t}_train.txt').exists()}
+    demo_ratios = {
+        'easy': .3, 'normal': .3, 'hard': .1, 'opensource': .1,
+        'illumination': .05, 'noise': .05, 'teacher': .1,
+    }
+    lists = resolve_train_lists(
+        lists_dir, phases=[{'ratios': demo_ratios}])
 
     ds = MixedTierDataset(args.root, lists,
-                          ratios={'easy': .4, 'normal': .4, 'hard': .1, 'teacher': .1},
+                          ratios=demo_ratios,
                           crop_hw=(256, 448), framesteps=(1, 2))
     print(f'train混合集: {len(ds)} (名义长度)')
     for i in range(4):

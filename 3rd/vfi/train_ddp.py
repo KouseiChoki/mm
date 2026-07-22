@@ -266,7 +266,8 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
     # 项目模块必须在 set_device 之后导入，避免模块级 cuda:0 tensor。
     import config as model_config
     from Trainer import Model
-    from kousei_dataset import MixedTierDataset, TierDataset
+    from kousei_dataset import (
+        MixedTierDataset, TierDataset, resolve_train_lists)
 
     is_main = rank == 0
     exp_name = config['exp_name']
@@ -368,11 +369,8 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         scaler.load_state_dict(resume_scaler_state)
 
     lists_dir = data_cfg['lists_dir']
-    lists = {
-        tier: os.path.join(lists_dir, f'{tier}_train.txt')
-        for tier in ('easy', 'normal', 'hard', 'teacher')
-        if os.path.exists(os.path.join(lists_dir, f'{tier}_train.txt'))
-    }
+    lists = resolve_train_lists(
+        lists_dir, config['phases'], tiers=data_cfg.get('tiers'))
     crop_sizes = [tuple(item) for item in data_cfg['crop_sizes']]
     train_set = MixedTierDataset(
         data_cfg['root'], lists,

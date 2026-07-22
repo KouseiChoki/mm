@@ -4,7 +4,7 @@ VFIMamba 训练入口 (yaml配置版)
 对接:
   kousei_dataset.MixedTierDataset / TierDataset  (四元组: frames, timestep, flow_gt, has_mv)
   Trainer.Model.update                            (三返回: pred, loss, loss_flow)
-  build_lists.py 生成的清单                        (<lists_dir>/{easy,normal,hard,teacher}_train.txt, val.txt)
+  build_lists.py 生成的可扩展分类清单              (<lists_dir>/*_train.txt, val.txt)
 
 全部超参来自 yaml (train_config.yaml), 命令行只留 --config 与 --restore_ckpt。
 
@@ -27,7 +27,7 @@ from torch.cuda.amp import GradScaler, autocast
 
 import config as cfg
 from Trainer import Model
-from kousei_dataset import MixedTierDataset, TierDataset
+from kousei_dataset import MixedTierDataset, TierDataset, resolve_train_lists
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -216,9 +216,8 @@ def train(C, restore_ckpt=None, config_path=None):
 
     # ── 数据 ────────────────────────────────────────────────────────────────
     lists_dir = d['lists_dir']
-    lists = {t: os.path.join(lists_dir, f'{t}_train.txt')
-             for t in ('easy', 'normal', 'hard', 'teacher')
-             if os.path.exists(os.path.join(lists_dir, f'{t}_train.txt'))}
+    lists = resolve_train_lists(
+        lists_dir, C['phases'], tiers=d.get('tiers'))
     crop_sizes = [tuple(c) for c in d['crop_sizes']]
 
     train_set = MixedTierDataset(

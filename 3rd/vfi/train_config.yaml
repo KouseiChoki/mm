@@ -43,6 +43,8 @@ optim:
 data:
   root: /home/zhenying/qhong/data/ssd/vfi_database
   lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  # 新分类的目录名/list前缀; ratio=0时允许对应list暂不存在。
+  tiers: [easy, normal, hard, opensource, illumination, noise, teacher]
   batch_size: 1
   num_workers: 8
   crop_sizes:                  # 多尺度: 每个epoch随机选一组 (h, w), 需为16倍数
@@ -67,13 +69,13 @@ phases:
     #ratios: {easy: 0.20, normal: 0.10, hard: 0.05, teacher: 0.65}
   - name: easy_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
     epochs: 200
-    ratios: {easy: 0.30, normal: 0.15, hard: 0.15, teacher: 0.4}
+    ratios: {easy: 0.30, normal: 0.15, hard: 0.15, teacher: 0.40, opensource: 0.0, illumination: 0.0, noise: 0.0}
   - name: normal_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
     epochs: 200
-    ratios: {easy: 0.20, normal: 0.30, hard: 0.30, teacher: 0.2}
+    ratios: {easy: 0.20, normal: 0.30, hard: 0.30, teacher: 0.20, opensource: 0.0, illumination: 0.0, noise: 0.0}
   - name: hard_mix             # Phase 2: hard为主的混合 (防遗忘保留easy/normal)
     epochs: 400
-    ratios: {easy: 0.20, normal: 0.30, hard: 0.40, teacher: 0.1}
+    ratios: {easy: 0.20, normal: 0.30, hard: 0.40, teacher: 0.10, opensource: 0.0, illumination: 0.0, noise: 0.0}
 
 # ── 监控 / 保存 ──────────────────────────────────────────────────────────────
 monitor:

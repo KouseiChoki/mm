@@ -6,9 +6,12 @@ framestep/timestep 动态采样三元组使用。大数据集只需扫描一次,
 
 输入目录结构:
     root/
-    ├── easy/   电影名/scene0001/*.png|jpg        ← tier 数据
-    ├── normal/ 电影名/scene0001/*.png|jpg
-    ├── hard/   电影名/scene0001/*.png|jpg
+    ├── easy/        .../scene0001/*.png|jpg       ← 常规难度数据
+    ├── normal/      .../scene0001/*.png|jpg
+    ├── hard/        .../scene0001/*.png|jpg
+    ├── opensource/  数据集名/.../scene/*.png|jpg ← Vimeo90K/X4K/SNU-FILM等
+    ├── illumination/.../scene/*.png|jpg            ← 光暗/曝光变化
+    ├── noise/       .../scene/*.png|jpg            ← 噪点/低信噪比
     ├── val/    电影名/scene0001/*.png|jpg        ← 预划分的验证集
     └── teacher/ ...任意深度.../12fps|24fps|48fps/{image, mv0, mv1}/
                  image/*.png|jpg  mv0/*.exr  mv1/*.exr
@@ -16,7 +19,8 @@ framestep/timestep 动态采样三元组使用。大数据集只需扫描一次,
                   fps 从路径中的 "12fps/24fps/48fps" 目录名解析)
 
 输出 (默认写到 <root>/lists/):
-    easy_train.txt / normal_train.txt / hard_train.txt / teacher_train.txt / val.txt
+    easy_train.txt / normal_train.txt / hard_train.txt / opensource_train.txt /
+    illumination_train.txt / noise_train.txt / teacher_train.txt / val.txt
         每行 (tab分隔):  scene相对路径\t帧数\ttier\thas_mv\tfps
         - scene相对路径: 相对 root, 训练时 root+相对路径 定位
         - has_mv: teacher=1, 其余=0
@@ -47,9 +51,13 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 logger = logging.getLogger(__name__)
 
-IMG_EXTS = {'.png', '.jpg', '.jpeg'}
+IMG_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 MV_EXTS = {'.exr'}
-TIERS = ('easy', 'normal', 'hard')          # 常规tier目录
+TIERS = (
+    'easy', 'normal', 'hard',
+    'opensource', 'illumination', 'noise',
+)                                           # 无MV的常规分类目录
+SHORT_SEQUENCE_TIERS = ('opensource', 'illumination', 'noise')
 VAL_DIR = 'val'
 TEACHER_DIR = 'teacher'
 
@@ -100,7 +108,7 @@ def fps_from_path(p: Path) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 常规 tier / val 扫描:  <dir>/电影名/sceneXXXX/*.png
+# 常规 tier / val 扫描: 支持任意目录深度, 含图像的目录视为scene
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scan_tier(root: Path, tier_dir: str, tier_label: str,
@@ -111,12 +119,14 @@ def scan_tier(root: Path, tier_dir: str, tier_label: str,
         logger.warning(f'目录不存在, 跳过: {base}')
         return rows
 
-    # scandir 避免逐条目 stat (NFS/大目录下 iterdir+is_dir 极慢); 电影层带进度
-    movies = sorted(e.path for e in os.scandir(base) if e.is_dir())
+    # 开源数据集常有 dataset/split/sequence 等多层结构，因此递归
+    # 发现直接包含帧文件的目录，不再假设固定的“电影/scene”层级。
     scene_dirs = []
-    for movie in tqdm(movies, desc=f'收集 {tier_label} scene目录', unit='movie'):
-        scene_dirs.extend(sorted(Path(e.path) for e in os.scandir(movie)
-                                 if e.is_dir()))
+    for dirpath, _, filenames in os.walk(base):
+        if any(Path(name).suffix.lower() in IMG_EXTS
+               for name in filenames if not name.startswith('.')):
+            scene_dirs.append(Path(dirpath))
+    scene_dirs.sort()
     for sdir in tqdm(scene_dirs, desc=f'扫描 {tier_label}', unit='scene'):
         rel = sdir.relative_to(root)
         entries = frame_entries(sdir, IMG_EXTS)
@@ -139,7 +149,8 @@ def scan_tier(root: Path, tier_dir: str, tier_label: str,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
-                 pair_ratio: float, broken: list ,teacher_fps:list) -> List[dict]:
+                 pair_ratio: float, broken: list,
+                 teacher_fps: Optional[List[int]]) -> List[dict]:
     base = root / TEACHER_DIR
     rows = []
     
@@ -155,7 +166,7 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
             continue
         sdir = Path(dirpath)
         fps = fps_from_path(sdir)
-        if args.teacher_fps is not None and fps not in args.teacher_fps:
+        if teacher_fps is not None and fps not in teacher_fps:
             continue
 
         dirnames[:] = []                      # 命中即剪枝, 不再深入
@@ -207,7 +218,7 @@ def write_list(path: Path, rows: List[dict]) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description='VFI 数据清单生成 (scene级txt)')
     p.add_argument('--root', type=str, required=True,
-                   help='数据根目录 (含 easy/normal/hard/val/teacher)')
+                   help='数据根目录 (含各tier目录、val、teacher)')
     p.add_argument('--output', type=str, default=None,
                    help='清单输出目录 (默认 <root>/lists)')
     p.add_argument('--max_framestep', type=int, default=4,
@@ -218,8 +229,11 @@ def main() -> None:
                    help='teacher scene 的 image/mv 配对率下限 (默认 0.9)')
     p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
                help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
-    p.add_argument('--teacher_fps', type=int, nargs='+', default=None,
-               help='仅保留指定fps的teacher scene, 如 --teacher_fps 24 48 (默认全收)')
+    p.add_argument('--tiers', nargs='+', default=list(TIERS),
+                   help='要生成的无MV分类目录; 默认: %(default)s')
+    p.add_argument('--short_sequence_tiers', nargs='+',
+                   default=list(SHORT_SEQUENCE_TIERS),
+                   help='允许三帧triplet的分类; 默认: %(default)s')
     args = p.parse_args()
 
     root = Path(args.root)
@@ -232,14 +246,17 @@ def main() -> None:
     summary_lines = []
 
     # 常规 tier
-    for tier in TIERS:
-        rows = scan_tier(root, tier, tier, min_frames, args.allow_gaps, broken)
+    for tier in args.tiers:
+        tier_min_frames = 3 if tier in args.short_sequence_tiers else min_frames
+        rows = scan_tier(root, tier, tier, tier_min_frames,
+                         args.allow_gaps, broken)
         write_list(out_dir / f'{tier}_train.txt', rows)
         summary_lines.append(f'{tier:>8}: {len(rows):>6} scenes  '
                              f'{sum(r["n"] for r in rows):>9} 帧')
 
     # teacher
-    rows = scan_teacher(root, min_frames, args.allow_gaps, args.pair_ratio, broken,args.teacher_fps)
+    rows = scan_teacher(root, min_frames, args.allow_gaps,
+                        args.pair_ratio, broken, args.teacher_fps)
     write_list(out_dir / 'teacher_train.txt', rows)
     fps_dist = {}
     for r in rows:
