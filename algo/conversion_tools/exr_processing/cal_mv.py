@@ -2,7 +2,7 @@
 Unreal EXR → image / mv 提取脚本 (精简版: 仅保留原 mode 1 相机MV计算)
 ======================================================================
 从 Unreal dump 的多层 exr 中提取:
-  - image/        LDR png (或 --exrformat 时为 exr)
+  - image/        显示域 LDR png (或 --exrformat 时为线性 float32 exr)
   - mv0/ mv1/     光流 (相机运动 camera_tracking + 物体运动 objmv 合成, 归一化, half精度)
   - Mask/         物体mask (若exr中存在)
   - world_depth/  世界深度 (--dump_depth / --colormap)
@@ -24,6 +24,8 @@ Unreal EXR → image / mv 提取脚本 (精简版: 仅保留原 mode 1 相机MV�
       无法复现, 用固定值近似, 暗场景可调 2~4)
   - [本次] acescg 源的 LDR 转换不再依赖 --enable_colour_output 开关:
       无条件先做 AP1→rec709 色域转换再进 tone map (修复漏转导致的去饱和/色偏)
+  - [本次] --exrformat 直接保存线性 float32 RGB, 不再经过 gamma/tone map/clip;
+      负值会原样保留, 不会因分数次幂产生 NaN
 '''
 
 import os
@@ -102,12 +104,14 @@ def init_param():
     parser.add_argument('--step', type=int, default=1,
                         help='帧间隔; !=1 时只输出 mv{2(step-1)}/mv{2(step-1)+1}')
     parser.add_argument('--core', type=int, default=1, help='并行进程数, 0=单进程调试')
-    parser.add_argument('--exrformat', action='store_true', help='image 以 exr 而非 png 输出')
+    parser.add_argument('--exrformat', action='store_true',
+                        help='image 以线性 float32 exr 输出, 保留负值且不做 tone map')
     parser.add_argument('--enable_colour_output', action='store_true',
                         help='输出 HDR 原色域 (ACESCG/ 或 rec709/)')
     parser.add_argument('--mask_only', action='store_true', help='只输出 Mask')
     parser.add_argument('--exposure', type=float, default=1.0,
-                        help='tone map 前的曝光增益; UE的auto exposure离线不可得, '
+                        help='PNG tone map 前的曝光增益; EXR 输出不应用; '
+                             'UE的auto exposure离线不可得, '
                              '暗场景建议 2~4 (默认 1.0, 全数据集统一, 不要逐帧调)')
     args = parser.parse_args()
     if args.depth_only or args.colormap:
@@ -464,12 +468,18 @@ def linear_to_srgb(x):
 
 
 def hdr_to_rgb(hdr_image, exrformat=False, exposure=1.0):
-    """线性 rec709 HDR → 显示域 (UE编辑器观感):
-       exposure增益 → ACES filmic → sRGB编码 → uint8 (或 exrformat 时 float32)。"""
-    x = np.clip(hdr_image[..., :3].astype(np.float32) * exposure, 0.0, None)
-    x = linear_to_srgb(aces_filmic(x))
+    """生成 image 输出。
+
+    EXR 保留线性 rec709 float32 数据（包括负值）；PNG 才执行
+    exposure 增益、ACES filmic 和 sRGB 编码。将 EXR 与显示转换分开，
+    可避免负值参与分数次幂时生成 NaN，也避免被裁剪到 0。
+    """
+    rgb = np.ascontiguousarray(hdr_image[..., :3], dtype=np.float32)
     if exrformat:
-        return x.astype(np.float32)
+        return rgb.copy()
+
+    x = np.clip(rgb * exposure, 0.0, None)
+    x = linear_to_srgb(aces_filmic(x))
     return (x * 255.0 + 0.5).astype('uint8')
 
 
@@ -578,14 +588,16 @@ def mv_cal_core(datas):
         _, acescg_to_rec709 = get_color_transforms()
         hdr_image = acescg_to_rec709.apply(hdr_image)
 
-    # ── LDR image 输出: ACES filmic + sRGB (与UE编辑器观感一致) ────────────
+    # ── image 输出: PNG 走显示转换, EXR 保留线性 float32 ──────────────
     image = hdr_to_rgb(hdr_image, exrformat=args.exrformat, exposure=args.exposure)
     if not args.exrformat:
         image_path = os.path.join(save_path, 'image', base).replace('.exr', '.png')
     else:
         image_path = os.path.join(save_path, 'image', base)
-    if not os.path.isfile(image_path) and args.onlymv:
-        mvwrite(image_path, image)
+    if args.onlymv and (args.f or not os.path.isfile(image_path)):
+        # image EXR 用 float32 落盘，避免默认 half 进一步损失 HDR 范围/精度。
+        precision = 'float' if args.exrformat else 'half'
+        mvwrite(image_path, image, precision=precision)
 
     # ── 深度输出 ──────────────────────────────────────────────────────────
     if args.dump_depth or args.dump_ply:
