@@ -32,6 +32,8 @@ optim:
   lr_min: 5e-6
   warmup_steps: 1000
   finetune: true
-  amp: false
+  # 5090 推荐 BF16；只有改为 fp16 时才会启用 GradScaler。
+  amp: true
+  amp_dtype: bf16
   grad_clip: 1.0
 # data / phases / monitor 段沿用现有生产yaml

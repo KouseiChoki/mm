@@ -23,7 +23,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torch.cuda.amp import GradScaler, autocast
 
 import config as cfg
 from Trainer import Model
@@ -143,13 +142,13 @@ class AnomalyDumper:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def evaluate(model, val_loader, nr_eval, writer, use_amp):
+def evaluate(model, val_loader, nr_eval, writer, use_amp, amp_dtype):
     psnr_list = []
     for frames, timestep, _, _ in val_loader:
         frames = frames.to(device, non_blocking=True).float() / 255.
         timestep = timestep.to(device, non_blocking=True)
         imgs, gt = frames[:, :6], frames[:, 6:9]
-        with autocast(enabled=use_amp):
+        with torch.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
             pred, _, _ = model.update(imgs, gt, timestep=timestep, training=False)
         for j in range(gt.shape[0]):
             mse = ((gt[j] - pred[j]) ** 2).mean().cpu().item()
@@ -182,10 +181,17 @@ def train(C, restore_ckpt=None, config_path=None):
                            max_dumps=mon.get('dump_max', 50))
     flow_dump_thresh = mon.get('flow_loss_dump_threshold', 30.0)
 
-    use_amp = opt.get('amp', False) and torch.cuda.is_available()
-    scaler = GradScaler(enabled=use_amp)
+    amp_name = str(opt.get('amp_dtype', 'bf16')).lower()
+    if amp_name not in ('bf16', 'fp16'):
+        raise ValueError(f'amp_dtype must be bf16 or fp16, got {amp_name}')
+    amp_dtype = torch.bfloat16 if amp_name == 'bf16' else torch.float16
+    use_amp = bool(opt.get('amp', False)) and torch.cuda.is_available()
+    # BF16 的指数范围与 FP32 相同，不需要 loss scaling；仅 FP16 使用 scaler。
+    use_scaler = use_amp and amp_dtype == torch.float16
+    scaler = torch.amp.GradScaler('cuda', enabled=use_scaler)
     if use_amp:
-        print('[AMP] 半精度训练已启用')
+        print(f'[AMP] {amp_name.upper()} 混合精度训练已启用 '
+              f'(GradScaler={"on" if use_scaler else "off"})')
 
     # ── 模型 ────────────────────────────────────────────────────────────────
     m = C['model']
@@ -279,10 +285,10 @@ def train(C, restore_ckpt=None, config_path=None):
 
                 lr = get_learning_rate(step, total_steps, opt)
 
-                with autocast(enabled=use_amp):
+                with torch.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
                     pred, loss, loss_flow = model.update(
                         imgs, gt, timestep=timestep, learning_rate=lr,
-                        training=True, scaler=scaler if use_amp else None,
+                        training=True, scaler=scaler if use_scaler else None,
                         flow_gt=flow_gt, has_mv=has_mv)
 
                 train_time = time.time() - time_stamp
@@ -307,7 +313,7 @@ def train(C, restore_ckpt=None, config_path=None):
                             writer.add_scalar(f'loss/flow_stage_{si}', stage_loss, step)
                     writer.add_scalar('train/lr', lr, step)
                     writer.add_scalar('train/grad_norm', get_grad_norm(model.net), step)
-                    if use_amp:
+                    if use_scaler:
                         writer.add_scalar('amp/scale', scaler.get_scale(), step)
 
                 print(f'[{phase["name"]}] epoch:{epoch_global} {i}/{steps_per_epoch} '
@@ -318,7 +324,7 @@ def train(C, restore_ckpt=None, config_path=None):
             epoch_global += 1
             nr_eval += 1
             if nr_eval % mon['eval_every_epochs'] == 0:
-                evaluate(model, val_loader, nr_eval, writer, use_amp)
+                evaluate(model, val_loader, nr_eval, writer, use_amp, amp_dtype)
             if epoch_global % mon['save_every_epochs'] == 0:
                 model.save_model(exp, epoch_global, 0)
 
