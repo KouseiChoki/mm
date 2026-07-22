@@ -52,6 +52,8 @@ data:
   # 每台机器上的本地路径需要一致，或者分别保留一份同内容配置。
   root: /home/zhenying/qhong/data/ssd/vfi_database
   lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  # 新分类的目录名/list前缀; ratio=0时允许对应list暂不存在。
+  tiers: [easy, normal, hard, opensource, illumination, noise, teacher]
   batch_size: 1
 
   # 这是每台机器的worker数，不是全局数量。
@@ -95,16 +97,16 @@ distributed:
 phases:
   - name: base
     epochs: 200
-    ratios: {easy: 0.20, normal: 0.10, hard: 0.05, teacher: 0.65}
+    ratios: {easy: 0.20, normal: 0.10, hard: 0.05, teacher: 0.65, opensource: 0.0, illumination: 0.0, noise: 0.0}
   - name: easy_mix
     epochs: 200
-    ratios: {easy: 0.40, normal: 0.10, hard: 0.10, teacher: 0.40}
+    ratios: {easy: 0.40, normal: 0.10, hard: 0.10, teacher: 0.40, opensource: 0.0, illumination: 0.0, noise: 0.0}
   - name: normal_mix
     epochs: 200
-    ratios: {easy: 0.20, normal: 0.40, hard: 0.20, teacher: 0.20}
+    ratios: {easy: 0.20, normal: 0.40, hard: 0.20, teacher: 0.20, opensource: 0.0, illumination: 0.0, noise: 0.0}
   - name: hard_mix
     epochs: 400
-    ratios: {easy: 0.20, normal: 0.30, hard: 0.40, teacher: 0.10}
+    ratios: {easy: 0.20, normal: 0.30, hard: 0.40, teacher: 0.10, opensource: 0.0, illumination: 0.0, noise: 0.0}
 
 monitor:
   eval_every_epochs: 10
