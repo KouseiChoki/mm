@@ -329,13 +329,50 @@ class TierDataset(Dataset):
         left = min(max(left, 0), image_w - crop_w)
         return top, left
 
+    @staticmethod
+    def _pad_to_crop(arrs: List[np.ndarray], crop_h: int,
+                     crop_w: int) -> List[np.ndarray]:
+        """尺寸不足时先补到 crop 大小，保证 DataLoader 可以稳定堆叠。
+
+        前三个数组是 img0/gt/img1，使用反射补边；第四个是 flow GT，
+        补0后 valid 通道也为0，因此人工边界不参与 flow loss。补边位置
+        随机分配到两侧，避免原图永远固定在 crop 中心。
+        """
+        image_h, image_w = arrs[0].shape[:2]
+        for arr in arrs[1:]:
+            if arr.shape[:2] != (image_h, image_w):
+                raise ValueError(
+                    f'同一样本的图像/flow尺寸不一致: '
+                    f'{(image_h, image_w)} vs {arr.shape[:2]}')
+
+        pad_h = max(crop_h - image_h, 0)
+        pad_w = max(crop_w - image_w, 0)
+        if pad_h == 0 and pad_w == 0:
+            return arrs
+
+        pad_top = np.random.randint(0, pad_h + 1) if pad_h else 0
+        pad_left = np.random.randint(0, pad_w + 1) if pad_w else 0
+        pad_bottom = pad_h - pad_top
+        pad_right = pad_w - pad_left
+        pad_width = ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0))
+
+        padded = []
+        for index, arr in enumerate(arrs):
+            if index < 3:
+                # 极端的1像素宽/高无法reflect，此时回退复制边界。
+                mode = 'reflect' if image_h > 1 and image_w > 1 else 'edge'
+                padded.append(np.pad(arr, pad_width, mode=mode))
+            else:
+                padded.append(np.pad(arr, pad_width, mode='constant',
+                                     constant_values=0))
+        return padded
+
     def _crop(self, arrs: List[np.ndarray]) -> List[np.ndarray]:
         if self.crop_hw is None:
             return arrs
         h, w = self.crop_hw
+        arrs = self._pad_to_crop(arrs, h, w)
         ih, iw = arrs[0].shape[:2]
-        if ih < h or iw < w:
-            return arrs
         if ih == h and iw == w:
             return arrs
 
