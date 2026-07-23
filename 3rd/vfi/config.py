@@ -61,7 +61,7 @@ def init_model_config(F=32, W=7, depth=[2, 2, 2, 4, 4], M=False, version=1,
         'M': M,
         'local_hidden_dims': 4*F,
         'local_num': 2,          # 兼容保留; local_cfg 存在时由其长度决定, 此字段不再被读取
-        'version': version,      # MultiScaleFlow 依此选 unet (1=UnetWithAttention, 2=Unet)
+        'version': version,      # MultiScaleFlow 依此选 refine UNet (1=Unet, 2=UnetWithAttention)
     }
     multiscalecfg.update(overrides)
     return backbonecfg, multiscalecfg

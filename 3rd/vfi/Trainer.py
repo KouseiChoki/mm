@@ -114,8 +114,24 @@ class Model:
 
         missing, unexpected = self.net.load_state_dict(filtered, strict=False)
         if missing:
-            print(f'[load_model] {len(missing)} 个键未从checkpoint加载(新初始化): '
-                f'{missing[:4]}{"..." if len(missing) > 4 else ""}')
+            print(f'[load_model] WARNING: {len(missing)} 个模型键未从checkpoint加载'
+                  f'(保持新初始化): {missing[:8]}'
+                  f'{"..." if len(missing) > 8 else ""}')
+        if unexpected:
+            print(f'[load_model] WARNING: {len(unexpected)} 个checkpoint键未被当前模型使用: '
+                  f'{unexpected[:8]}{"..." if len(unexpected) > 8 else ""}')
+
+        # version=2 的 refine UNet 比 version=1 多 bottleneck attention。
+        # 老checkpoint没有结构元数据，只能通过这些特征键提示版本切换。
+        attention_prefix = 'unet.bottleneck_attn.'
+        missing_attention = [k for k in missing if k.startswith(attention_prefix)]
+        unused_attention = [k for k in unexpected if k.startswith(attention_prefix)]
+        if missing_attention:
+            print('[load_model] WARNING: 当前模型启用了version=2 attention，'
+                  '但checkpoint不含对应权重；该模块将从随机初始化开始训练')
+        elif unused_attention:
+            print('[load_model] WARNING: checkpoint含version=2 attention权重，'
+                  '但当前模型为version=1；这些attention权重已忽略')
 
         # finetune安全检查: 明确告知原有最后一级(全分辨率)IFBlock是否成功复用。
         fullres_index = len(self.net.local_block) - 1
