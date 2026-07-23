@@ -567,15 +567,21 @@ class Model:
         imgs = torch.cat((img0, img1), 1)
         imgs, (pr, pb) = self.pad_to_multiple(imgs, 16)
         if fast_TTA:
+            batch = imgs.shape[0]
             imgs_ = imgs.flip(2).flip(3)
             flow_list, mask_list, res, warp0, warp1, merged, preds = self.net(
                 torch.cat((imgs, imgs_), 0), local=local, timestep=timestep, scale=scale)
-            return (self.unpad((preds[0] + preds[1].flip(1).flip(2)).unsqueeze(0) / 2., pr, pb),
-                    flow_list[-1], mask_list[-1], merged[-1], res, warp0, warp1)
+            pred = (preds[:batch] + preds[batch:].flip(2).flip(3)) / 2.0
+            # 调试张量统一返回未翻转的主分支；TTA只融合最终预测图像。
+            return (self.unpad(pred, pr, pb),
+                    flow_list[-1][:batch], mask_list[-1][:batch],
+                    merged[-1][:batch], res[:batch],
+                    warp0[:batch], warp1[:batch])
         flow_list, mask_list, res, warp0, warp1, merged, preds = self.net(
             imgs, timestep=timestep, scale=scale, local=local)
         if not TTA:
-            return self.unpad(preds, pr, pb), None, None, None, None, None, None
+            return (self.unpad(preds, pr, pb), flow_list[-1], mask_list[-1],
+                    merged[-1], res, warp0, warp1)
         _, _, _, _, _, _, pred2 = self.net(imgs.flip(2).flip(3), timestep=timestep,
                                            scale=scale, local=local)
         return (self.unpad((preds + pred2.flip(2).flip(3)) / 2, pr, pb),

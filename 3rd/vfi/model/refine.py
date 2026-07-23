@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from timm.layers import trunc_normal_
+try:
+    from timm.layers import trunc_normal_
+except ImportError:
+    # timm<0.9 only exposes this helper through timm.models.layers.
+    from timm.models.layers import trunc_normal_
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

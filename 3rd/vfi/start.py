@@ -1,5 +1,4 @@
 import cv2
-import sys
 import os
 import torch
 import numpy as np
@@ -173,7 +172,7 @@ def resolve_model_yaml(ckpt_path, args):
         return explicit
     stem_yaml = os.path.splitext(ckpt_path)[0] + '.yaml'
     if not os.path.isfile(stem_yaml):
-        # 软尝试: 从checkpoint服务器同步 {algo}.yaml (失败不致命, 走回退)
+        # 软尝试从checkpoint服务器同步；最终仍缺失时由build_model统一报错。
         try:
             check_and_download_pth_file(stem_yaml,
                                         f'{args.server}/vfi/{args.algo}.yaml')
@@ -190,36 +189,21 @@ def build_model(args):
     ckpt = define_model(args)                 # 先定位checkpoint, 再找配套yaml
 
     yaml_path = resolve_model_yaml(ckpt, args)
-    if yaml_path is not None:
-        # 约定路径: 结构完全由训练归档的yaml决定, 与训练逐字段对齐
-        with open(yaml_path) as f:
-            conf = yaml.safe_load(f)
-        m = conf.get('model', conf)           # 兼容整份train_config或裸model段
-        cfg.MODEL_CONFIG['LOGNAME'] = conf.get('exp_name', args.algo)
-        cfg.MODEL_CONFIG['MODEL_ARCH'] = arch_from_model_section(m)
-        print(f'[build_model] 结构来自yaml: {yaml_path}  '
-              f'(version={m.get("version", 2)}, '
-              f'local_cfg={"自定义" if "local_cfg" in m else "默认"})')
-    else:
-        # 回退路径: 历史checkpoint (无yaml), 保持旧的按算法名分支行为
-        if 'vfimamba' in args.algo.lower():
-            cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMamba'
-            cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-                F=32, depth=[2, 2, 2, 3, 3]
-            )
-        elif 'kousei' in args.algo.lower():
-            cfg.MODEL_CONFIG['LOGNAME'] = 'VFIMambaKouSei'
-            cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
-                F=32, depth=[2, 2, 2, 3, 3]
-            )
-            cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1
-        else:
-            raise NotImplementedError('wrong algorithm')
-        if getattr(args, 'old_version', False):
-            cfg.MODEL_CONFIG['MODEL_ARCH'][1]['version'] = 1
-        print(f'[build_model] 未找到结构yaml, 回退按算法名构建 '
-              f'(version={cfg.MODEL_CONFIG["MODEL_ARCH"][1]["version"]}); '
-              f'新checkpoint请将训练归档的model.yaml以 {args.algo}.yaml 上传至checkpoint目录/服务器')
+    if yaml_path is None:
+        raise FileNotFoundError(
+            '未找到模型结构yaml；release必须同时提供模型与yaml。'
+            f'请使用 --model_yaml，或放置 {os.path.splitext(ckpt)[0]}.yaml / '
+            f'{os.path.join(os.path.dirname(os.path.abspath(ckpt)), "model.yaml")}')
+
+    # 约定路径: 结构完全由训练归档的yaml决定, 与训练逐字段对齐
+    with open(yaml_path) as f:
+        conf = yaml.safe_load(f)
+    m = conf.get('model', conf)               # 兼容整份train_config或裸model段
+    cfg.MODEL_CONFIG['LOGNAME'] = conf.get('exp_name', args.algo)
+    cfg.MODEL_CONFIG['MODEL_ARCH'] = arch_from_model_section(m)
+    print(f'[build_model] 结构来自yaml: {yaml_path}  '
+          f'(version={m.get("version", 2)}, '
+          f'local_cfg={"自定义" if "local_cfg" in m else "默认"})')
 
     model = Model(-1)
     model.load_model(ckpt)
@@ -262,13 +246,20 @@ def dump_debug_data(save_folder, mid_idx, ext,
             tmp = padder.unpad(t)
         return tmp.detach().cpu().numpy().transpose(1, 2, 0)
 
-    flow_np  = flow[0].detach().cpu().numpy().transpose(1, 2, 0)
-    mv0, mv1 = flow_np[..., 2:], flow_np[..., :2]
+    # 网络内部flow使用像素位移；dump按训练数据约定保存归一化位移:
+    # x/W, y/H。必须先去掉pad，再按原始图像尺寸归一化。
+    flow_np = to_np(flow).astype(np.float32, copy=False)
+    h, w = flow_np.shape[:2]
+    flow_scale = np.array([w, h, w, h], dtype=np.float32)
+    flow_np = flow_np[..., :4] / flow_scale
+    mv0, mv1 = flow_np[..., 2:4], flow_np[..., :2]
 
     write(os.path.join(save_folder, 'warp0',  f"{mid_idx:06d}{ext}"), to_np(warp0), dtype='image')
-    write(os.path.join(save_folder, 'warp1',  f"{mid_idx:06d}{ext}"), to_np(warp1[0]), dtype='image')
-    write(os.path.join(save_folder, 'mv0',    f"{mid_idx:06d}.exr"),  mv0)
-    write(os.path.join(save_folder, 'mv1',    f"{mid_idx:06d}.exr"),  mv1)
+    write(os.path.join(save_folder, 'warp1',  f"{mid_idx:06d}{ext}"), to_np(warp1), dtype='image')
+    write(os.path.join(save_folder, 'mv0',    f"{mid_idx:06d}.exr"),  mv0,
+          dtype='flow')
+    write(os.path.join(save_folder, 'mv1',    f"{mid_idx:06d}.exr"),  mv1,
+          dtype='flow')
     write(os.path.join(save_folder, 'mask',   f"{mid_idx:06d}.exr"),  to_np(mask), dtype='image')
     write(os.path.join(save_folder, 'merged', f"{mid_idx:06d}{ext}"), to_np(merged), dtype='image')
     write(os.path.join(save_folder, 'res',    f"{mid_idx:06d}.exr"),  to_np(res))
@@ -290,17 +281,26 @@ def main():
     parser.add_argument('--video_ext',   default='mp4', type=str,
                         choices=['mp4', 'avi'])
     parser.add_argument('--dump_data',   action='store_true')
-    parser.add_argument('--old_version', action='store_true')
+    tta_group = parser.add_mutually_exclusive_group()
+    tta_group.add_argument(
+        '--tta', dest='tta', action='store_true',
+        help='启用标准TTA（两次串行推理；默认启用）')
+    tta_group.add_argument(
+        '--no-tta', '--no_tta', dest='tta', action='store_false',
+        help='关闭TTA，只执行一次推理')
+    parser.set_defaults(tta=True)
+    parser.add_argument(
+        '--fast_tta', '--fast-tta', action='store_true',
+        help='启用batch合并的快速TTA；设置后优先于标准TTA')
     parser.add_argument('--model_yaml',  default=None, type=str,
-                        help='模型结构yaml; 缺省时自动找 {algo}.yaml / model.yaml, 都没有则回退旧分支')
+                        help='模型结构yaml；缺省时自动查找 {algo}.yaml / model.yaml')
     parser.add_argument('--server',      default='http://10.35.180.69:80', type=str)
     args = parser.parse_args()
 
-    TTA = True
-    fast_TTA = False
-
     # 模型
     model = build_model(args)
+    tta_mode = 'fast' if args.fast_tta else ('standard' if args.tta else 'off')
+    print(f'[inference] TTA={tta_mode}')
 
     # 输出控制
     need_image   = args.output_mode in ('image', 'both')
@@ -331,7 +331,8 @@ def main():
         # 推理
         with torch.no_grad():
             mid, flow, mask, merged, res, warp0, warp1 = model.inference(
-                I0_, I2_, True, TTA=TTA, fast_TTA=fast_TTA, scale=args.scale,timestep=args.timestep
+                I0_, I2_, True, TTA=args.tta, fast_TTA=args.fast_tta,
+                scale=args.scale, timestep=args.timestep
             )
 
         mid_np = padder.unpad(mid)[0].detach().cpu().numpy().transpose(1, 2, 0)
