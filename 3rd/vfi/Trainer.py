@@ -16,12 +16,27 @@ def convert(param):
     }
 
 
+def load_checkpoint_file(path):
+    """优先使用受限加载器；仅为旧式含NumPy对象的本地checkpoint兼容回退。"""
+    try:
+        return torch.load(path, map_location='cpu', weights_only=True)
+    except TypeError:  # 旧版PyTorch没有weights_only参数
+        return torch.load(path, map_location='cpu')
+    except Exception as safe_error:
+        print('[load_model] WARNING: checkpoint无法由weights_only安全加载器读取；'
+              '仅应对可信的本地旧checkpoint继续加载 '
+              f'({type(safe_error).__name__})')
+        return torch.load(path, map_location='cpu', weights_only=False)
+
+
 class Model:
     def __init__(self, local_rank=0, loss_type='lap', flow_loss_weight=0.01,
-                 flow_stage_gamma=0.8, flow_motion_threshold=1.0,
-                 flow_motion_balance=0.5, flow_motion_gain=1.0,
+                 flow_stage_gamma=0.2, flow_motion_threshold=1.0,
+                 flow_motion_balance=0.1, flow_motion_gain=0.0,
                  flow_motion_scale=10.0, flow_motion_weight_cap=4.0,
-                 flow_charbonnier_eps=1e-3):
+                 flow_charbonnier_eps=1e-3, flow_loss_warmup_steps=0,
+                 merge_loss_gamma=0.5, merge_loss_weights=None,
+                 normalize_pixel_loss=True, residual_loss_weight=0.0):
         """
         loss_type        : 'l1' | 'lap' | 'l1+lap'
         flow_loss_weight : teacher flow 监督的总权重, 0=关闭
@@ -43,18 +58,32 @@ class Model:
             if loss_type in ('lap', 'l1+lap') else None
         )
         self.flow_loss_weight = flow_loss_weight
+        self.flow_loss_warmup_steps = max(int(flow_loss_warmup_steps), 0)
         self.flow_stage_gamma = float(flow_stage_gamma)
+        self.merge_loss_gamma = min(max(float(merge_loss_gamma), 1e-6), 1.0)
+        self.merge_loss_weights = (
+            [float(value) for value in merge_loss_weights]
+            if merge_loss_weights is not None else None)
+        self.normalize_pixel_loss = bool(normalize_pixel_loss)
+        self.residual_loss_weight = max(float(residual_loss_weight), 0.0)
         self.flow_loss_kwargs = {
             'motion_threshold': float(flow_motion_threshold),
             'motion_balance': min(max(float(flow_motion_balance), 0.0), 1.0),
-            'motion_gain': float(flow_motion_gain),
-            'motion_scale': float(flow_motion_scale),
-            'motion_weight_cap': float(flow_motion_weight_cap),
-            'charbonnier_eps': float(flow_charbonnier_eps),
+            'motion_gain': max(float(flow_motion_gain), 0.0),
+            'motion_scale': max(float(flow_motion_scale), 1e-6),
+            'motion_weight_cap': max(float(flow_motion_weight_cap), 1.0),
+            'charbonnier_eps': max(float(flow_charbonnier_eps), 1e-12),
         }
         self.last_flow_stage_losses = None
+        self.last_flow_stage_sums = None
+        self.last_flow_valid_count = None
+        self.last_loss_components = {}
+        self.last_grad_norm = None
+        self.loaded_checkpoint = None
+        self.optimizer_restored = False
+        self.grad_clip = 1.0
 
-        self.optimG = optim.AdamW(self.net.parameters(), lr=1e-6, weight_decay=1e-4)
+        self.configure_optimizer({})
 
     def train(self): self.net.train()
     def eval(self):  self.net.eval()
@@ -67,6 +96,63 @@ class Model:
         else:
             self._dev = torch.device('cpu')
         self.net.to(self._dev)
+
+    def configure_optimizer(self, opt):
+        """建立可恢复的 AdamW 参数组，并尊重 Mamba 的免衰减标记。"""
+        weight_decay = float(opt.get('weight_decay', 1e-4))
+        finetune = bool(opt.get('finetune', False))
+        scales = {
+            'backbone': float(opt.get(
+                'backbone_lr_scale', 0.25 if finetune else 1.0)),
+            'flow': float(opt.get('flow_lr_scale', 1.0)),
+            'refine': float(opt.get('refine_lr_scale', 1.0)),
+        }
+        self.grad_clip = float(opt.get('grad_clip', 1.0))
+        if self.grad_clip <= 0:
+            raise ValueError(f'grad_clip must be > 0, got {self.grad_clip}')
+
+        grouped = {}
+        for name, parameter in self.net.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            if name.startswith('feature_bone.'):
+                family = 'backbone'
+            elif name.startswith(('block.', 'local_block.')):
+                family = 'flow'
+            else:
+                family = 'refine'
+            no_decay = (
+                parameter.ndim <= 1
+                or name.endswith('.bias')
+                or bool(getattr(parameter, '_no_weight_decay', False)))
+            key = (family, no_decay)
+            grouped.setdefault(key, []).append(parameter)
+
+        param_groups = []
+        for (family, no_decay), parameters in grouped.items():
+            param_groups.append({
+                'params': parameters,
+                'lr': 1e-6 * scales[family],
+                'lr_scale': scales[family],
+                'weight_decay': 0.0 if no_decay else weight_decay,
+                'group_name': f'{family}_{"no_decay" if no_decay else "decay"}',
+            })
+        betas = tuple(float(value) for value in opt.get('betas', (0.9, 0.999)))
+        if len(betas) != 2:
+            raise ValueError(f'optim.betas must contain 2 values, got {betas}')
+        self.optimG = optim.AdamW(
+            param_groups, lr=1e-6, betas=betas,
+            eps=float(opt.get('eps', 1e-8)))
+
+    def set_learning_rate(self, learning_rate):
+        for group in self.optimG.param_groups:
+            group['lr'] = learning_rate * float(group.get('lr_scale', 1.0))
+
+    def flow_weight_at_step(self, step):
+        if self.flow_loss_warmup_steps <= 0 or step is None:
+            return float(self.flow_loss_weight)
+        progress = min(max((int(step) + 1) / self.flow_loss_warmup_steps, 0.0), 1.0)
+        return float(self.flow_loss_weight) * progress
 
     # ── pad / unpad ───────────────────────────────────────────────────────────
 
@@ -94,9 +180,18 @@ class Model:
     #     )
 
     def load_model(self, ckpt_path, resume=False):
-        ckpt = torch.load(ckpt_path, map_location='cpu')
+        ckpt = load_checkpoint_file(ckpt_path)
         state = ckpt['net'] if 'net' in ckpt else ckpt          # 兼容新旧格式
         state = convert(state)
+        self.loaded_checkpoint = ckpt if 'net' in ckpt else None
+        current_version = int(getattr(self.net, 'version', 1))
+        checkpoint_version = (
+            ckpt.get('model_version') if isinstance(ckpt, dict) else None)
+        if (checkpoint_version is not None
+                and int(checkpoint_version) != current_version):
+            print('[load_model] WARNING: refine版本发生变化: '
+                  f'checkpoint version={checkpoint_version}, '
+                  f'current version={current_version}')
 
         # 过滤形状不匹配的键 (strict=False不处理size mismatch, 必须手动剔除)
         model_state = self.net.state_dict()
@@ -121,22 +216,32 @@ class Model:
             print(f'[load_model] WARNING: {len(unexpected)} 个checkpoint键未被当前模型使用: '
                   f'{unexpected[:8]}{"..." if len(unexpected) > 8 else ""}')
 
-        # version=2 的 refine UNet 比 version=1 多 bottleneck attention。
-        # 老checkpoint没有结构元数据，只能通过这些特征键提示版本切换。
-        attention_prefix = 'unet.bottleneck_attn.'
-        missing_attention = [k for k in missing if k.startswith(attention_prefix)]
-        unused_attention = [k for k in unexpected if k.startswith(attention_prefix)]
-        if missing_attention:
+        # 老checkpoint没有结构元数据，通过特征键提示 refine 版本切换。
+        v2_attention_prefix = 'unet.bottleneck_attn.'
+        v3_attention_prefix = 'unet.bottleneck_attention.'
+        missing_v2_attention = [
+            k for k in missing if k.startswith(v2_attention_prefix)]
+        unused_v2_attention = [
+            k for k in unexpected if k.startswith(v2_attention_prefix)]
+        missing_v3_attention = [
+            k for k in missing if k.startswith(v3_attention_prefix)]
+        if current_version == 2 and missing_v2_attention:
             print('[load_model] WARNING: 当前模型启用了version=2 attention，'
                   '但checkpoint不含对应权重；该模块将从随机初始化开始训练')
-        elif unused_attention:
-            print('[load_model] WARNING: checkpoint含version=2 attention权重，'
-                  '但当前模型为version=1；这些attention权重已忽略')
+        elif unused_v2_attention:
+            print(f'[load_model] WARNING: checkpoint含version=2 attention权重，'
+                  f'但当前模型为version={current_version}；这些权重已忽略')
+        if current_version == 3 and missing_v3_attention:
+            print('[load_model] INFO: version=3 residual attention本身使用identity初始化；'
+                  '但v3同时改变了refiner残差映射和幅度限制，切换版本时loss可出现跳变，'
+                  '应使用新的exp_name进行finetune')
 
         # finetune安全检查: 明确告知原有最后一级(全分辨率)IFBlock是否成功复用。
         fullres_index = len(self.net.local_block) - 1
         fullres_prefix = f'local_block.{fullres_index}.'
-        fullres_loaded = sum(k.startswith(fullres_prefix) for k in filtered)
+        fullres_loaded = sum(
+            k.startswith(fullres_prefix) and k in model_state
+            for k in filtered)
         if fullres_loaded:
             print(f'[load_model] 全分辨率IFBlock[{fullres_index}] '
                   f'已复用checkpoint权重 ({fullres_loaded} tensors)')
@@ -145,17 +250,37 @@ class Model:
                   f'IFBlock[{fullres_index}], 该分支将使用零残差初始化')
 
         if resume and 'optim' in ckpt:
-            self.optimG.load_state_dict(ckpt['optim'])
+            try:
+                self.optimG.load_state_dict(ckpt['optim'])
+                self.optimizer_restored = True
+            except ValueError as exc:
+                print('[load_model] WARNING: optimizer参数组与当前代码不兼容，'
+                      f'仅恢复模型权重并重建optimizer ({exc})')
         return ckpt.get('epoch', 0), ckpt.get('step', 0)
 
-    def save_model(self, sp, epoch, rank=0):
+    def save_model(self, sp, epoch, rank=0, step=0, scaler=None,
+                   tag=None, extra_state=None):
+        filename = f'{self.name}_{tag or str(epoch)}.pkl'
         ckpt_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            f'ckpt/{sp}/{self.name}_{str(epoch)}.pkl'
-        )
+            os.path.dirname(os.path.abspath(__file__)), f'ckpt/{sp}/{filename}')
         os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
-        torch.save(self.net.state_dict(), ckpt_path)
+        payload = {
+            'checkpoint_version': 2,
+            'model_version': int(getattr(self.net, 'version', 1)),
+            'net': self.net.state_dict(),
+            'optim': self.optimG.state_dict(),
+            'epoch': int(epoch),
+            'step': int(step),
+        }
+        if scaler is not None and scaler.is_enabled():
+            payload['scaler'] = scaler.state_dict()
+        if extra_state:
+            payload.update(extra_state)
+        tmp_path = ckpt_path + '.tmp'
+        torch.save(payload, tmp_path)
+        os.replace(tmp_path, ckpt_path)
         print(f"model saved -> {ckpt_path}")
+        return ckpt_path
 
     # ── loss ──────────────────────────────────────────────────────────────────
 
@@ -166,22 +291,56 @@ class Model:
             return self.lap_loss(pred, gt)
         return (pred - gt).abs().mean() + self.lap_loss(pred, gt)   # l1+lap
 
+    def _pixel_supervision(self, pred, merged, gt):
+        """稳定归一化的 final + 多级merge像素监督。"""
+        final_loss = self._pixel_loss(pred, gt)
+        merge_losses = [
+            self._pixel_loss(merge, gt) for merge in merged]
+        if self.merge_loss_weights is not None:
+            if len(self.merge_loss_weights) != len(merge_losses):
+                raise ValueError(
+                    f'merge_loss_weights长度({len(self.merge_loss_weights)}) '
+                    f'必须等于local merge数量({len(merge_losses)})')
+            weights = final_loss.new_tensor(self.merge_loss_weights)
+        else:
+            count = len(merge_losses)
+            weights = final_loss.new_tensor([
+                self.merge_loss_gamma ** (count - 1 - index)
+                for index in range(count)])
+
+        weighted_merges = sum(
+            (weight * value for weight, value in zip(weights, merge_losses)),
+            final_loss.new_zeros(()))
+        denominator = (
+            1.0 + weights.sum() if self.normalize_pixel_loss else 1.0)
+        pixel_loss = (final_loss + weighted_merges) / denominator
+        return pixel_loss, final_loss, merge_losses, weights
+
+    @staticmethod
+    def _safe_flow(flow_gt):
+        finite = torch.isfinite(flow_gt[:, :4]).all(dim=1)
+        flow = torch.nan_to_num(
+            flow_gt[:, :4], nan=0.0, posinf=0.0, neginf=0.0)
+        valid = flow_gt[:, 4].clamp(0, 1)
+        valid = valid * finite.to(valid.dtype)
+        return flow, valid
+
     @staticmethod
     def _flow_region_weights(flow_gt, has_mv, motion_threshold=1.0,
                              motion_gain=1.0, motion_scale=10.0,
                              motion_weight_cap=4.0):
         """预计算与预测无关的前景/背景权重, 供所有flow阶段复用。"""
-        valid = flow_gt[:, 4].clamp(0, 1)                                # [B,H,W]
+        flow, valid = Model._safe_flow(flow_gt)
         global_flow = torch.zeros(
             flow_gt.shape[0], 4, 1, 1, dtype=flow_gt.dtype, device=flow_gt.device)
         for b in range(flow_gt.shape[0]):
             sparse_valid = valid[b, ::8, ::8] > 0
             if sparse_valid.any():
-                sparse_flow = flow_gt[b, :4, ::8, ::8]
+                sparse_flow = flow[b, :, ::8, ::8]
                 global_flow[b, :, 0, 0] = sparse_flow[:, sparse_valid].median(dim=1).values
         relative_mag = 0.5 * (
-            torch.linalg.vector_norm(flow_gt[:, 0:2] - global_flow[:, 0:2], dim=1)
-            + torch.linalg.vector_norm(flow_gt[:, 2:4] - global_flow[:, 2:4], dim=1))
+            torch.linalg.vector_norm(flow[:, 0:2] - global_flow[:, 0:2], dim=1)
+            + torch.linalg.vector_norm(flow[:, 2:4] - global_flow[:, 2:4], dim=1))
         moving = valid * (relative_mag >= motion_threshold).to(valid.dtype)
         static = valid * (relative_mag < motion_threshold).to(valid.dtype)
 
@@ -195,21 +354,22 @@ class Model:
 
     @staticmethod
     def _flow_epe_masked(flow_pred, flow_gt, has_mv,
-                         motion_threshold=1.0, motion_balance=0.5,
-                         motion_gain=1.0, motion_scale=10.0,
+                         motion_threshold=1.0, motion_balance=0.1,
+                         motion_gain=0.0, motion_scale=10.0,
                          motion_weight_cap=4.0, charbonnier_eps=1e-3,
-                         _regions=None):
+                         _regions=None, return_stats=False):
         """
         flow_pred : [B, 4, H, W] 像素位移 (前2通道 F_t→0, 后2通道 F_t→1)
-        flow_gt   : [B, 5, H, W] 前4通道同上, 第5通道为遮挡有效性mask
-                    (valid=0 的uncover区无合法对应点, 监督病态, 逐像素跳过)
+        flow_gt   : [B, 5, H, W] 前4通道同上, 第5通道为有效性/置信度mask
+                    (非有限MV、原图/crop终点越界处valid=0)
         has_mv    : [B] 1=该样本flow_gt有效
         移动区与静态区分别归一化, 防止小运动物体被背景像素数量淹没。
         移动区内再按GT位移大小软加权。Charbonnier EPE不做硬clamp,
         因此大误差像素仍然有梯度。
         """
-        diff0 = flow_pred[:, 0:2] - flow_gt[:, 0:2]
-        diff1 = flow_pred[:, 2:4] - flow_gt[:, 2:4]
+        safe_flow, _ = Model._safe_flow(flow_gt)
+        diff0 = flow_pred[:, 0:2] - safe_flow[:, 0:2]
+        diff1 = flow_pred[:, 2:4] - safe_flow[:, 2:4]
         eps2 = charbonnier_eps ** 2
         epe0 = torch.sqrt(diff0.square().sum(dim=1) + eps2)
         epe1 = torch.sqrt(diff1.square().sum(dim=1) + eps2)
@@ -235,12 +395,13 @@ class Model:
             motion_balance * moving_mean + (1.0 - motion_balance) * static_mean,
             torch.where(has_moving, moving_mean, static_mean))
 
-        n_valid = sample_valid.sum()
-        if n_valid < 1:
-            return flow_pred.sum() * 0.0
-        return (per_sample * sample_valid.to(per_sample.dtype)).sum() / n_valid
+        count = sample_valid.sum().to(per_sample.dtype)
+        loss_sum = (per_sample * sample_valid.to(per_sample.dtype)).sum()
+        if return_stats:
+            return loss_sum, count
+        return loss_sum / count.clamp(min=1.0)
 
-    def _multistage_flow_loss(self, flow_list, flow_gt, has_mv, pr, pb):
+    def _multistage_flow_loss_stats(self, flow_list, flow_gt, has_mv, pr, pb):
         """对所有 learned-feature/local flow 阶段做深监督。
 
         gamma 权重按阶段递增并归一化, 使 flow_loss_weight 的整体量级
@@ -249,7 +410,10 @@ class Model:
         n = len(flow_list)
         if n == 0:
             self.last_flow_stage_losses = None
-            return flow_gt.sum() * 0.0
+            self.last_flow_stage_sums = None
+            self.last_flow_valid_count = flow_gt.new_zeros(())
+            zero = flow_gt.sum() * 0.0
+            return zero, zero, self.last_flow_valid_count
         gamma = min(max(self.flow_stage_gamma, 1e-6), 1.0)
         weights = flow_gt.new_tensor([gamma ** (n - 1 - i) for i in range(n)])
         weights = weights / weights.sum()
@@ -259,20 +423,58 @@ class Model:
             motion_gain=self.flow_loss_kwargs['motion_gain'],
             motion_scale=self.flow_loss_kwargs['motion_scale'],
             motion_weight_cap=self.flow_loss_kwargs['motion_weight_cap'])
-        stage_losses = []
+        stage_sums = []
+        valid_count = flow_gt.new_zeros(())
         for flow_pred in flow_list:
             flow_pred = self.unpad(flow_pred, pr, pb)
-            stage_losses.append(self._flow_epe_masked(
+            stage_sum, valid_count = self._flow_epe_masked(
                 flow_pred, flow_gt, has_mv, _regions=regions,
-                **self.flow_loss_kwargs))
-        stage_losses = torch.stack(stage_losses)
+                return_stats=True, **self.flow_loss_kwargs)
+            stage_sums.append(stage_sum)
+        stage_sums = torch.stack(stage_sums)
+        stage_losses = stage_sums / valid_count.clamp(min=1.0)
+        self.last_flow_stage_sums = stage_sums.detach()
         self.last_flow_stage_losses = stage_losses.detach()
-        return (stage_losses * weights).sum()
+        self.last_flow_valid_count = valid_count.detach()
+        weighted_sum = (stage_sums * weights).sum()
+        weighted_mean = weighted_sum / valid_count.clamp(min=1.0)
+        return weighted_mean, weighted_sum, valid_count
+
+    def _multistage_flow_loss(self, flow_list, flow_gt, has_mv, pr, pb):
+        mean, _, _ = self._multistage_flow_loss_stats(
+            flow_list, flow_gt, has_mv, pr, pb)
+        return mean
+
+    def flow_metric_sums(self, flow_pred, flow_gt, has_mv):
+        """验证用原始像素EPE统计，不使用motion_balance重加权。"""
+        safe_flow, valid = self._safe_flow(flow_gt)
+        sample_mask = (has_mv > 0).to(valid.dtype)[:, None, None]
+        valid = valid * sample_mask
+        diff0 = torch.linalg.vector_norm(
+            flow_pred[:, 0:2] - safe_flow[:, 0:2], dim=1)
+        diff1 = torch.linalg.vector_norm(
+            flow_pred[:, 2:4] - safe_flow[:, 2:4], dim=1)
+        epe = 0.5 * (diff0 + diff1)
+
+        motion_weight, static_weight, _ = self._flow_region_weights(
+            flow_gt, has_mv,
+            motion_threshold=self.flow_loss_kwargs['motion_threshold'],
+            motion_gain=0.0, motion_scale=1.0, motion_weight_cap=1.0)
+        moving = (motion_weight > 0).to(valid.dtype) * valid
+        static = (static_weight > 0).to(valid.dtype) * valid
+        return {
+            'sum': (epe * valid).sum(),
+            'count': valid.sum(),
+            'moving_sum': (epe * moving).sum(),
+            'moving_count': moving.sum(),
+            'static_sum': (epe * static).sum(),
+            'static_count': static.sum(),
+        }
 
     # ── train / eval step ─────────────────────────────────────────────────────
 
     def update(self, imgs, gt, timestep=0.5, learning_rate=0, training=True,
-               scaler=None, flow_gt=None, has_mv=None):
+               scaler=None, flow_gt=None, has_mv=None, loss_step=None):
         """
         imgs     : [B, 6, H, W] float 0~1  (img0, img1)
         gt       : [B, 3, H, W] float 0~1
@@ -287,38 +489,62 @@ class Model:
 
         if training:
             self.train()
-            for pg in self.optimG.param_groups:
-                pg['lr'] = learning_rate
+            self.set_learning_rate(learning_rate)
 
-            flow_list, _, _, _, _, merged, pred_pad = self.net(
+            flow_list, _, res_pad, _, _, merged_pad, pred_pad = self.net(
                 imgs_pad, timestep=timestep, scale=0, local=self.local)
 
             pred = self.unpad(pred_pad, pr, pb)
-            loss = self._pixel_loss(pred, gt)
-            for merge in merged:
-                loss = loss + self._pixel_loss(self.unpad(merge, pr, pb), gt)
+            res = self.unpad(res_pad, pr, pb)
+            merged = [self.unpad(merge, pr, pb) for merge in merged_pad]
+            loss_pixel, loss_final, merge_losses, merge_weights = (
+                self._pixel_supervision(pred, merged, gt))
+            loss_residual = res.abs().mean()
+            loss = loss_pixel + self.residual_loss_weight * loss_residual
 
             # teacher flow 多阶段监督 (仅对 has_mv=1 的样本生效)
             loss_flow = torch.zeros((), device=self._dev)
+            flow_weight = self.flow_weight_at_step(loss_step)
             self.last_flow_stage_losses = None
-            if (self.flow_loss_weight > 0 and flow_gt is not None
+            self.last_flow_stage_sums = None
+            self.last_flow_valid_count = None
+            if (flow_weight > 0 and flow_gt is not None
                     and has_mv is not None and has_mv.sum() > 0):
                 flow_gt = flow_gt.to(self._dev)
                 has_mv = has_mv.to(self._dev)
                 loss_flow = self._multistage_flow_loss(
                     flow_list, flow_gt, has_mv, pr, pb)
-                loss = loss + self.flow_loss_weight * loss_flow
+                loss = loss + flow_weight * loss_flow
 
-            self.optimG.zero_grad()
+            components = {
+                'total': loss.detach(),
+                'pixel': loss_pixel.detach(),
+                'final': loss_final.detach(),
+                'residual': loss_residual.detach(),
+                'residual_weighted': (
+                    self.residual_loss_weight * loss_residual).detach(),
+                'flow_raw': loss_flow.detach(),
+                'flow_weighted': (flow_weight * loss_flow).detach(),
+                'flow_weight': loss.new_tensor(flow_weight),
+            }
+            for index, (merge_loss, merge_weight) in enumerate(
+                    zip(merge_losses, merge_weights)):
+                components[f'merge_{index}'] = merge_loss.detach()
+                components[f'merge_weight_{index}'] = merge_weight.detach()
+            self.last_loss_components = components
+
+            self.optimG.zero_grad(set_to_none=True)
             if scaler is not None:
                 scaler.scale(loss).backward()
                 scaler.unscale_(self.optimG)
-                torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=1.0)
+                self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.net.parameters(), max_norm=self.grad_clip)
                 scaler.step(self.optimG)
                 scaler.update()
             else:
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=1.0)
+                self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.net.parameters(), max_norm=self.grad_clip)
                 self.optimG.step()
 
             return pred.detach(), loss.item(), loss_flow.item()
@@ -337,6 +563,7 @@ class Model:
     @torch.no_grad()
     def inference(self, img0, img1, local, TTA=False, timestep=0.5,
                   scale=0, fast_TTA=False):
+        self.eval()
         imgs = torch.cat((img0, img1), 1)
         imgs, (pr, pb) = self.pad_to_multiple(imgs, 16)
         if fast_TTA:

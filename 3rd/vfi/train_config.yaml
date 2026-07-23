@@ -1,7 +1,7 @@
 # VFIMamba 训练配置 (train.py 唯一超参来源)
 # 用法: python train.py --config train_config.yaml [--restore_ckpt xxx.pkl]
 
-exp_name: Kousei_phase1_0721_easymix          # 实验名: log目录/ckpt目录/TensorBoard 均用它
+exp_name: Kousei_v3_flowfix_F48_0723          # 新loss/新refiner必须使用独立实验目录
 
 seed: 1234
 
@@ -9,17 +9,22 @@ seed: 1234
 model:
   F: 48
   depth: [2, 2, 2, 3, 3]
-  version: 2                       # unet选择 (语义不变)
+  version: 3                       # 1=plain, 2=旧全局MHA, 3=pooled-KV residual attention
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25           # 限制refiner绕过flow直接重建整图
   ssm_version: 2                   # 新: 1=S6(v1/v2现状), 2=Mamba2 SSD
   ssd_dstate: 64                   # SSD状态维 (S6用16; SSD成本结构不同, 64起步)
   ssd_headdim: 64                  # d_inner须被整除: F48→stage3/4 d_inner=768/1536 ✓
   ssd_chunk: 256
   loss_type: l1
-  flow_loss_weight: 0.01
-  flow_stage_gamma: 0.8            # 所有flow阶段深监督, 后级权重递增
+  flow_loss_weight: 0.001
+  flow_loss_warmup_steps: 10000
+  flow_stage_gamma: 0.2            # 最后一级约80%, 粗尺度三级合计<1%
   flow_motion_threshold: 1.0       # 像素; 相对全局中位flow的前景运动阈值
-  flow_motion_balance: 0.5         # 移动区在每个样本flow loss中的固定占比
-  flow_motion_gain: 1.0            # 移动区内大位移软加权
+  flow_motion_balance: 0.1         # 防止极小运动区产生数万倍单像素权重
+  flow_motion_gain: 0.0
   flow_motion_scale: 10.0
   flow_motion_weight_cap: 4.0
   flow_charbonnier_eps: 1.0e-3
@@ -28,6 +33,9 @@ model:
   zero_init_residual_heads: true   # 新增残差head从identity开始
   local_zero_init: true            # 续训时新local级不破坏原输出
   local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+  merge_loss_gamma: 0.5            # 越后的local merge权重越高
+  normalize_pixel_loss: true       # local级数变化时保持loss总尺度稳定
+  residual_loss_weight: 0.01
 
 # 从头训练参数；保留main当前实验的学习率与warmup设置
 optim:
@@ -39,6 +47,12 @@ optim:
   amp: true
   amp_dtype: bf16
   grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 1.0
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
 # data / phases / monitor 段沿用现有生产yaml
 
 # ── 数据 ─────────────────────────────────────────────────────────────────────
@@ -49,6 +63,7 @@ data:
   tiers: [easy, normal, hard, opensource, illumination, noise, teacher]
   batch_size: 1
   num_workers: 8
+  val_num_workers: 4
   crop_sizes:                  # 多尺度: 每个epoch随机选一组 (h, w), 需为16倍数
     - [288, 512,  4]
     - [384, 704,  3]
@@ -58,11 +73,23 @@ data:
   t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
   mv_prob: 1                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
   mv_sign: [1, 1]              # !! 必须先用 verify_mv_convention.py 实证后填 !!
+  mv_symmetry_confidence: false # mv0+mv1仅代表匀速性, 默认不作为有效性硬约束
+  occ_alpha: 0.05               # 仅在启用软对称置信度时使用
+  occ_beta: 1.0
   motion_aware_crop_prob: 0.5  # teacher样本中, 一半裁剪对准小运动物体
   motion_crop_threshold: 1.0   # 相对全局中位flow的残差阈值(像素)
   small_motion_min_pixels: 8
   small_motion_max_ratio: 0.05 # 小运动连通域最大占crop面积
   motion_crop_jitter: 0.2      # 目标中心偏移, 避免总在crop正中
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    opensource: opensource_val.txt
+    illumination: illumination_val.txt
+    noise: noise_val.txt
+    teacher: teacher_val.txt    # 未准备时自动跳过; 准备后输出flow/moving EPE
 
 # ── 训练阶段 (顺序执行, 配比可切换) ──────────────────────────────────────────
 phases:
@@ -88,3 +115,5 @@ monitor:
   spike_dir: spike_samples
   flow_loss_dump_threshold: 40
   dump_max: 1000
+  best_metric: all/psnr
+  best_mode: auto                 # PSNR自动取最大；EPE/loss自动取最小

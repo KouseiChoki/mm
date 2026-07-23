@@ -132,6 +132,8 @@ class TierDataset(Dataset):
     t_half_prob : t=0.5 的采样概率 (其余概率均匀采窗口内任意t)
     mv_prob     : teacher scene 采样为 flow监督样本(s=1,t=0.5,带mv) 的概率
     mv_sign     : (sx, sy) mv符号修正, 用 verify_mv_convention.py 的结论填
+    mv_symmetry_confidence : 是否将 |mv0+mv1| 作为软置信度; 默认关闭,
+                             不再把非匀速运动误判为无效flow
     motion_aware_crop_prob : teacher样本以小运动连通域为中心裁剪的概率
     """
 
@@ -143,11 +145,13 @@ class TierDataset(Dataset):
                  mv_sign: Tuple[int, int] = (1, 1),
                  occ_alpha: float = 0.05,
                  occ_beta: float = 1.0,
+                 mv_symmetry_confidence: bool = False,
                  motion_aware_crop_prob: float = 0.0,
                  motion_crop_threshold: float = 1.0,
                  small_motion_min_pixels: int = 8,
                  small_motion_max_ratio: float = 0.05,
                  motion_crop_jitter: float = 0.2,
+                 val_with_mv: bool = False,
                  augment: bool = True):
         self.root = Path(root)
         self.split = split
@@ -156,13 +160,15 @@ class TierDataset(Dataset):
         self.t_half_prob = t_half_prob
         self.mv_prob = mv_prob
         self.mv_sign = mv_sign
-        self.occ_alpha = occ_alpha          # 遮挡判定: |mv0+mv1| < alpha*(|mv0|+|mv1|) + beta
+        self.occ_alpha = occ_alpha
         self.occ_beta = occ_beta
+        self.mv_symmetry_confidence = bool(mv_symmetry_confidence)
         self.motion_aware_crop_prob = float(motion_aware_crop_prob)
         self.motion_crop_threshold = float(motion_crop_threshold)
         self.small_motion_min_pixels = int(small_motion_min_pixels)
         self.small_motion_max_ratio = float(small_motion_max_ratio)
         self.motion_crop_jitter = float(motion_crop_jitter)
+        self.val_with_mv = bool(val_with_mv)
         self.do_augment = augment and split == 'train'
 
         self.scenes: List[dict] = []
@@ -224,10 +230,12 @@ class TierDataset(Dataset):
 
     def _read_mv_pair(self, scene: dict, gt_path: Path,
                       h: int, w: int) -> Optional[np.ndarray]:
-        """读取 gt 帧的 mv1/mv0, 反归一化到像素, 并由双向对称性生成遮挡有效性mask。
+        """读取 gt 帧的 mv1/mv0，反归一化到像素并生成有效性/置信度mask。
+
         返回 [H,W,5] = (mv1(2), mv0(2), valid(1)); 损坏/缺失返回 None。
-        valid=0 的像素为遮挡/uncover区: 该处flow无合法对应点, 监督在物理上病态,
-        由 Trainer 的逐像素加权EPE跳过。"""
+        valid 基础条件为数值有限且两个目标坐标都在图像内。可选的
+        mv_symmetry_confidence 只把双向非对称性作为软权重，不再把加速、
+        转向等合法的非匀速运动硬判为无效。"""
         if not _HAS_FILE_UTILS:
             return None
         try:
@@ -238,17 +246,40 @@ class TierDataset(Dataset):
             return None
         if mv1 is None or mv0 is None:
             return None
+        if (mv1.ndim != 3 or mv0.ndim != 3
+                or mv1.shape[-1] < 2 or mv0.shape[-1] < 2
+                or mv1.shape[:2] != (h, w) or mv0.shape[:2] != (h, w)):
+            logger.warning(
+                f'mv尺寸/通道不匹配: {scene["rel"]}/{gt_path.name} '
+                f'mv1={getattr(mv1, "shape", None)} '
+                f'mv0={getattr(mv0, "shape", None)} image={(h, w)}')
+            return None
         mv1 = mv1[..., :2].astype(np.float32)
         mv0 = mv0[..., :2].astype(np.float32)
+        finite = np.isfinite(mv1).all(axis=-1) & np.isfinite(mv0).all(axis=-1)
+        # NaN * 0 仍为 NaN；进入torch前必须先替换，valid负责跳过这些像素。
+        np.nan_to_num(mv1, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        np.nan_to_num(mv0, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
         sx, sy = self.mv_sign
         for mv in (mv1, mv0):
             mv[..., 0] *= sx * w                                # 归一化 → 像素
             mv[..., 1] *= sy * h
 
-        # 遮挡mask: t=0.5线性运动下 mv0 ≈ -mv1; 不对称像素即遮挡/uncover区
-        sym = np.linalg.norm(mv1 + mv0, axis=-1)                # [H,W]
-        mag = np.linalg.norm(mv1, axis=-1) + np.linalg.norm(mv0, axis=-1)
-        valid = (sym < self.occ_alpha * mag + self.occ_beta).astype(np.float32)
+        xs = np.arange(w, dtype=np.float32)[None, :]
+        ys = np.arange(h, dtype=np.float32)[:, None]
+        inside1 = (
+            (xs + mv1[..., 0] >= 0) & (xs + mv1[..., 0] <= w - 1)
+            & (ys + mv1[..., 1] >= 0) & (ys + mv1[..., 1] <= h - 1))
+        inside0 = (
+            (xs + mv0[..., 0] >= 0) & (xs + mv0[..., 0] <= w - 1)
+            & (ys + mv0[..., 1] >= 0) & (ys + mv0[..., 1] <= h - 1))
+        valid = (finite & inside1 & inside0).astype(np.float32)
+
+        if self.mv_symmetry_confidence:
+            sym = np.linalg.norm(mv1 + mv0, axis=-1)
+            mag = np.linalg.norm(mv1, axis=-1) + np.linalg.norm(mv0, axis=-1)
+            denom = np.maximum(self.occ_alpha * mag + self.occ_beta, 1e-6)
+            valid *= 1.0 / (1.0 + sym / denom)
 
         # 网络约定: flow[:, :2]=F_t→0=mv1(gt→上一帧),  flow[:,2:4]=F_t→1=mv0(gt→下一帧)
         return np.concatenate([mv1, mv0, valid[..., None]], axis=-1)   # [H,W,5]
@@ -386,7 +417,21 @@ class TierDataset(Dataset):
             left = np.random.randint(0, iw - w + 1)
         else:
             top, left = origin
-        return [a[top:top + h, left:left + w] for a in arrs]
+        cropped = [a[top:top + h, left:left + w] for a in arrs]
+        if len(cropped) > 3:
+            # 原图内有效并不代表 crop 内仍有对应点。若终点被裁掉，网络输入
+            # 中已经没有可用于该像素监督的源内容，必须再次清除 valid。
+            flow = cropped[3]
+            xs = np.arange(w, dtype=np.float32)[None, :]
+            ys = np.arange(h, dtype=np.float32)[:, None]
+            inside0 = (
+                (xs + flow[..., 0] >= 0) & (xs + flow[..., 0] <= w - 1)
+                & (ys + flow[..., 1] >= 0) & (ys + flow[..., 1] <= h - 1))
+            inside1 = (
+                (xs + flow[..., 2] >= 0) & (xs + flow[..., 2] <= w - 1)
+                & (ys + flow[..., 3] >= 0) & (ys + flow[..., 3] <= h - 1))
+            flow[..., 4] *= (inside0 & inside1).astype(flow.dtype)
+        return cropped
 
     def _augment(self, img0, gt, img1, t, mv):
         if random.random() < 0.5:                               # rotate180
@@ -413,7 +458,8 @@ class TierDataset(Dataset):
         if self.split == 'val':
             si, i0 = self._val_index[index]
             scene = self.scenes[si]
-            ig, i1, t, want_mv = i0 + 1, i0 + 2, 0.5, False
+            ig, i1, t = i0 + 1, i0 + 2, 0.5
+            want_mv = self.val_with_mv and bool(scene['has_mv'])
         else:
             scene = self._pick_scene(index)
             i0, ig, i1, t, want_mv = self._sample_window(scene)

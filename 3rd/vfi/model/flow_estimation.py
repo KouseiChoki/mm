@@ -160,10 +160,33 @@ class MultiScaleFlow(nn.Module):
             for (s, d, cr, b) in local_cfg
         ])
 
-        if kargs['version'] == 2:
+        self.version = int(kargs['version'])
+        self.refine_res_scale = float(kargs.get('refine_res_scale', 0.25))
+        if not 0.0 <= self.refine_res_scale <= 1.0:
+            raise ValueError(
+                f'refine_res_scale must be in [0, 1], '
+                f'got {self.refine_res_scale}')
+        if self.version == 3:
+            self.unet = UnetWithResidualAttention(
+                kargs['c'] * 2, kargs['M'],
+                attn_dim=kargs.get('refine_attn_dim', 512),
+                attn_heads=kargs.get('refine_attn_heads', 8),
+                kv_pool=kargs.get('refine_kv_pool', 4))
+        elif self.version == 2:
             self.unet = UnetWithAttention(kargs['c'] * 2, kargs['M'])
         else:
             self.unet = Unet(kargs['c'] * 2, kargs['M'])
+
+    def _compose_prediction(self, merged, refine_output):
+        if self.version == 3:
+            res = refine_output * self.refine_res_scale
+            pred = merged + res
+            # 训练时保留越界像素梯度；评估/推理输出仍限制到合法图像范围。
+            if not self.training:
+                pred = torch.clamp(pred, 0, 1)
+            return res, pred
+        res = refine_output[:, :3] * 2 - 1
+        return res, torch.clamp(merged + res, 0, 1)
 
     def warp_features(self, xs, flow):
         y0 = []
@@ -218,10 +241,9 @@ class MultiScaleFlow(nn.Module):
         warped_img1 = warp(img1, flow[:, 2:4])
         c0, c1 = self.warp_features(af, flow)
         tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
-        res = tmp[:, :3] * 2 - 1
         mask_ = torch.sigmoid(mask)
         merged = warped_img0 * mask_ + warped_img1 * (1 - mask_)
-        pred = torch.clamp(merged + res, 0, 1)
+        res, pred = self._compose_prediction(merged, tmp)
         return pred,warped_img0,warped_img1,mask_
 
 
@@ -290,6 +312,5 @@ class MultiScaleFlow(nn.Module):
         else:
             c0, c1 = self.warp_features(af, flow)
         tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
-        res = tmp[:, :3] * 2 - 1
-        pred = torch.clamp(merged[-1] + res, 0, 1)
+        res, pred = self._compose_prediction(merged[-1], tmp)
         return flow_list, mask_list, res, warped_img0, warped_img1, merged, pred
