@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from timm.layers import DropPath, to_2tuple, trunc_normal_
+try:
+    from timm.layers import DropPath, to_2tuple, trunc_normal_
+except ImportError:
+    # timm<0.9 only exposes these helpers through timm.models.layers.
+    from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from einops import rearrange, repeat
 from typing import Optional, Callable
 from functools import partial
