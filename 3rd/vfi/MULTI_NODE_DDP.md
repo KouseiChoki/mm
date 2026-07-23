@@ -77,7 +77,8 @@ torchrun --standalone --nproc_per_node=1 \
 
 ## 3. 精确恢复 DDP checkpoint
 
-DDP 入口保存的 checkpoint 同时包含网络、optimizer、epoch 和 step。
+DDP 入口保存的 checkpoint 同时包含网络、optimizer、scaler、epoch、step、
+各 rank 的 RNG 状态和当前 best 指标。
 中断恢复时在所有节点使用：
 
 ```bash
@@ -130,5 +131,9 @@ global batch = YAML每卡batch * world_size * grad_accum_steps
 - crop 只由 rank0 抽取，并广播给所有节点。
 - 每个rank使用不同随机种子和 DataLoader worker 种子。
 - 验证由所有rank分片执行，PSNR汇总到rank0。
+- `data.val_lists` 可配置 `easy/normal/hard/opensource/teacher` 等独立验证清单；
+  缺失的可选清单会跳过，teacher 清单还会统计总/运动区/静态区 flow EPE。
+- `monitor.best_metric` 决定 best checkpoint；`best_mode: auto` 对 PSNR 取最大，
+  对 EPE/loss 取最小。
 - TensorBoard、异常dump、checkpoint和主训练日志只由rank0写入。
 - 任何一个节点退出都会使整个DDP作业停止。

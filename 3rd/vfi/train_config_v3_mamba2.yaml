@@ -1,22 +1,27 @@
 # v3 finetune: Mamba2(SSD) + F48 + 三级local(保留全分辨率IFBlock)
-exp_name: Kousei_v3_mamba2_F48_smallflow_q4_finetune
+exp_name: Kousei_v3_resattn_F48_flowfix_finetune
 
 seed: 1234
 
 model:
   F: 48
   depth: [2, 2, 2, 3, 3]
-  version: 2                       # unet选择 (语义不变)
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
   ssm_version: 2                   # 新: 1=S6(v1/v2现状), 2=Mamba2 SSD
   ssd_dstate: 64                   # SSD状态维 (S6用16; SSD成本结构不同, 64起步)
   ssd_headdim: 64                  # d_inner须被整除: F48→stage3/4 d_inner=768/1536 ✓
   ssd_chunk: 256
   loss_type: l1
-  flow_loss_weight: 0.01
-  flow_stage_gamma: 0.8
+  flow_loss_weight: 0.001
+  flow_loss_warmup_steps: 10000
+  flow_stage_gamma: 0.2
   flow_motion_threshold: 1.0
-  flow_motion_balance: 0.5
-  flow_motion_gain: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 0.0
   flow_motion_scale: 10.0
   flow_motion_weight_cap: 4.0
   flow_charbonnier_eps: 1.0e-3
@@ -25,6 +30,9 @@ model:
   zero_init_residual_heads: true
   local_zero_init: true
   local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.01
 
 # finetune: train.py会对下列LR再乘1/4
 optim:
@@ -36,4 +44,10 @@ optim:
   amp: true
   amp_dtype: bf16
   grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 0.25
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
 # data / phases / monitor 段沿用现有生产yaml

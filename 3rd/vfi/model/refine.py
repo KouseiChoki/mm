@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import math
 from timm.layers import trunc_normal_
 
@@ -111,3 +112,85 @@ class UnetWithAttention(nn.Module):
         x = self.up2(torch.cat((x, s1), 1))
         x = self.up3(torch.cat((x, s0), 1))
         return torch.sigmoid(self.conv(x))
+
+
+class BottleneckResidualAttention(nn.Module):
+    """低维 pooled-KV attention，避免直接在超宽 UNet bottleneck 上做全局 MHA。
+
+    query 保留完整 1/16 网格，key/value 按 ``kv_pool`` 下采样。depthwise
+    positional conv 提供局部位置信息，零初始化 residual gain 使新模块在
+    finetune 起点严格退化为 identity。
+    """
+
+    def __init__(self, channels, attn_dim=512, num_heads=8, kv_pool=4):
+        super().__init__()
+        attn_dim = int(attn_dim)
+        num_heads = int(num_heads)
+        if attn_dim < num_heads or attn_dim % num_heads != 0:
+            raise ValueError(
+                f'refine_attn_dim({attn_dim}) must be >= and divisible by '
+                f'refine_attn_heads({num_heads})')
+        self.kv_pool = max(int(kv_pool), 1)
+        self.in_proj = nn.Conv2d(channels, attn_dim, 1)
+        self.pos_conv = nn.Conv2d(
+            attn_dim, attn_dim, 3, 1, 1, groups=attn_dim)
+        self.query_norm = nn.LayerNorm(attn_dim)
+        self.kv_norm = nn.LayerNorm(attn_dim)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=attn_dim, num_heads=num_heads, batch_first=True)
+        self.out_proj = nn.Conv2d(attn_dim, channels, 1)
+        self.residual_gain = nn.Parameter(torch.zeros(()))
+
+    def forward(self, x):
+        feat = self.in_proj(x)
+        feat = feat + self.pos_conv(feat)
+        query = feat.flatten(2).transpose(1, 2)
+
+        if self.kv_pool > 1 and min(feat.shape[-2:]) >= self.kv_pool:
+            kv_feat = F.avg_pool2d(
+                feat, kernel_size=self.kv_pool, stride=self.kv_pool,
+                ceil_mode=True)
+        else:
+            kv_feat = feat
+        key_value = kv_feat.flatten(2).transpose(1, 2)
+
+        query = self.query_norm(query)
+        key_value = self.kv_norm(key_value)
+        attn_out, _ = self.attn(
+            query, key_value, key_value, need_weights=False)
+        attn_out = attn_out.transpose(1, 2).reshape_as(feat)
+        return x + self.residual_gain * self.out_proj(attn_out)
+
+
+class UnetWithResidualAttention(Unet):
+    """version=3 refine UNet。
+
+    复用 version=1 的卷积/反卷积参数命名，便于从旧 checkpoint finetune；
+    bottleneck attention 为 identity 起步，输出直接是 [-1, 1] 的残差方向。
+    最终残差幅度由 MultiScaleFlow.refine_res_scale 控制。
+    """
+
+    def __init__(self, c, M=False, out=3, attn_dim=512,
+                 attn_heads=8, kv_pool=4):
+        super().__init__(c, M=M, out=out)
+        bottleneck_channels = 32 * c if not M else 16 * c
+        self.bottleneck_attention = BottleneckResidualAttention(
+            bottleneck_channels, attn_dim=attn_dim,
+            num_heads=attn_heads, kv_pool=kv_pool)
+
+    def forward(self, img0, img1, warped_img0, warped_img1,
+                mask, flow, c0, c1):
+        s0 = self.down0(torch.cat(
+            (img0, img1, warped_img0, warped_img1, mask, flow,
+             c0[0], c1[0]), 1))
+        s1 = self.down1(torch.cat((s0, c0[1], c1[1]), 1))
+        s2 = self.down2(torch.cat((s1, c0[2], c1[2]), 1))
+        s3 = self.down3(torch.cat((s2, c0[3], c1[3]), 1))
+        bottleneck = (
+            torch.cat((s3, c0[4], c1[4]), 1) if not self.M else s3)
+        bottleneck = self.bottleneck_attention(bottleneck)
+        x = self.up0(bottleneck)
+        x = self.up1(torch.cat((x, s2), 1))
+        x = self.up2(torch.cat((x, s1), 1))
+        x = self.up3(torch.cat((x, s0), 1))
+        return torch.tanh(self.conv(x))

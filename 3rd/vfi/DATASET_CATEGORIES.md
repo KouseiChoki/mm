@@ -70,3 +70,24 @@ phases:
 
 某分类 `ratio: 0` 时，对应list允许不存在。一旦权重大于0，
 训练启动时会检查对应 `*_train.txt`，缺失时直接报出明确错误。
+
+## 分域验证与 teacher EPE
+
+训练配置可额外指定独立验证清单：
+
+```yaml
+data:
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    opensource: opensource_val.txt
+    illumination: illumination_val.txt
+    noise: noise_val.txt
+    teacher: teacher_val.txt
+```
+
+`all` 是必需的，其余清单尚未准备时会警告并跳过。清单格式与训练清单一致；
+`teacher_val.txt` 中应保留 `has_mv=1`，验证时会读取归一化 EXR MV 并输出
+总 EPE、运动区 EPE 和静态区 EPE。其他清单分别输出 PSNR。
