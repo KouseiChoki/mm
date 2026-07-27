@@ -13,7 +13,7 @@ import yaml
 import config as cfg
 from Trainer import Model
 from file_utils import read, write,mkdir
-torch._dynamo.config.recompile_limit = 1280
+from model.warplayer import clear_warp_cache
 
 # ── Padder ───────────────────────────────────────────────────────────
 class InputPadder:
@@ -42,26 +42,54 @@ class SequenceVideoWriter:
         self.ext = ext
         self.fourcc = (cv2.VideoWriter_fourcc(*'mp4v') if ext == 'mp4'
                        else cv2.VideoWriter_fourcc(*'XVID'))
-        self._frames = defaultdict(list)
+        self._writer = None
+        self._folder = None
+        self._frame_count = 0
+        self._size = None
 
     def add_frame(self, save_folder: str, frame_idx: int, img_f32: np.ndarray):
         bgr = to_uint8(img_f32)[..., ::-1].copy()
-        self._frames[save_folder].append((frame_idx, bgr))
+        h, w = bgr.shape[:2]
+        if self._writer is None or self._folder != save_folder:
+            self.close()
+            video_path = os.path.join(save_folder, f'output.{self.ext}')
+            self._writer = cv2.VideoWriter(
+                video_path, self.fourcc, self.fps, (w, h))
+            if not self._writer.isOpened():
+                self._writer.release()
+                self._writer = None
+                raise RuntimeError(f'[VideoWriter] 无法创建视频: {video_path}')
+            self._folder = save_folder
+            self._frame_count = 0
+            self._size = (w, h)
+        elif self._size != (w, h):
+            raise ValueError(
+                f'[VideoWriter] 同一序列帧尺寸不一致: '
+                f'expected={self._size}, got={(w, h)}, frame={frame_idx}')
+        self._writer.write(bgr)
+        self._frame_count += 1
+
+    def close(self):
+        if self._writer is None:
+            return
+        video_path = os.path.join(self._folder, f'output.{self.ext}')
+        self._writer.release()
+        print(f'[VideoWriter] 已保存: {video_path}  '
+              f'({self._frame_count} 帧)')
+        self._writer = None
+        self._folder = None
+        self._frame_count = 0
+        self._size = None
+
+    def finish_sequence(self, save_folder):
+        if self._writer is not None and self._folder != save_folder:
+            raise RuntimeError(
+                f'[VideoWriter] 序列关闭顺序错误: '
+                f'active={self._folder}, requested={save_folder}')
+        self.close()
 
     def flush(self):
-        for folder, frame_list in self._frames.items():
-            frame_list.sort(key=lambda x: x[0])
-            h, w = frame_list[0][1].shape[:2]
-            video_path = os.path.join(folder, f'output.{self.ext}')
-            writer = cv2.VideoWriter(video_path, self.fourcc, self.fps, (w, h))
-            if not writer.isOpened():
-                print(f'[VideoWriter] 无法创建视频: {video_path}')
-                continue
-            for _, bgr in frame_list:
-                writer.write(bgr)
-            writer.release()
-            print(f'[VideoWriter] 已保存: {video_path}  ({len(frame_list)} 帧)')
-        self._frames.clear()
+        self.close()
 
 
 # ── 工具函数 ──────────────────────────────────────────────────────────
@@ -207,6 +235,10 @@ def build_model(args):
 
     model = Model(-1)
     model.load_model(ckpt)
+    # Inference never resumes optimizer/scaler state. Keeping the complete
+    # training checkpoint here can occupy several extra GiB of unified memory.
+    model.loaded_checkpoint = None
+    model.optimG = None
     model.eval()
     model.device()
     return model
@@ -329,11 +361,17 @@ def main():
         I0_, I2_ = padder.pad(I0_, I2_)
 
         # 推理
-        with torch.no_grad():
-            mid, flow, mask, merged, res, warp0, warp1 = model.inference(
+        with torch.inference_mode():
+            outputs = model.inference(
                 I0_, I2_, True, TTA=args.tta, fast_TTA=args.fast_tta,
-                scale=args.scale, timestep=args.timestep
-            )
+                scale=args.scale, timestep=args.timestep,
+                return_debug=args.dump_data)
+        if args.dump_data:
+            mid, flow, mask, merged, res, warp0, warp1 = outputs
+        else:
+            mid = outputs
+            flow = mask = merged = res = warp0 = warp1 = None
+        del outputs
 
         mid_np = padder.unpad(mid)[0].detach().cpu().numpy().transpose(1, 2, 0)
 
@@ -358,6 +396,20 @@ def main():
         if args.dump_data:
             dump_debug_data(save_folder, mid_idx, ext,
                             warp0, warp1, flow, mask, merged, res, padder)
+
+        if need_video and is_last:
+            video_writer.finish_sequence(save_folder)
+
+        # Loop variables would otherwise keep the previous MPS tensors alive
+        # while the next inference is evaluated, increasing the steady peak.
+        del I0_, I2_, mid, flow, mask, merged, res, warp0, warp1
+        del I0, I2, mid_np, frames_to_write, img_f32, padder
+
+        if is_last:
+            clear_warp_cache()
+            if model._dev.type == 'mps':
+                torch.mps.synchronize()
+                torch.mps.empty_cache()
 
     if need_video:
         video_writer.flush()

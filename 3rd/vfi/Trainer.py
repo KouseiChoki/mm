@@ -562,7 +562,7 @@ class Model:
 
     @torch.no_grad()
     def inference(self, img0, img1, local, TTA=False, timestep=0.5,
-                  scale=0, fast_TTA=False):
+                  scale=0, fast_TTA=False, return_debug=True):
         self.eval()
         imgs = torch.cat((img0, img1), 1)
         imgs, (pr, pb) = self.pad_to_multiple(imgs, 16)
@@ -572,17 +572,33 @@ class Model:
             flow_list, mask_list, res, warp0, warp1, merged, preds = self.net(
                 torch.cat((imgs, imgs_), 0), local=local, timestep=timestep, scale=scale)
             pred = (preds[:batch] + preds[batch:].flip(2).flip(3)) / 2.0
+            pred = self.unpad(pred, pr, pb)
+            if not return_debug:
+                return pred
             # 调试张量统一返回未翻转的主分支；TTA只融合最终预测图像。
-            return (self.unpad(pred, pr, pb),
+            return (pred,
                     flow_list[-1][:batch], mask_list[-1][:batch],
                     merged[-1][:batch], res[:batch],
                     warp0[:batch], warp1[:batch])
         flow_list, mask_list, res, warp0, warp1, merged, preds = self.net(
             imgs, timestep=timestep, scale=scale, local=local)
         if not TTA:
-            return (self.unpad(preds, pr, pb), flow_list[-1], mask_list[-1],
-                    merged[-1], res, warp0, warp1)
-        _, _, _, _, _, _, pred2 = self.net(imgs.flip(2).flip(3), timestep=timestep,
-                                           scale=scale, local=local)
-        return (self.unpad((preds + pred2.flip(2).flip(3)) / 2, pr, pb),
+            pred = self.unpad(preds, pr, pb)
+            if not return_debug:
+                return pred
+            return (pred, flow_list[-1], mask_list[-1], merged[-1],
+                    res, warp0, warp1)
+
+        if not return_debug:
+            # The first pass auxiliary tensors are not needed for a normal
+            # release inference. Free them before evaluating the TTA pass.
+            del flow_list, mask_list, res, warp0, warp1, merged
+        second_outputs = self.net(
+            imgs.flip(2).flip(3), timestep=timestep, scale=scale, local=local)
+        pred2 = second_outputs[-1]
+        del second_outputs
+        pred = self.unpad((preds + pred2.flip(2).flip(3)) / 2, pr, pb)
+        if not return_debug:
+            return pred
+        return (pred,
                 flow_list[-1], mask_list[-1], merged[-1], res, warp0, warp1)
