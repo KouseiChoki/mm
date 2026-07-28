@@ -16,6 +16,11 @@ model:
   ssd_headdim: 64                  # d_inner须被整除: F48→stage3/4 d_inner=768/1536 ✓
   ssd_chunk: 256
   loss_type: l1
+  # LC-Mamba loss对照: 改为lc，并将flow_loss_weight/residual_loss_weight置0。
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
   flow_loss_weight: 0.001
   flow_loss_warmup_steps: 10000
   flow_stage_gamma: 0.2

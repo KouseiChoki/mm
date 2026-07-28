@@ -170,6 +170,8 @@ _TRAIN_ONLY_KEYS = (
     'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
     'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
     'normalize_pixel_loss', 'residual_loss_weight',
+    'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
+    'lc_warp_weight',
 )                                                        # 训练侧消费, 不进结构
 _NAMED_KEYS = ('F', 'depth', 'M', 'version')
 

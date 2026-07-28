@@ -337,6 +337,8 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
         'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
         'normalize_pixel_loss', 'residual_loss_weight',
+        'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
+        'lc_warp_weight',
     )                                                        # 训练侧消费, 不进结构
     _extra = {k: v for k, v in m.items()
               if k not in ('F', 'depth', 'M', 'version') + _train_keys}
@@ -357,7 +359,18 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         merge_loss_gamma=m.get('merge_loss_gamma', 0.5),
         merge_loss_weights=m.get('merge_loss_weights'),
         normalize_pixel_loss=m.get('normalize_pixel_loss', True),
-        residual_loss_weight=m.get('residual_loss_weight', 0.0))
+        residual_loss_weight=m.get('residual_loss_weight', 0.0),
+        lc_charbonnier_eps=m.get('lc_charbonnier_eps', 1e-3),
+        lc_census_weight=m.get('lc_census_weight', 1.0),
+        lc_lap_weight=m.get('lc_lap_weight', 1.0),
+        lc_warp_weight=m.get('lc_warp_weight', 0.5))
+    if m['loss_type'] == 'lc':
+        print('[loss] LC-Mamba: Charbonnier + Census7x7 + final Lap '
+              f'+ {m.get("lc_warp_weight", 0.5)} * Σ(stage warp Lap)')
+        if (m.get('flow_loss_weight', 0.0) != 0.0
+                or m.get('residual_loss_weight', 0.0) != 0.0):
+            print('[loss] WARNING: 当前仍启用了teacher flow或residual附加loss；'
+                  '严格LC对照应将flow_loss_weight和residual_loss_weight设为0')
     model.configure_optimizer(opt)
     start_epoch, restored_step = 0, 0
     if restore_ckpt:

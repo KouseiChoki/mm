@@ -247,7 +247,8 @@ class MultiScaleFlow(nn.Module):
         return pred,warped_img0,warped_img1,mask_
 
 
-    def forward(self, x, local=False, timestep=0.5, scale=0):
+    def forward(self, x, local=False, timestep=0.5, scale=0,
+                return_all_merges=False):
         if scale > 0: 
             x_o = x
             x = F.interpolate(x, scale_factor=scale, mode='bilinear', align_corners=False)
@@ -275,6 +276,10 @@ class MultiScaleFlow(nn.Module):
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
             merged.append(warped_img0 * mask_list[i] + warped_img1 * (1 - mask_list[i]))
+
+        # LC loss需要监督全部learned-feature与local阶段；普通loss仍只消费
+        # 原有返回的merged，保证既有实验语义不变。
+        all_merged = list(merged)
         
         if scale>0:
             img0, img1 = x_o[:, :3], x_o[:, 3:6]
@@ -288,6 +293,7 @@ class MultiScaleFlow(nn.Module):
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
             merged.append(warped_img0 * mask_ + warped_img1 * (1 - mask_))
+            all_merged.append(merged[-1])
 
         if local:
             # flow_list 保留前面 learned-feature heads, 用于所有阶段的flow监督。
@@ -306,6 +312,7 @@ class MultiScaleFlow(nn.Module):
                 warped_img0 = warp(img0, flow[:, :2])
                 warped_img1 = warp(img1, flow[:, 2:4])
                 merged.append(warped_img0 * mask_list[i] + warped_img1 * (1 - mask_list[i]))
+                all_merged.append(merged[-1])
         
         if scale: 
             c0, c1 = self.warp_features(af1, flow)
@@ -313,4 +320,8 @@ class MultiScaleFlow(nn.Module):
             c0, c1 = self.warp_features(af, flow)
         tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
         res, pred = self._compose_prediction(merged[-1], tmp)
-        return flow_list, mask_list, res, warped_img0, warped_img1, merged, pred
+        outputs = (
+            flow_list, mask_list, res, warped_img0, warped_img1, merged, pred)
+        if return_all_merges:
+            return outputs + (all_merged,)
+        return outputs

@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-from model.loss import LapLoss
+from model.loss import CensusLoss, CharbonnierLoss, LapLoss
 from config import *
 
 
@@ -36,9 +36,11 @@ class Model:
                  flow_motion_scale=10.0, flow_motion_weight_cap=4.0,
                  flow_charbonnier_eps=1e-3, flow_loss_warmup_steps=0,
                  merge_loss_gamma=0.5, merge_loss_weights=None,
-                 normalize_pixel_loss=True, residual_loss_weight=0.0):
+                 normalize_pixel_loss=True, residual_loss_weight=0.0,
+                 lc_charbonnier_eps=1e-3, lc_census_weight=1.0,
+                 lc_lap_weight=1.0, lc_warp_weight=0.5):
         """
-        loss_type        : 'l1' | 'lap' | 'l1+lap'
+        loss_type        : 'l1' | 'lap' | 'l1+lap' | 'lc'
         flow_loss_weight : teacher flow 监督的总权重, 0=关闭
         flow_stage_gamma : 多阶段监督的递增系数; 越后级权重越高
         """
@@ -50,13 +52,22 @@ class Model:
 
         self.device()
 
-        assert loss_type in ('l1', 'lap', 'l1+lap'), \
-            f"loss_type 须为 'l1'/'lap'/'l1+lap'，got {loss_type}"
+        assert loss_type in ('l1', 'lap', 'l1+lap', 'lc'), \
+            f"loss_type 须为 'l1'/'lap'/'l1+lap'/'lc'，got {loss_type}"
         self.loss_type = loss_type
         self.lap_loss = (
             LapLoss(max_levels=5, channels=3).to(self._dev)
-            if loss_type in ('lap', 'l1+lap') else None
+            if loss_type in ('lap', 'l1+lap', 'lc') else None
         )
+        self.charbonnier_loss = (
+            CharbonnierLoss(eps=lc_charbonnier_eps).to(self._dev)
+            if loss_type == 'lc' else None)
+        self.census_loss = (
+            CensusLoss(patch_size=7).to(self._dev)
+            if loss_type == 'lc' else None)
+        self.lc_census_weight = max(float(lc_census_weight), 0.0)
+        self.lc_lap_weight = max(float(lc_lap_weight), 0.0)
+        self.lc_warp_weight = max(float(lc_warp_weight), 0.0)
         self.flow_loss_weight = flow_loss_weight
         self.flow_loss_warmup_steps = max(int(flow_loss_warmup_steps), 0)
         self.flow_stage_gamma = float(flow_stage_gamma)
@@ -78,6 +89,7 @@ class Model:
         self.last_flow_stage_sums = None
         self.last_flow_valid_count = None
         self.last_loss_components = {}
+        self.last_image_loss_components = {}
         self.last_grad_norm = None
         self.loaded_checkpoint = None
         self.optimizer_restored = False
@@ -289,10 +301,60 @@ class Model:
             return (pred - gt).abs().mean()
         if self.loss_type == 'lap':
             return self.lap_loss(pred, gt)
-        return (pred - gt).abs().mean() + self.lap_loss(pred, gt)   # l1+lap
+        if self.loss_type == 'l1+lap':
+            return (pred - gt).abs().mean() + self.lap_loss(pred, gt)
+        reconstruction, _ = self._lc_reconstruction_loss(pred, gt)
+        return reconstruction
+
+    def _lc_reconstruction_loss(self, pred, gt, target_lap_pyramid=None):
+        """LC-Mamba final reconstruction: Charbonnier + Census + Lap."""
+        charbonnier = self.charbonnier_loss(pred, gt)
+        census = self.census_loss(pred, gt)
+        lap = (
+            self.lap_loss(pred, gt)
+            if target_lap_pyramid is None
+            else self.lap_loss.forward_with_target_pyramid(
+                pred, target_lap_pyramid))
+        total = (
+            charbonnier
+            + self.lc_census_weight * census
+            + self.lc_lap_weight * lap)
+        return total, {
+            'lc_charbonnier': charbonnier.detach(),
+            'lc_census': census.detach(),
+            'lc_census_weighted': (
+                self.lc_census_weight * census).detach(),
+            'lc_final_lap': lap.detach(),
+            'lc_final_lap_weighted': (
+                self.lc_lap_weight * lap).detach(),
+        }
 
     def _pixel_supervision(self, pred, merged, gt):
         """稳定归一化的 final + 多级merge像素监督。"""
+        if self.loss_type == 'lc':
+            # GT金字塔在final和全部warp stage间复用，避免重复构建。
+            target_lap_pyramid = self.lap_loss.pyramid(gt)
+            final_loss, components = self._lc_reconstruction_loss(
+                pred, gt, target_lap_pyramid=target_lap_pyramid)
+            merge_losses = [
+                self.lap_loss.forward_with_target_pyramid(
+                    stage_merge, target_lap_pyramid)
+                for stage_merge in merged]
+            weights = final_loss.new_full(
+                (len(merge_losses),), self.lc_warp_weight)
+            warp_loss = sum(
+                (weight * value
+                 for weight, value in zip(weights, merge_losses)),
+                final_loss.new_zeros(()))
+            pixel_loss = final_loss + warp_loss
+            components['lc_reconstruction'] = final_loss.detach()
+            components['lc_warp'] = warp_loss.detach()
+            for index, value in enumerate(merge_losses):
+                components[f'lc_warp_stage_{index}'] = value.detach()
+            self.last_image_loss_components = components
+            return pixel_loss, final_loss, merge_losses, weights
+
+        self.last_image_loss_components = {}
         final_loss = self._pixel_loss(pred, gt)
         merge_losses = [
             self._pixel_loss(merge, gt) for merge in merged]
@@ -491,12 +553,22 @@ class Model:
             self.train()
             self.set_learning_rate(learning_rate)
 
-            flow_list, _, res_pad, _, _, merged_pad, pred_pad = self.net(
-                imgs_pad, timestep=timestep, scale=0, local=self.local)
+            outputs = self.net(
+                imgs_pad, timestep=timestep, scale=0, local=self.local,
+                return_all_merges=self.loss_type == 'lc')
+            if self.loss_type == 'lc':
+                (flow_list, _, res_pad, _, _, merged_pad, pred_pad,
+                 all_merged_pad) = outputs
+                supervised_merged_pad = all_merged_pad
+            else:
+                (flow_list, _, res_pad, _, _, merged_pad, pred_pad) = outputs
+                supervised_merged_pad = merged_pad
 
             pred = self.unpad(pred_pad, pr, pb)
             res = self.unpad(res_pad, pr, pb)
-            merged = [self.unpad(merge, pr, pb) for merge in merged_pad]
+            merged = [
+                self.unpad(merge, pr, pb)
+                for merge in supervised_merged_pad]
             loss_pixel, loss_final, merge_losses, merge_weights = (
                 self._pixel_supervision(pred, merged, gt))
             loss_residual = res.abs().mean()
@@ -527,6 +599,7 @@ class Model:
                 'flow_weighted': (flow_weight * loss_flow).detach(),
                 'flow_weight': loss.new_tensor(flow_weight),
             }
+            components.update(self.last_image_loss_components)
             for index, (merge_loss, merge_weight) in enumerate(
                     zip(merge_losses, merge_weights)):
                 components[f'merge_{index}'] = merge_loss.detach()

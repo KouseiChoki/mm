@@ -342,12 +342,21 @@ def compute_training_loss(model, imgs, gt, timestep, flow_gt, has_mv,
                           accumulation_steps):
     """Trainer.update 的纯 forward/loss 部分，使 DDP 可控制 no_sync 与梯度累积。"""
     imgs_pad, (pad_right, pad_bottom) = model.pad_to_multiple(imgs, 16)
-    flow_list, _, res_pad, _, _, merged_pad, pred_pad = model.net(
-        imgs_pad, timestep=timestep, scale=0, local=model.local)
+    outputs = model.net(
+        imgs_pad, timestep=timestep, scale=0, local=model.local,
+        return_all_merges=model.loss_type == 'lc')
+    if model.loss_type == 'lc':
+        (flow_list, _, res_pad, _, _, merged_pad, pred_pad,
+         all_merged_pad) = outputs
+        supervised_merged_pad = all_merged_pad
+    else:
+        (flow_list, _, res_pad, _, _, merged_pad, pred_pad) = outputs
+        supervised_merged_pad = merged_pad
     pred = model.unpad(pred_pad, pad_right, pad_bottom)
     res = model.unpad(res_pad, pad_right, pad_bottom)
     merged = [
-        model.unpad(item, pad_right, pad_bottom) for item in merged_pad]
+        model.unpad(item, pad_right, pad_bottom)
+        for item in supervised_merged_pad]
     loss_pixel, loss_final, merge_losses, merge_weights = (
         model._pixel_supervision(pred, merged, gt))
     loss_residual = res.abs().mean()
@@ -379,6 +388,7 @@ def compute_training_loss(model, imgs, gt, timestep, flow_gt, has_mv,
         'flow_weighted': (flow_weight * loss_flow).detach(),
         'flow_weight': loss.new_tensor(flow_weight),
     }
+    components.update(model.last_image_loss_components)
     for index, (merge_loss, merge_weight) in enumerate(
             zip(merge_losses, merge_weights)):
         components[f'merge_{index}'] = merge_loss.detach()
@@ -509,6 +519,8 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
         'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
         'normalize_pixel_loss', 'residual_loss_weight',
+        'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
+        'lc_warp_weight',
     )
     extra = {
         key: value for key, value in model_section.items()
@@ -533,7 +545,19 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         merge_loss_gamma=model_section.get('merge_loss_gamma', 0.5),
         merge_loss_weights=model_section.get('merge_loss_weights'),
         normalize_pixel_loss=model_section.get('normalize_pixel_loss', True),
-        residual_loss_weight=model_section.get('residual_loss_weight', 0.0))
+        residual_loss_weight=model_section.get('residual_loss_weight', 0.0),
+        lc_charbonnier_eps=model_section.get('lc_charbonnier_eps', 1e-3),
+        lc_census_weight=model_section.get('lc_census_weight', 1.0),
+        lc_lap_weight=model_section.get('lc_lap_weight', 1.0),
+        lc_warp_weight=model_section.get('lc_warp_weight', 0.5))
+    if is_main and model_section['loss_type'] == 'lc':
+        print('[loss] LC-Mamba: Charbonnier + Census7x7 + final Lap '
+              f'+ {model_section.get("lc_warp_weight", 0.5)} '
+              '* Σ(stage warp Lap)')
+        if (model_section.get('flow_loss_weight', 0.0) != 0.0
+                or model_section.get('residual_loss_weight', 0.0) != 0.0):
+            print('[loss] WARNING: 当前仍启用了teacher flow或residual附加loss；'
+                  '严格LC对照应将flow_loss_weight和residual_loss_weight设为0')
     model.configure_optimizer(opt_cfg)
 
     start_epoch, global_step = 0, 0
