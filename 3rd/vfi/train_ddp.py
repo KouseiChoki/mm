@@ -628,6 +628,7 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         small_motion_min_pixels=data_cfg.get('small_motion_min_pixels', 8),
         small_motion_max_ratio=data_cfg.get('small_motion_max_ratio', 0.05),
         motion_crop_jitter=data_cfg.get('motion_crop_jitter', 0.2),
+        augment_profile=data_cfg.get('augment_profile', 'legacy'),
     )
     val_loaders = build_val_loaders(
         TierDataset, data_cfg, lists_dir, rank,

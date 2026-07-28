@@ -152,6 +152,7 @@ class TierDataset(Dataset):
                  small_motion_max_ratio: float = 0.05,
                  motion_crop_jitter: float = 0.2,
                  val_with_mv: bool = False,
+                 augment_profile: str = 'legacy',
                  augment: bool = True):
         self.root = Path(root)
         self.split = split
@@ -169,6 +170,11 @@ class TierDataset(Dataset):
         self.small_motion_max_ratio = float(small_motion_max_ratio)
         self.motion_crop_jitter = float(motion_crop_jitter)
         self.val_with_mv = bool(val_with_mv)
+        self.augment_profile = str(augment_profile).lower()
+        if self.augment_profile not in ('legacy', 'vimeo'):
+            raise ValueError(
+                'augment_profile须为legacy或vimeo，'
+                f'got {augment_profile!r}')
         self.do_augment = augment and split == 'train'
 
         self.scenes: List[dict] = []
@@ -434,7 +440,29 @@ class TierDataset(Dataset):
         return cropped
 
     def _augment(self, img0, gt, img1, t, mv):
-        if random.random() < 0.5:                               # rotate180
+        if self.augment_profile == 'vimeo':
+            if mv is not None:
+                raise ValueError(
+                    'vimeo增强模式仅用于无MV数据；'
+                    'teacher数据请使用augment_profile=legacy')
+            if random.random() < 0.5:                           # horizontal flip
+                img0 = np.flip(img0, axis=1)
+                gt = np.flip(gt, axis=1)
+                img1 = np.flip(img1, axis=1)
+            if random.random() < 0.5:                           # vertical flip
+                img0 = np.flip(img0, axis=0)
+                gt = np.flip(gt, axis=0)
+                img1 = np.flip(img1, axis=0)
+            rotate_k = random.randrange(4)                      # 0/90/180/270°
+            if rotate_k:
+                if img0.shape[0] != img0.shape[1]:
+                    raise ValueError(
+                        'vimeo随机90°旋转要求方形crop，'
+                        f'当前为{img0.shape[:2]}')
+                img0 = np.rot90(img0, rotate_k)
+                gt = np.rot90(gt, rotate_k)
+                img1 = np.rot90(img1, rotate_k)
+        elif random.random() < 0.5:                             # legacy rotate180
             img0 = cv2.rotate(img0, cv2.ROTATE_180)
             gt = cv2.rotate(gt, cv2.ROTATE_180)
             img1 = cv2.rotate(img1, cv2.ROTATE_180)

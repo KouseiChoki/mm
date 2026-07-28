@@ -409,6 +409,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         small_motion_min_pixels=d.get('small_motion_min_pixels', 8),
         small_motion_max_ratio=d.get('small_motion_max_ratio', 0.05),
         motion_crop_jitter=d.get('motion_crop_jitter', 0.2),
+        augment_profile=d.get('augment_profile', 'legacy'),
     )
     val_loaders = build_val_loaders(d, lists_dir)
 

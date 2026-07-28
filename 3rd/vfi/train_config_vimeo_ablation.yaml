@@ -1,0 +1,126 @@
+# 仅使用官方 Vimeo90K-Triplet 的独立消融配置。
+# 准备清单:
+#   python data_prepare/build_vimeo_lists.py --root /data/vimeo_triplet
+# 单卡:
+#   python train.py --config train_config_vimeo_ablation.yaml
+# 多机DDP:
+#   torchrun ... train_ddp.py --config train_config_vimeo_ablation.yaml
+
+exp_name: Vimeo_F48_v3_lc
+seed: 1234
+
+# 51,312 train triplets / 单rank batch 16 = 3,207。
+# 两个rank且preserve_single_node_samples_per_epoch=true时自动变为1,604 step，
+# global batch=32，与LC-Mamba论文一致。若单rank batch改为8，这里同步改为6414。
+steps_per_epoch: 3207
+
+model:
+  F: 48
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  # LC loss组。做L1对照时只改loss_type和exp_name，其他字段保持完全一致。
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+
+  # Vimeo没有teacher MV；严格LC loss对照不叠加额外flow/residual penalty。
+  flow_loss_weight: 0.0
+  flow_loss_warmup_steps: 0
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 0.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: true
+  zero_init_residual_heads: true
+  local_zero_init: true
+  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.0
+
+optim:
+  # LC-Mamba论文设置: warmup到2e-4，再cosine衰减到2e-5，共300 epochs。
+  lr_max: 2.0e-4
+  lr_min: 2.0e-5
+  warmup_steps: 2000
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  grad_accum_steps: 1
+  cudnn_benchmark: true
+  matmul_precision: high
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 1.0
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
+
+data:
+  # 改成你机器上直接包含sequences/和tri_*list.txt的目录。
+  root: /home/zhenying/qhong/data/ssd/vimeo_triplet
+  lists_dir: /home/zhenying/qhong/data/ssd/vimeo_triplet/lists
+  tiers: [vimeo]
+  batch_size: 16
+  num_workers: 16
+  val_num_workers: 4
+  persistent_workers: true
+  prefetch_factor: 2
+
+  # 官方图像为256x448；只随机裁256x256，不放大、不补边。
+  crop_sizes:
+    - [256, 256, 16]
+  framesteps: [1]
+  t_half_prob: 1.0
+  mv_prob: 0.0
+  mv_sign: [1, 1]
+  motion_aware_crop_prob: 0.0
+  augment_profile: vimeo
+  val_lists:
+    vimeo: vimeo_val.txt
+
+distributed:
+  backend: nccl
+  timeout_minutes: 30
+  broadcast_buffers: false
+  find_unused_parameters: false
+  gradient_as_bucket_view: true
+  static_graph: false
+  bucket_cap_mb: 25
+  fp16_compress_hook: false
+  preserve_single_node_samples_per_epoch: true
+
+phases:
+  - name: vimeo
+    epochs: 300
+    ratios: {vimeo: 1.0}
+
+monitor:
+  eval_every_epochs: 5
+  save_every_epochs: 10
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples_vimeo
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps_vimeo
+  dump_max: 100
+  best_metric: vimeo/psnr
+  best_mode: max
