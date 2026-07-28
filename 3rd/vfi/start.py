@@ -288,13 +288,23 @@ def dump_debug_data(save_folder, mid_idx, ext,
     flow_np = flow_np[..., :4] / flow_scale
     mv0, mv1 = flow_np[..., 2:4], flow_np[..., :2]
 
+    # mask_list保存的是sigmoid后的[0,1]融合权重。file_utils对单通道EXR
+    # 默认使用Z通道，常规RGB查看器会因此显示成全黑；复制为RGB三通道，
+    # 既保留原始浮点数值，也能直接预览。
+    mask_np = to_np(mask).astype(np.float32, copy=False)
+    if mask_np.ndim != 3 or mask_np.shape[-1] != 1:
+        raise ValueError(
+            f'[dump] mask应为HxWx1，实际为{mask_np.shape}')
+    mask_rgb = np.repeat(mask_np, 3, axis=-1)
+
     write(os.path.join(save_folder, 'warp0',  f"{mid_idx:06d}{ext}"), to_np(warp0), dtype='image')
     write(os.path.join(save_folder, 'warp1',  f"{mid_idx:06d}{ext}"), to_np(warp1), dtype='image')
     write(os.path.join(save_folder, 'mv0',    f"{mid_idx:06d}.exr"),  mv0,
           dtype='flow')
     write(os.path.join(save_folder, 'mv1',    f"{mid_idx:06d}.exr"),  mv1,
           dtype='flow')
-    write(os.path.join(save_folder, 'mask',   f"{mid_idx:06d}.exr"),  to_np(mask), dtype='image')
+    write(os.path.join(save_folder, 'mask',   f"{mid_idx:06d}.exr"),  mask_rgb,
+          dtype='image')
     write(os.path.join(save_folder, 'merged', f"{mid_idx:06d}{ext}"), to_np(merged), dtype='image')
     write(os.path.join(save_folder, 'res',    f"{mid_idx:06d}.exr"),  to_np(res))
 
