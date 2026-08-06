@@ -161,6 +161,34 @@ class MultiScaleFlow(nn.Module):
         ])
 
         self.version = int(kargs['version'])
+        # PerVFI-inspired ablation.  This deliberately keeps the existing
+        # flow estimator/refiner and only changes the two-warp blending rule,
+        # so old checkpoints remain structurally compatible.  In regions
+        # where both warps already agree we retain the original soft mask; in
+        # disagreement regions the mask is sharpened towards one source to
+        # avoid averaging two slightly misaligned textures.
+        self.blend_mode = str(kargs.get('blend_mode', 'soft')).lower()
+        if self.blend_mode not in ('soft', 'pervfi'):
+            raise ValueError(
+                f'blend_mode must be soft or pervfi, got {self.blend_mode}')
+        self.pervfi_mask_temperature = float(
+            kargs.get('pervfi_mask_temperature', 0.5))
+        self.pervfi_disagreement_threshold = float(
+            kargs.get('pervfi_disagreement_threshold', 0.03))
+        self.pervfi_blend_strength = float(
+            kargs.get('pervfi_blend_strength', 1.0))
+        if not 0.0 < self.pervfi_mask_temperature <= 1.0:
+            raise ValueError(
+                'pervfi_mask_temperature must be in (0, 1], got '
+                f'{self.pervfi_mask_temperature}')
+        if self.pervfi_disagreement_threshold <= 0.0:
+            raise ValueError(
+                'pervfi_disagreement_threshold must be > 0, got '
+                f'{self.pervfi_disagreement_threshold}')
+        if not 0.0 <= self.pervfi_blend_strength <= 1.0:
+            raise ValueError(
+                'pervfi_blend_strength must be in [0, 1], got '
+                f'{self.pervfi_blend_strength}')
         self.refine_res_scale = float(kargs.get('refine_res_scale', 0.25))
         if not 0.0 <= self.refine_res_scale <= 1.0:
             raise ValueError(
@@ -187,6 +215,41 @@ class MultiScaleFlow(nn.Module):
             return res, pred
         res = refine_output[:, :3] * 2 - 1
         return res, torch.clamp(merged + res, 0, 1)
+
+    def _blend_warps(self, warped_img0, warped_img1, mask_logits):
+        """Blend two warped images and return the actual probability mask.
+
+        ``soft`` is the historical sigmoid blend and is kept bit-for-bit for
+        control experiments. ``pervfi`` is a lightweight adaptation of
+        PerVFI's quasi-binary asymmetric blending: only pixels where the two
+        candidate warps disagree are progressively sharpened.  The
+        disagreement gate is detached so the flow network cannot reduce this
+        signal by making both warps artificially similar.
+        """
+        soft_mask = torch.sigmoid(mask_logits)
+        if self.blend_mode == 'soft':
+            return soft_mask, (
+                warped_img0 * soft_mask
+                + warped_img1 * (1.0 - soft_mask))
+
+        sharp_mask = torch.sigmoid(
+            mask_logits / self.pervfi_mask_temperature)
+        disagreement = (
+            warped_img0 - warped_img1).abs().mean(dim=1, keepdim=True).detach()
+        disagreement_gate = (
+            disagreement / self.pervfi_disagreement_threshold).clamp(0.0, 1.0)
+        blend_amount = self.pervfi_blend_strength * disagreement_gate
+        mask = soft_mask + blend_amount * (sharp_mask - soft_mask)
+
+        # Written in primary/secondary form to make the asymmetric selection
+        # explicit. It is numerically equivalent to mask-weighted blending,
+        # while the sharpened mask suppresses double-image averaging.
+        prefer_img0 = mask >= 0.5
+        primary = torch.where(prefer_img0, warped_img0, warped_img1)
+        secondary = torch.where(prefer_img0, warped_img1, warped_img0)
+        primary_weight = torch.where(prefer_img0, mask, 1.0 - mask)
+        merged = primary * primary_weight + secondary * (1.0 - primary_weight)
+        return mask, merged
 
     def warp_features(self, xs, flow):
         y0 = []
@@ -241,8 +304,7 @@ class MultiScaleFlow(nn.Module):
         warped_img1 = warp(img1, flow[:, 2:4])
         c0, c1 = self.warp_features(af, flow)
         tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
-        mask_ = torch.sigmoid(mask)
-        merged = warped_img0 * mask_ + warped_img1 * (1 - mask_)
+        mask_, merged = self._blend_warps(warped_img0, warped_img1, mask)
         res, pred = self._compose_prediction(merged, tmp)
         return pred,warped_img0,warped_img1,mask_
 
@@ -271,11 +333,13 @@ class MultiScaleFlow(nn.Module):
             else:
                 flow, mask = self.block[i]( torch.cat([af[-1-i][:B],af[-1-i][B:]],1), 
                                             torch.cat((img0, img1, timestep), 1), None)
-            mask_list.append(torch.sigmoid(mask))
             flow_list.append(flow)
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
-            merged.append(warped_img0 * mask_list[i] + warped_img1 * (1 - mask_list[i]))
+            mask_prob, stage_merged = self._blend_warps(
+                warped_img0, warped_img1, mask)
+            mask_list.append(mask_prob)
+            merged.append(stage_merged)
 
         # LC loss需要监督全部learned-feature与local阶段；普通loss仍只消费
         # 原有返回的merged，保证既有实验语义不变。
@@ -289,10 +353,11 @@ class MultiScaleFlow(nn.Module):
             mask = F.interpolate(mask, scale_factor = scale, mode="bilinear", align_corners=False)
             # timestep 常数图与图像尺寸保持同步 (scale>0 + local 时必需)
             timestep = F.interpolate(timestep, scale_factor = scale, mode="bilinear", align_corners=False)
-            mask_ = torch.sigmoid(mask)
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
-            merged.append(warped_img0 * mask_ + warped_img1 * (1 - mask_))
+            mask_, stage_merged = self._blend_warps(
+                warped_img0, warped_img1, mask)
+            merged.append(stage_merged)
             all_merged.append(merged[-1])
 
         if local:
@@ -307,11 +372,13 @@ class MultiScaleFlow(nn.Module):
                 flow = flow + flow_d
                 mask = mask + mask_d
 
-                mask_list.append(torch.sigmoid(mask))
                 flow_list.append(flow)
                 warped_img0 = warp(img0, flow[:, :2])
                 warped_img1 = warp(img1, flow[:, 2:4])
-                merged.append(warped_img0 * mask_list[i] + warped_img1 * (1 - mask_list[i]))
+                mask_prob, stage_merged = self._blend_warps(
+                    warped_img0, warped_img1, mask)
+                mask_list.append(mask_prob)
+                merged.append(stage_merged)
                 all_merged.append(merged[-1])
         
         if scale: 

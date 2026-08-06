@@ -171,7 +171,7 @@ _TRAIN_ONLY_KEYS = (
     'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
     'normalize_pixel_loss', 'residual_loss_weight',
     'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
-    'lc_warp_weight',
+    'lc_warp_weight', 'pervfi_mask_loss_weight',
 )                                                        # 训练侧消费, 不进结构
 _NAMED_KEYS = ('F', 'depth', 'M', 'version')
 
@@ -233,7 +233,8 @@ def build_model(args):
     cfg.MODEL_CONFIG['MODEL_ARCH'] = arch_from_model_section(m)
     print(f'[build_model] 结构来自yaml: {yaml_path}  '
           f'(version={m.get("version", 2)}, '
-          f'local_cfg={"自定义" if "local_cfg" in m else "默认"})')
+          f'local_cfg={"自定义" if "local_cfg" in m else "默认"}, '
+          f'blend={m.get("blend_mode", "soft")})')
 
     model = Model(-1)
     model.load_model(ckpt)

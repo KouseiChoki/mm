@@ -346,11 +346,11 @@ def compute_training_loss(model, imgs, gt, timestep, flow_gt, has_mv,
         imgs_pad, timestep=timestep, scale=0, local=model.local,
         return_all_merges=model.loss_type == 'lc')
     if model.loss_type == 'lc':
-        (flow_list, _, res_pad, _, _, merged_pad, pred_pad,
+        (flow_list, mask_list, res_pad, _, _, merged_pad, pred_pad,
          all_merged_pad) = outputs
         supervised_merged_pad = all_merged_pad
     else:
-        (flow_list, _, res_pad, _, _, merged_pad, pred_pad) = outputs
+        (flow_list, mask_list, res_pad, _, _, merged_pad, pred_pad) = outputs
         supervised_merged_pad = merged_pad
     pred = model.unpad(pred_pad, pad_right, pad_bottom)
     res = model.unpad(res_pad, pad_right, pad_bottom)
@@ -360,7 +360,12 @@ def compute_training_loss(model, imgs, gt, timestep, flow_gt, has_mv,
     loss_pixel, loss_final, merge_losses, merge_weights = (
         model._pixel_supervision(pred, merged, gt))
     loss_residual = res.abs().mean()
-    loss = loss_pixel + model.residual_loss_weight * loss_residual
+    loss_mask = model._quasi_binary_mask_loss(mask_list, loss_pixel)
+    mask_soft_ratio = model._mask_soft_ratio(mask_list, loss_pixel)
+    loss = (
+        loss_pixel
+        + model.residual_loss_weight * loss_residual
+        + model.pervfi_mask_loss_weight * loss_mask)
 
     loss_flow = torch.zeros((), device=imgs.device)
     model.last_flow_stage_losses = None
@@ -384,6 +389,12 @@ def compute_training_loss(model, imgs, gt, timestep, flow_gt, has_mv,
         'residual': loss_residual.detach(),
         'residual_weighted': (
             model.residual_loss_weight * loss_residual).detach(),
+        'pervfi_mask_binary': loss_mask.detach(),
+        'pervfi_mask_soft_ratio': mask_soft_ratio.detach(),
+        'pervfi_mask_binary_weighted': (
+            model.pervfi_mask_loss_weight * loss_mask).detach(),
+        'pervfi_mask_loss_weight': loss.new_tensor(
+            model.pervfi_mask_loss_weight),
         'flow_raw': loss_flow.detach(),
         'flow_weighted': (flow_weight * loss_flow).detach(),
         'flow_weight': loss.new_tensor(flow_weight),
@@ -520,7 +531,7 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
         'normalize_pixel_loss', 'residual_loss_weight',
         'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
-        'lc_warp_weight',
+        'lc_warp_weight', 'pervfi_mask_loss_weight',
     )
     extra = {
         key: value for key, value in model_section.items()
@@ -549,7 +560,15 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         lc_charbonnier_eps=model_section.get('lc_charbonnier_eps', 1e-3),
         lc_census_weight=model_section.get('lc_census_weight', 1.0),
         lc_lap_weight=model_section.get('lc_lap_weight', 1.0),
-        lc_warp_weight=model_section.get('lc_warp_weight', 0.5))
+        lc_warp_weight=model_section.get('lc_warp_weight', 0.5),
+        pervfi_mask_loss_weight=model_section.get(
+            'pervfi_mask_loss_weight', 0.0))
+    if is_main and model_section.get('blend_mode', 'soft') == 'pervfi':
+        print('[blend] PerVFI-inspired quasi-binary asymmetric blending: '
+              f'temperature={model_section.get("pervfi_mask_temperature", 0.5)} '
+              f'disagreement={model_section.get("pervfi_disagreement_threshold", 0.03)} '
+              f'strength={model_section.get("pervfi_blend_strength", 1.0)} '
+              f'mask_loss={model_section.get("pervfi_mask_loss_weight", 0.0)}')
     if is_main and model_section['loss_type'] == 'lc':
         print('[loss] LC-Mamba: Charbonnier + Census7x7 + final Lap '
               f'+ {model_section.get("lc_warp_weight", 0.5)} '
@@ -579,15 +598,30 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
             mode = 'resume' if args.resume else 'finetune'
             print(f'[{mode}] loaded {args.restore_ckpt}')
 
+    phase_local_values = [
+        bool(phase.get('local', True)) for phase in config['phases']]
+    local_schedule_has_bypass = not all(phase_local_values)
+    find_unused_parameters = bool(
+        ddp_cfg.get('find_unused_parameters', False)
+        or local_schedule_has_bypass)
+    static_graph = bool(ddp_cfg.get('static_graph', False))
+    if len(set(phase_local_values)) > 1 and static_graph:
+        static_graph = False
+        if is_main:
+            print('[DDP] phase会切换local计算图，已自动关闭static_graph')
+    if local_schedule_has_bypass and is_main:
+        print('[DDP] phase包含local=false，已自动启用'
+              'find_unused_parameters以跳过冻结的local_block')
+
     if distributed:
         model.net = DDP(
             model.net,
             device_ids=[local_rank],
             output_device=local_rank,
             broadcast_buffers=bool(ddp_cfg.get('broadcast_buffers', False)),
-            find_unused_parameters=bool(ddp_cfg.get('find_unused_parameters', False)),
+            find_unused_parameters=find_unused_parameters,
             gradient_as_bucket_view=bool(ddp_cfg.get('gradient_as_bucket_view', True)),
-            static_graph=bool(ddp_cfg.get('static_graph', False)),
+            static_graph=static_graph,
             bucket_cap_mb=int(ddp_cfg.get('bucket_cap_mb', 25)),
         )
         if ddp_cfg.get('fp16_compress_hook', False):
@@ -669,9 +703,12 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
         initial_best if saved_best is None else float(saved_best))
 
     for phase in config['phases']:
+        local_enabled = bool(phase.get('local', True))
+        model.set_local_enabled(local_enabled)
         train_set.set_ratios(phase['ratios'])
         if is_main:
-            print(f'\n=== phase={phase["name"]} epochs={phase["epochs"]} ===')
+            print(f'\n=== phase={phase["name"]} epochs={phase["epochs"]} '
+                  f'local={"on" if local_enabled else "off/frozen"} ===')
 
         for _ in range(phase['epochs']):
             if args.resume and epoch_global < start_epoch:
@@ -798,7 +835,9 @@ def run_training(config, args, rank, local_rank, world_size, distributed, device
                 mean_components = None
                 if global_step % log_every == 0:
                     network = unwrap_network(model.net)
-                    stage_count = network.flow_num_stage + network.local_num
+                    stage_count = (
+                        network.flow_num_stage
+                        + (network.local_num if model.local else 0))
                     stage_payload = torch.zeros(stage_count + 1, device=device)
                     if stage_sums_accum is not None:
                         count = min(stage_count, len(stage_sums_accum))

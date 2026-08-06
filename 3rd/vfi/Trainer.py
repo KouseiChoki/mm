@@ -38,7 +38,8 @@ class Model:
                  merge_loss_gamma=0.5, merge_loss_weights=None,
                  normalize_pixel_loss=True, residual_loss_weight=0.0,
                  lc_charbonnier_eps=1e-3, lc_census_weight=1.0,
-                 lc_lap_weight=1.0, lc_warp_weight=0.5):
+                 lc_lap_weight=1.0, lc_warp_weight=0.5,
+                 pervfi_mask_loss_weight=0.0):
         """
         loss_type        : 'l1' | 'lap' | 'l1+lap' | 'lc'
         flow_loss_weight : teacher flow 监督的总权重, 0=关闭
@@ -48,7 +49,7 @@ class Model:
         backbonecfg, multiscalecfg = MODEL_CONFIG['MODEL_ARCH']
         self.net = multiscaletype(backbonetype(**backbonecfg), **multiscalecfg)
         self.name = MODEL_CONFIG['LOGNAME']
-        self.local = LOCAL
+        self.local = bool(LOCAL)
 
         self.device()
 
@@ -68,6 +69,8 @@ class Model:
         self.lc_census_weight = max(float(lc_census_weight), 0.0)
         self.lc_lap_weight = max(float(lc_lap_weight), 0.0)
         self.lc_warp_weight = max(float(lc_warp_weight), 0.0)
+        self.pervfi_mask_loss_weight = max(
+            float(pervfi_mask_loss_weight), 0.0)
         self.flow_loss_weight = flow_loss_weight
         self.flow_loss_warmup_steps = max(int(flow_loss_warmup_steps), 0)
         self.flow_stage_gamma = float(flow_stage_gamma)
@@ -99,6 +102,35 @@ class Model:
 
     def train(self): self.net.train()
     def eval(self):  self.net.eval()
+
+    def set_local_enabled(self, enabled):
+        """Enable/bypass local IFBlocks for the current training phase.
+
+        Bypassed parameters receive no gradient and AdamW therefore leaves
+        both their weights and optimizer state untouched.  This permits the
+        official-style coarse-to-local schedule without changing checkpoint
+        structure or rebuilding the optimizer between phases.
+        """
+        self.local = bool(enabled)
+
+    @staticmethod
+    def _quasi_binary_mask_loss(mask_list, reference):
+        """Mean uncertainty m*(1-m); zero for binary masks, max at 0.5."""
+        if not mask_list:
+            return reference.new_zeros(())
+        return torch.stack([
+            (mask * (1.0 - mask)).mean() for mask in mask_list
+        ]).mean()
+
+    @staticmethod
+    def _mask_soft_ratio(mask_list, reference, low=0.1, high=0.9):
+        """Fraction of mask pixels that still perform meaningful soft mixing."""
+        if not mask_list:
+            return reference.new_zeros(())
+        return torch.stack([
+            ((mask > low) & (mask < high)).to(mask.dtype).mean()
+            for mask in mask_list
+        ]).mean()
 
     def device(self):
         if torch.cuda.is_available():
@@ -557,11 +589,12 @@ class Model:
                 imgs_pad, timestep=timestep, scale=0, local=self.local,
                 return_all_merges=self.loss_type == 'lc')
             if self.loss_type == 'lc':
-                (flow_list, _, res_pad, _, _, merged_pad, pred_pad,
+                (flow_list, mask_list, res_pad, _, _, merged_pad, pred_pad,
                  all_merged_pad) = outputs
                 supervised_merged_pad = all_merged_pad
             else:
-                (flow_list, _, res_pad, _, _, merged_pad, pred_pad) = outputs
+                (flow_list, mask_list, res_pad, _, _, merged_pad,
+                 pred_pad) = outputs
                 supervised_merged_pad = merged_pad
 
             pred = self.unpad(pred_pad, pr, pb)
@@ -572,7 +605,12 @@ class Model:
             loss_pixel, loss_final, merge_losses, merge_weights = (
                 self._pixel_supervision(pred, merged, gt))
             loss_residual = res.abs().mean()
-            loss = loss_pixel + self.residual_loss_weight * loss_residual
+            loss_mask = self._quasi_binary_mask_loss(mask_list, loss_pixel)
+            mask_soft_ratio = self._mask_soft_ratio(mask_list, loss_pixel)
+            loss = (
+                loss_pixel
+                + self.residual_loss_weight * loss_residual
+                + self.pervfi_mask_loss_weight * loss_mask)
 
             # teacher flow 多阶段监督 (仅对 has_mv=1 的样本生效)
             loss_flow = torch.zeros((), device=self._dev)
@@ -595,6 +633,12 @@ class Model:
                 'residual': loss_residual.detach(),
                 'residual_weighted': (
                     self.residual_loss_weight * loss_residual).detach(),
+                'pervfi_mask_binary': loss_mask.detach(),
+                'pervfi_mask_soft_ratio': mask_soft_ratio.detach(),
+                'pervfi_mask_binary_weighted': (
+                    self.pervfi_mask_loss_weight * loss_mask).detach(),
+                'pervfi_mask_loss_weight': loss.new_tensor(
+                    self.pervfi_mask_loss_weight),
                 'flow_raw': loss_flow.detach(),
                 'flow_weighted': (flow_weight * loss_flow).detach(),
                 'flow_weight': loss.new_tensor(flow_weight),

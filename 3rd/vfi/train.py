@@ -338,7 +338,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
         'normalize_pixel_loss', 'residual_loss_weight',
         'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
-        'lc_warp_weight',
+        'lc_warp_weight', 'pervfi_mask_loss_weight',
     )                                                        # 训练侧消费, 不进结构
     _extra = {k: v for k, v in m.items()
               if k not in ('F', 'depth', 'M', 'version') + _train_keys}
@@ -363,7 +363,14 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         lc_charbonnier_eps=m.get('lc_charbonnier_eps', 1e-3),
         lc_census_weight=m.get('lc_census_weight', 1.0),
         lc_lap_weight=m.get('lc_lap_weight', 1.0),
-        lc_warp_weight=m.get('lc_warp_weight', 0.5))
+        lc_warp_weight=m.get('lc_warp_weight', 0.5),
+        pervfi_mask_loss_weight=m.get('pervfi_mask_loss_weight', 0.0))
+    if m.get('blend_mode', 'soft') == 'pervfi':
+        print('[blend] PerVFI-inspired quasi-binary asymmetric blending: '
+              f'temperature={m.get("pervfi_mask_temperature", 0.5)} '
+              f'disagreement={m.get("pervfi_disagreement_threshold", 0.03)} '
+              f'strength={m.get("pervfi_blend_strength", 1.0)} '
+              f'mask_loss={m.get("pervfi_mask_loss_weight", 0.0)}')
     if m['loss_type'] == 'lc':
         print('[loss] LC-Mamba: Charbonnier + Census7x7 + final Lap '
               f'+ {m.get("lc_warp_weight", 0.5)} * Σ(stage warp Lap)')
@@ -438,7 +445,10 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     time_stamp = time.time()
 
     for phase in C['phases']:
-        print(f'\n════════ Phase [{phase["name"]}] {phase["epochs"]} epochs ════════')
+        local_enabled = bool(phase.get('local', True))
+        model.set_local_enabled(local_enabled)
+        print(f'\n════════ Phase [{phase["name"]}] {phase["epochs"]} epochs '
+              f'local={"on" if local_enabled else "off/frozen"} ════════')
         train_set.set_ratios(phase['ratios'])
 
         for _ in range(phase['epochs']):
