@@ -10,7 +10,7 @@ from config import *
 
 def convert(param):
     return {
-        k.replace("module.", ""): v
+        k: v
         for k, v in param.items()
         if 'attn_mask' not in k and 'HW' not in k
     }
@@ -30,7 +30,7 @@ def load_checkpoint_file(path):
 
 
 class Model:
-    def __init__(self, local_rank=0, loss_type='lap', flow_loss_weight=0.01,
+    def __init__(self, loss_type='lap', flow_loss_weight=0.01,
                  flow_stage_gamma=0.2, flow_motion_threshold=1.0,
                  flow_motion_balance=0.1, flow_motion_gain=0.0,
                  flow_motion_scale=10.0, flow_motion_weight_cap=4.0,
@@ -49,7 +49,7 @@ class Model:
         backbonecfg, multiscalecfg = MODEL_CONFIG['MODEL_ARCH']
         self.net = multiscaletype(backbonetype(**backbonecfg), **multiscalecfg)
         self.name = MODEL_CONFIG['LOGNAME']
-        self.local = bool(LOCAL)
+        self.local = True
 
         self.device()
 
@@ -112,6 +112,25 @@ class Model:
         structure or rebuilding the optimizer between phases.
         """
         self.local = bool(enabled)
+
+    def set_trainable_scope(self, scope='all'):
+        """切换训练参数范围；official IFBlock阶段仅更新local_block。"""
+        scope = str(scope).lower()
+        if scope not in ('all', 'local', 'local_ifblock'):
+            raise ValueError(
+                f'trainable只支持all/local/local_ifblock, got {scope!r}')
+        local_only = scope in ('local', 'local_ifblock')
+        trainable, total = 0, 0
+        for name, parameter in self.net.named_parameters():
+            parameter.requires_grad_(
+                name.startswith('local_block.') if local_only else True)
+            count = parameter.numel()
+            total += count
+            if parameter.requires_grad:
+                trainable += count
+        self.optimG.zero_grad(set_to_none=True)
+        print(f'[trainable] scope={scope} params={trainable:,}/{total:,} '
+              f'({100.0 * trainable / max(total, 1):.2f}%)')
 
     @staticmethod
     def _quasi_binary_mask_loss(mask_list, reference):
@@ -218,11 +237,6 @@ class Model:
 
     # ── checkpoint ────────────────────────────────────────────────────────────
 
-    # def load_model(self, ckpt_path, rank=0, real=False):
-    #     self.net.load_state_dict(
-    #         convert(torch.load(ckpt_path, map_location='cpu')), strict=False
-    #     )
-
     def load_model(self, ckpt_path, resume=False):
         ckpt = load_checkpoint_file(ckpt_path)
         state = ckpt['net'] if 'net' in ckpt else ckpt          # 兼容新旧格式
@@ -302,7 +316,7 @@ class Model:
                       f'仅恢复模型权重并重建optimizer ({exc})')
         return ckpt.get('epoch', 0), ckpt.get('step', 0)
 
-    def save_model(self, sp, epoch, rank=0, step=0, scaler=None,
+    def save_model(self, sp, epoch, step=0, scaler=None,
                    tag=None, extra_state=None):
         filename = f'{self.name}_{tag or str(epoch)}.pkl'
         ckpt_path = os.path.join(
@@ -391,11 +405,18 @@ class Model:
         merge_losses = [
             self._pixel_loss(merge, gt) for merge in merged]
         if self.merge_loss_weights is not None:
-            if len(self.merge_loss_weights) != len(merge_losses):
+            if len(self.merge_loss_weights) == 1:
+                # 一个值表示所有warp阶段共用同一权重。这样主网络的
+                # learned-feature heads与后续IFBlock专项阶段可使用同一套
+                # 官方 Lap(1.0) + warp(0.5) 配置，即使两阶段输出级数不同。
+                weights = final_loss.new_full(
+                    (len(merge_losses),), self.merge_loss_weights[0])
+            elif len(self.merge_loss_weights) != len(merge_losses):
                 raise ValueError(
                     f'merge_loss_weights长度({len(self.merge_loss_weights)}) '
-                    f'必须等于local merge数量({len(merge_losses)})')
-            weights = final_loss.new_tensor(self.merge_loss_weights)
+                    f'必须为1或等于merge数量({len(merge_losses)})')
+            else:
+                weights = final_loss.new_tensor(self.merge_loss_weights)
         else:
             count = len(merge_losses)
             weights = final_loss.new_tensor([
@@ -568,7 +589,8 @@ class Model:
     # ── train / eval step ─────────────────────────────────────────────────────
 
     def update(self, imgs, gt, timestep=0.5, learning_rate=0, training=True,
-               scaler=None, flow_gt=None, has_mv=None, loss_step=None):
+               scaler=None, flow_gt=None, has_mv=None, loss_step=None,
+               accumulation_steps=1, accumulation_index=0):
         """
         imgs     : [B, 6, H, W] float 0~1  (img0, img1)
         gt       : [B, 3, H, W] float 0~1
@@ -584,6 +606,15 @@ class Model:
         if training:
             self.train()
             self.set_learning_rate(learning_rate)
+            accumulation_steps = int(accumulation_steps)
+            accumulation_index = int(accumulation_index)
+            if accumulation_steps < 1:
+                raise ValueError('accumulation_steps必须>=1')
+            if not 0 <= accumulation_index < accumulation_steps:
+                raise ValueError(
+                    'accumulation_index必须位于[0, accumulation_steps)')
+            if accumulation_index == 0:
+                self.optimG.zero_grad(set_to_none=True)
 
             outputs = self.net(
                 imgs_pad, timestep=timestep, scale=0, local=self.local,
@@ -650,19 +681,22 @@ class Model:
                 components[f'merge_weight_{index}'] = merge_weight.detach()
             self.last_loss_components = components
 
-            self.optimG.zero_grad(set_to_none=True)
+            backward_loss = loss / accumulation_steps
+            should_step = accumulation_index == accumulation_steps - 1
             if scaler is not None:
-                scaler.scale(loss).backward()
-                scaler.unscale_(self.optimG)
-                self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.net.parameters(), max_norm=self.grad_clip)
-                scaler.step(self.optimG)
-                scaler.update()
+                scaler.scale(backward_loss).backward()
+                if should_step:
+                    scaler.unscale_(self.optimG)
+                    self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.net.parameters(), max_norm=self.grad_clip)
+                    scaler.step(self.optimG)
+                    scaler.update()
             else:
-                loss.backward()
-                self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.net.parameters(), max_norm=self.grad_clip)
-                self.optimG.step()
+                backward_loss.backward()
+                if should_step:
+                    self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.net.parameters(), max_norm=self.grad_clip)
+                    self.optimG.step()
 
             return pred.detach(), loss.item(), loss_flow.item()
 

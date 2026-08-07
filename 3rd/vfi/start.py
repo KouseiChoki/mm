@@ -178,7 +178,7 @@ _NAMED_KEYS = ('F', 'depth', 'M', 'version')
 
 def arch_from_model_section(m):
     """yaml的model段 → (backbonecfg, multiscalecfg)。与train.py透传逻辑同一份约定:
-    F/depth/M/version 具名, 训练键排除, 其余字段 (local_cfg等) 全部透传覆盖。"""
+    F/depth/M/version 具名, 训练键排除, 其余结构字段全部透传覆盖。"""
     extra = {k: v for k, v in m.items()
              if k not in _NAMED_KEYS + _TRAIN_ONLY_KEYS}
     return cfg.init_model_config(
@@ -233,10 +233,9 @@ def build_model(args):
     cfg.MODEL_CONFIG['MODEL_ARCH'] = arch_from_model_section(m)
     print(f'[build_model] 结构来自yaml: {yaml_path}  '
           f'(version={m.get("version", 2)}, '
-          f'local_cfg={"自定义" if "local_cfg" in m else "默认"}, '
           f'blend={m.get("blend_mode", "soft")})')
 
-    model = Model(-1)
+    model = Model()
     model.load_model(ckpt)
     # Inference never resumes optimizer/scaler state. Keeping the complete
     # training checkpoint here can occupy several extra GiB of unified memory.
@@ -339,11 +338,19 @@ def main():
         help='启用batch合并的快速TTA；设置后优先于标准TTA')
     parser.add_argument('--model_yaml',  default=None, type=str,
                         help='模型结构yaml；缺省时自动查找 {algo}.yaml / model.yaml')
+    parser.add_argument(
+        '--refine-res-scale', type=float, default=None,
+        help='仅本次推理覆盖refiner残差强度，例如0.05；不修改归档yaml')
     parser.add_argument('--server',      default='http://10.35.180.69:80', type=str)
     args = parser.parse_args()
 
     # 模型
     model = build_model(args)
+    if args.refine_res_scale is not None:
+        if not 0.0 <= args.refine_res_scale <= 1.0:
+            parser.error('--refine-res-scale 必须在 [0, 1] 范围内')
+        model.net.refine_res_scale = args.refine_res_scale
+    print(f'[refiner] scale={model.net.refine_res_scale:g}')
     tta_mode = 'fast' if args.fast_tta else ('standard' if args.tta else 'off')
     print(f'[inference] TTA={tta_mode}')
 

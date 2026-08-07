@@ -1,4 +1,4 @@
-# v3 finetune: Mamba2(SSD) + F48 + 三级local(保留全分辨率IFBlock)
+# v3 finetune: Mamba2(SSD) + F48 + 代码默认local精化
 exp_name: Kousei_v3_resattn_F48_flowfix_finetune
 
 seed: 1234
@@ -34,7 +34,6 @@ model:
   compact_quarter_head: true
   zero_init_residual_heads: true
   local_zero_init: true
-  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
   merge_loss_gamma: 0.5
   normalize_pixel_loss: true
   residual_loss_weight: 0.01

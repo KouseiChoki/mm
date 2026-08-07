@@ -108,6 +108,34 @@ def get_learning_rate(step, total_steps, opt):
     return lr_min + (lr_max - lr_min) * cosine
 
 
+def apply_motion_curriculum(train_set, curriculum, phase_epoch):
+    """应用VFIMamba式X-TRAIN运动课程，并返回当前阶段信息。"""
+    if not curriculum:
+        return None
+    every = int(curriculum.get('every_epochs', 50))
+    if every <= 0:
+        raise ValueError('curriculum.every_epochs必须为正整数')
+    stage = phase_epoch // every
+    max_stage = curriculum.get('max_stage')
+    if max_stage is not None:
+        stage = min(stage, int(max_stage))
+    source = str(curriculum.get('source', 'xtrain'))
+    framestep = int(round(
+        float(curriculum.get('framestep_start', 1))
+        * float(curriculum.get('framestep_multiplier', 2)) ** stage))
+    resize = int(round(
+        float(curriculum.get('resize_start', 256))
+        * float(curriculum.get('resize_multiplier', 1.1)) ** stage))
+    train_set.configure_source(
+        source, framesteps=(framestep,), resize_hw=(resize, resize))
+    return {
+        'stage': stage,
+        'source': source,
+        'framestep': framestep,
+        'resize': resize,
+    }
+
+
 def metric_improved(value, best, metric_name, monitor_cfg):
     mode = str(monitor_cfg.get('best_mode', 'auto')).lower()
     if mode == 'auto':
@@ -275,6 +303,7 @@ def build_val_loaders(data_cfg, lists_dir):
             data_cfg.get('mv_symmetry_confidence', False)),
         'occ_alpha': float(data_cfg.get('occ_alpha', 0.05)),
         'occ_beta': float(data_cfg.get('occ_beta', 1.0)),
+        'val_samples_per_scene': data_cfg.get('val_samples_per_scene'),
     }
     loaders = {}
     for name, value in configured.items():
@@ -282,11 +311,20 @@ def build_val_loaders(data_cfg, lists_dir):
         if not os.path.isfile(path):
             if name == 'all':
                 raise FileNotFoundError(f'验证清单不存在: {path}')
+            train_path = os.path.join(lists_dir, f'{name}_train.txt')
+            if (os.path.isfile(train_path)
+                    and os.path.getsize(train_path) == 0):
+                print(f'[eval] 空训练分类，跳过验证: {name}')
+                continue
             print(f'[eval] WARNING: 验证清单不存在，跳过 {name}: {path}')
             continue
         dataset = TierDataset(
             data_cfg['root'], path, split='val',
             val_with_mv=(name == 'teacher'), **common)
+        cap = data_cfg.get('val_samples_per_scene')
+        print(f'[eval] {name}: {len(dataset)} samples / '
+              f'{len(dataset.scenes)} scenes '
+              f'(val_samples_per_scene={cap if cap is not None else "all"})')
         loaders[name] = DataLoader(
             dataset, batch_size=1,
             num_workers=int(data_cfg.get(
@@ -346,7 +384,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'],
         **_extra)
     model = Model(
-        0, loss_type=m['loss_type'],
+        loss_type=m['loss_type'],
         flow_loss_weight=m.get('flow_loss_weight', 0.0),
         flow_stage_gamma=m.get('flow_stage_gamma', 0.2),
         flow_motion_threshold=m.get('flow_motion_threshold', 1.0),
@@ -403,6 +441,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     train_set = MixedTierDataset(
         d['root'], lists,
         ratios=C['phases'][0]['ratios'],
+        source_options=d.get('source_options'),
         crop_hw=crop_sizes[0],
         framesteps=tuple(d['framesteps']),
         t_half_prob=d['t_half_prob'],
@@ -420,15 +459,22 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     )
     val_loaders = build_val_loaders(d, lists_dir)
 
-    total_epochs = sum(p['epochs'] for p in C['phases'])
     # 名义 step/epoch: 固定值保证LR调度可预期 (Mixed数据集名义长度过大, 不直接用)
-    steps_per_epoch = max(
+    default_steps_per_epoch = max(
         1, C.get('steps_per_epoch',
                  min(len(train_set), 2000 * d['batch_size']))
         // d['batch_size'])
-    total_steps = total_epochs * steps_per_epoch
-    print(f'training... phases={[(p["name"], p["epochs"]) for p in C["phases"]]} '
-          f'steps/epoch={steps_per_epoch} total_steps={total_steps}')
+    total_steps = sum(
+        int(phase['epochs'])
+        * int(phase.get('steps_per_epoch', default_steps_per_epoch))
+        for phase in C['phases'])
+    phase_summary = [
+        (phase['name'], phase['epochs'],
+         phase.get('steps_per_epoch', default_steps_per_epoch),
+         phase.get('grad_accum_steps', opt.get('grad_accum_steps', 1)))
+        for phase in C['phases']]
+    print(f'training... phases(name,epochs,steps,accum)={phase_summary} '
+          f'total_optimizer_steps={total_steps}')
 
     step = restored_step if resume else 0
     nr_eval = start_epoch if resume else 0
@@ -447,16 +493,57 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     for phase in C['phases']:
         local_enabled = bool(phase.get('local', True))
         model.set_local_enabled(local_enabled)
+        model.set_trainable_scope(phase.get('trainable', 'all'))
+        phase_steps_per_epoch = int(
+            phase.get('steps_per_epoch', default_steps_per_epoch))
+        if phase_steps_per_epoch <= 0:
+            raise ValueError(f'{phase["name"]}.steps_per_epoch必须为正整数')
+        grad_accum_steps = int(
+            phase.get('grad_accum_steps', opt.get('grad_accum_steps', 1)))
+        if grad_accum_steps <= 0:
+            raise ValueError(f'{phase["name"]}.grad_accum_steps必须为正整数')
+        phase_crop_sizes = [
+            tuple(value) for value in phase.get('crop_sizes', crop_sizes)]
+        phase_opt = dict(opt)
+        phase_opt.update(phase.get('optim', {}))
+        phase_lr_schedule = str(
+            phase.get('lr_schedule', 'global')).lower()
+        if phase_lr_schedule not in ('global', 'phase'):
+            raise ValueError(
+                f'{phase["name"]}.lr_schedule只支持global或phase')
         print(f'\n════════ Phase [{phase["name"]}] {phase["epochs"]} epochs '
-              f'local={"on" if local_enabled else "off/frozen"} ════════')
-        train_set.set_ratios(phase['ratios'])
+              f'local={"on" if local_enabled else "off/frozen"} '
+              f'trainable={phase.get("trainable", "all")} '
+              f'accum={grad_accum_steps} lr_schedule={phase_lr_schedule} ════════')
+        train_set.set_ratios(
+            phase['ratios'], batch_counts=phase.get('batch_counts'))
 
-        for _ in range(phase['epochs']):
+        for phase_epoch in range(phase['epochs']):
             if resume and epoch_global < start_epoch:
                 epoch_global += 1
                 continue
+            curriculum_state = apply_motion_curriculum(
+                train_set, phase.get('curriculum'), phase_epoch)
+            if (curriculum_state is not None
+                    and phase_epoch % int(
+                        phase['curriculum'].get('every_epochs', 50)) == 0):
+                print('[curriculum] '
+                      f'phase_epoch={phase_epoch} '
+                      f'stage={curriculum_state["stage"]} '
+                      f'{curriculum_state["source"]}: '
+                      f'framestep={curriculum_state["framestep"]} '
+                      f'resize={curriculum_state["resize"]}x'
+                      f'{curriculum_state["resize"]}')
             # 多尺度: 每epoch换一次crop尺寸 (worker副本重建时生效)
-            sel = random.choice(crop_sizes)          # (h, w, bs)
+            sel = random.choice(phase_crop_sizes)          # (h, w, bs)
+            if len(sel) != 3 or min(sel) <= 0:
+                raise ValueError(
+                    f'{phase["name"]}.crop_sizes条目必须为(h,w,batch): {sel}')
+            pattern_size = train_set.batch_pattern_size
+            if pattern_size is not None and pattern_size != sel[2]:
+                raise ValueError(
+                    f'{phase["name"]}.batch_counts总数({pattern_size}) '
+                    f'必须等于batch size({sel[2]})')
             train_set.set_crop_size((sel[0], sel[1]))
             train_loader = DataLoader(train_set, batch_size=sel[2],
                                     num_workers=d['num_workers'], pin_memory=True,
@@ -464,30 +551,48 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                                     worker_init_fn=seed_worker)
             it = iter(train_loader)
 
-            for i in range(steps_per_epoch):
-                try:
-                    frames, timestep, flow_gt, has_mv = next(it)
-                except StopIteration:
-                    it = iter(train_loader)
-                    frames, timestep, flow_gt, has_mv = next(it)
+            for i in range(phase_steps_per_epoch):
+                lr_step = (
+                    phase_epoch * phase_steps_per_epoch + i
+                    if phase_lr_schedule == 'phase' else step)
+                lr_total = (
+                    int(phase['epochs']) * phase_steps_per_epoch
+                    if phase_lr_schedule == 'phase' else total_steps)
+                lr = get_learning_rate(lr_step, lr_total, phase_opt)
 
-                data_time = time.time() - time_stamp
-                time_stamp = time.time()
+                data_time = 0.0
+                train_time = 0.0
+                loss_sum = 0.0
+                flow_loss_sum = 0.0
+                for accumulation_index in range(grad_accum_steps):
+                    try:
+                        frames, timestep, flow_gt, has_mv = next(it)
+                    except StopIteration:
+                        it = iter(train_loader)
+                        frames, timestep, flow_gt, has_mv = next(it)
 
-                frames = frames.to(device, non_blocking=True).float() / 255.
-                timestep = timestep.to(device, non_blocking=True)
-                imgs, gt = frames[:, :6], frames[:, 6:9]
+                    data_time += time.time() - time_stamp
+                    time_stamp = time.time()
 
-                lr = get_learning_rate(step, total_steps, opt)
+                    frames = frames.to(device, non_blocking=True).float() / 255.
+                    timestep = timestep.to(device, non_blocking=True)
+                    imgs, gt = frames[:, :6], frames[:, 6:9]
 
-                with torch.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
-                    pred, loss, loss_flow = model.update(
-                        imgs, gt, timestep=timestep, learning_rate=lr,
-                        training=True, scaler=scaler if use_scaler else None,
-                        flow_gt=flow_gt, has_mv=has_mv, loss_step=step)
+                    with torch.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
+                        pred, micro_loss, micro_flow_loss = model.update(
+                            imgs, gt, timestep=timestep, learning_rate=lr,
+                            training=True,
+                            scaler=scaler if use_scaler else None,
+                            flow_gt=flow_gt, has_mv=has_mv, loss_step=step,
+                            accumulation_steps=grad_accum_steps,
+                            accumulation_index=accumulation_index)
+                    loss_sum += micro_loss
+                    flow_loss_sum += micro_flow_loss
+                    train_time += time.time() - time_stamp
+                    time_stamp = time.time()
 
-                train_time = time.time() - time_stamp
-                time_stamp = time.time()
+                loss = loss_sum / grad_accum_steps
+                loss_flow = flow_loss_sum / grad_accum_steps
 
                 loss_ema = loss if loss_ema is None else 0.98 * loss_ema + 0.02 * loss
                 # is_spike = spike_det.check(loss, step, writer)
@@ -517,9 +622,13 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                     if use_scaler:
                         writer.add_scalar('amp/scale', scaler.get_scale(), step)
 
-                print(f'[{phase["name"]}] epoch:{epoch_global} {i}/{steps_per_epoch} '
-                      f'time:{data_time:.2f}+{train_time:.2f} '
-                      f'loss:{loss:.4f} ema:{loss_ema:.4f} flow:{loss_flow:.3f}')
+                print_every = max(int(mon.get('print_every_steps', 1)), 1)
+                if i % print_every == 0 or i + 1 == phase_steps_per_epoch:
+                    print(f'[{phase["name"]}] epoch:{epoch_global} '
+                          f'{i}/{phase_steps_per_epoch} '
+                          f'time:{data_time:.2f}+{train_time:.2f} '
+                          f'loss:{loss:.4f} ema:{loss_ema:.4f} '
+                          f'flow:{loss_flow:.3f} lr:{lr:.2e}')
                 step += 1
 
             epoch_global += 1
@@ -536,7 +645,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                         best_metric_name, mon)[0]:
                     best_metric_value = metric_value
                     model.save_model(
-                        exp, epoch_global, 0, step=step, scaler=scaler,
+                        exp, epoch_global, step=step, scaler=scaler,
                         tag='best', extra_state={
                             'best_metric_name': best_metric_name,
                             'best_metric_value': best_metric_value,
@@ -545,7 +654,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                     print(f'[best] {best_metric_name}={best_metric_value:.6f}')
             if epoch_global % mon['save_every_epochs'] == 0:
                 model.save_model(
-                    exp, epoch_global, 0, step=step, scaler=scaler,
+                    exp, epoch_global, step=step, scaler=scaler,
                     extra_state={
                         'best_metric_name': best_metric_name,
                         'best_metric_value': best_metric_value,
@@ -553,7 +662,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                     })
 
     model.save_model(
-        exp, epoch_global, 0, step=step, scaler=scaler,
+        exp, epoch_global, step=step, scaler=scaler,
         extra_state={
             'best_metric_name': best_metric_name,
             'best_metric_value': best_metric_value,

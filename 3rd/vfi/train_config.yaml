@@ -34,10 +34,9 @@ model:
   flow_motion_weight_cap: 4.0
   flow_charbonnier_eps: 1.0e-3
   flow_num_stages: 3               # 1/16 → 1/8 → 1/4 learned-feature heads
-  compact_quarter_head: true       # 1/4网格预测后上采样, 避免全分辨率重卷积
+  compact_quarter_head: false       # 1/4网格预测后上采样, 避免全分辨率重卷积
   zero_init_residual_heads: true   # 新增残差head从identity开始
   local_zero_init: true            # 续训时新local级不破坏原输出
-  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
   merge_loss_gamma: 0.5            # 越后的local merge权重越高
   normalize_pixel_loss: true       # local级数变化时保持loss总尺度稳定
   residual_loss_weight: 0.01
@@ -75,6 +74,7 @@ data:
     - [480, 880,  2]
     - [672, 1200, 1]
   framesteps: [1, 2]
+  val_samples_per_scene: 1
   t_half_prob: 1             # t=0.5 采样概率, 其余均匀采窗口内任意t
   mv_prob: 1                 # teacher scene 采为flow监督样本(s=1,t=0.5)的概率
   mv_sign: [1, 1]              # !! 必须先用 verify_mv_convention.py 实证后填 !!

@@ -6,6 +6,9 @@ import random
 from .warplayer import warp
 from .refine import *
 
+# 局部精化结构固定在代码中，避免 YAML 改动导致 checkpoint 结构不兼容。
+LOCAL_CFG = ((2, 4, 1.0, 8), (1, 4, 1.0, 8))
+
 def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     return nn.Sequential(
         nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride,
@@ -142,22 +145,13 @@ class MultiScaleFlow(nn.Module):
                                              and kargs['scales'][-1-i] == 4))
                             for i in range(self.flow_num_stage)])
 
-        # 局部精化配置: 每级 [scale, down, c倍率, blocks]
-        #   卷积主体工作分辨率 = 1/(scale*down); flow输入含timestep通道(18)
-        #   默认两级: 等效原版工作分辨率 (1/8, 1/4)
-        #   开启全分辨率级 (config的multiscalecfg里传):
-        #     'local_cfg': [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
-        #     → 工作分辨率 1/8 → 1/2 → 1/1; 全分辨率级用半宽通道+4层控制开销
-        local_cfg = kargs.get('local_cfg', None)
-        if local_cfg is None:
-            local_cfg = [[2, 4, 1.0, 8], [1, 4, 1.0, 8]]
-        self.local_num = len(local_cfg)
+        # 每级为 [scale, down, 通道倍率, blocks]，工作分辨率分别为 1/8、1/4。
         base_c = kargs['local_hidden_dims']
         local_zero_init = kargs.get('local_zero_init', False)
         self.local_block = nn.ModuleList([
             IFBlock(18, c=max(int(base_c * cr) // 2 * 2, 16), scale=s, down=d,
                     blocks=b, zero_init=local_zero_init)
-            for (s, d, cr, b) in local_cfg
+            for (s, d, cr, b) in LOCAL_CFG
         ])
 
         self.version = int(kargs['version'])
@@ -287,11 +281,11 @@ class MultiScaleFlow(nn.Module):
                     )
 
         if local:
-            for i in range(self.local_num):
+            for block in self.local_block:
                 warped_img0 = warp(img0, flow[:, :2])
                 warped_img1 = warp(img1, flow[:, 2:4])
 
-                flow_d, mask_d = self.local_block[i](
+                flow_d, mask_d = block(
                     torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1), flow)
                 flow = flow + flow_d
                 mask = mask + mask_d
@@ -366,8 +360,8 @@ class MultiScaleFlow(nn.Module):
             merged = []
             mask_list = []
             
-            for i in range(self.local_num):
-                flow_d, mask_d = self.local_block[i](
+            for block in self.local_block:
+                flow_d, mask_d = block(
                     torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1), flow)
                 flow = flow + flow_d
                 mask = mask + mask_d

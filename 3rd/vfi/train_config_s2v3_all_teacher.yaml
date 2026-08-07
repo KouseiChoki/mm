@@ -1,0 +1,152 @@
+# Machine B: 同样的S2V3与官方curriculum，但主训练混入全部生产数据，
+# 并对teacher样本启用直接多阶段flow监督。
+# 单卡启动:
+#   python train.py --config train_config_s2v3_all_teacher.yaml
+
+exp_name: 0807_s2v3_all_teacher_curriculum
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.05
+
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lap
+  # 单值广播到当前阶段的所有warp输出。
+  merge_loss_weights: [0.5]
+  normalize_pixel_loss: false
+  residual_loss_weight: 0.0
+
+  # 20% teacher micro batch；前10k optimizer steps逐步开启直接flow监督。
+  flow_loss_weight: 0.01
+  flow_loss_warmup_steps: 10000
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 1.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: false
+
+optim:
+  lr_max: 2.0e-4
+  lr_min: 2.0e-5
+  warmup_steps: 2000
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 1.0
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, vimeo, xtrain, teacher]
+  batch_size: 10
+  num_workers: 8
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes:
+    - [256, 256, 10]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+  motion_aware_crop_prob: 0.5
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  source_options:
+    vimeo:
+      framesteps: [1]
+      augment_profile: vimeo
+    xtrain:
+      framesteps: [1]
+      resize_hw: [256, 256]
+      augment_profile: vimeo
+    teacher:
+      framesteps: [1]
+      augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    vimeo: vimeo_val.txt
+    xtrain: xtrain_val.txt
+    teacher: teacher_val.txt
+
+phases:
+  - name: all_teacher_curriculum
+    epochs: 300
+    steps_per_epoch: 1604
+    grad_accum_steps: 4
+    lr_schedule: phase
+    trainable: all
+    # 与官方策略一致：主训练阶段绕过IFBlock，teacher先监督全局flow heads。
+    local: false
+    crop_sizes:
+      - [256, 256, 10]
+    # 累积后global batch40: 16 Vimeo + 4 X-TRAIN + 4×3常规 + 8 teacher。
+    ratios: {vimeo: 0.4, xtrain: 0.1, easy: 0.1, normal: 0.1, hard: 0.1, teacher: 0.2}
+    batch_counts: {vimeo: 4, xtrain: 1, easy: 1, normal: 1, hard: 1, teacher: 2}
+    curriculum:
+      source: xtrain
+      every_epochs: 50
+      max_stage: 5
+      framestep_start: 1
+      framestep_multiplier: 2
+      resize_start: 256
+      resize_multiplier: 1.1
+
+  - name: teacher_ifblock_finetune
+    epochs: 100
+    steps_per_epoch: 1604
+    grad_accum_steps: 4
+    lr_schedule: phase
+    trainable: local_ifblock
+    local: true
+    crop_sizes:
+      - [256, 256, 10]
+    # 保留Vimeo小运动，同时让local IFBlock继续接受teacher flow监督。
+    ratios: {vimeo: 0.8, teacher: 0.2, xtrain: 0.0, easy: 0.0, normal: 0.0, hard: 0.0}
+    batch_counts: {vimeo: 8, teacher: 2}
+
+monitor:
+  eval_every_epochs: 10
+  save_every_epochs: 10
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples_s2v3_all_teacher
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps_s2v3_all_teacher
+  dump_max: 500
+  best_metric: teacher/moving_flow_epe
+  best_mode: min

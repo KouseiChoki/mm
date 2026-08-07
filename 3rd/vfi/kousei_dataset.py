@@ -42,6 +42,7 @@ __getitem__ 返回:
 import os
 import sys
 import random
+import re
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -107,7 +108,6 @@ def resolve_train_lists(lists_dir, phases, tiers=None) -> Dict[str, str]:
 
 
 def _list_frames(d: Path, exts) -> List[Path]:
-    import re
     def num(p):
         m = re.findall(r'(\d+)', p.stem)
         return int(m[-1]) if m else -1
@@ -126,7 +126,7 @@ class TierDataset(Dataset):
     ----------
     root        : 数据根目录 (清单中相对路径基于此)
     list_file   : build_lists.py 生成的清单 txt
-    split       : 'train' | 'val'  (val: 确定性枚举 s=1/t=0.5 三元组, 无增强无裁剪)
+    split       : 'train' | 'val'  (val: 确定性枚举/抽样 s=1/t=0.5 三元组, 无增强无裁剪)
     crop_hw     : (h, w) 训练随机裁剪, None=不裁剪
     framesteps  : 可采样的 framestep 集合
     t_half_prob : t=0.5 的采样概率 (其余概率均匀采窗口内任意t)
@@ -135,10 +135,12 @@ class TierDataset(Dataset):
     mv_symmetry_confidence : 是否将 |mv0+mv1| 作为软置信度; 默认关闭,
                              不再把非匀速运动误判为无效flow
     motion_aware_crop_prob : teacher样本以小运动连通域为中心裁剪的概率
+    val_samples_per_scene : 验证时每个scene最多均匀抽取的三元组数；None=全部
     """
 
     def __init__(self, root, list_file, split='train',
                  crop_hw: Optional[Tuple[int, int]] = (256, 448),
+                 resize_hw: Optional[Tuple[int, int]] = None,
                  framesteps: Sequence[int] = (1, 2),
                  t_half_prob: float = 0.6,
                  mv_prob: float = 0.5,
@@ -152,12 +154,22 @@ class TierDataset(Dataset):
                  small_motion_max_ratio: float = 0.05,
                  motion_crop_jitter: float = 0.2,
                  val_with_mv: bool = False,
+                 val_samples_per_scene: Optional[int] = None,
                  augment_profile: str = 'legacy',
                  augment: bool = True):
         self.root = Path(root)
         self.split = split
         self.crop_hw = crop_hw if split == 'train' else None
-        self.framesteps = tuple(framesteps)
+        self.resize_hw = (
+            tuple(int(value) for value in resize_hw)
+            if resize_hw is not None and split == 'train' else None)
+        self.framesteps = tuple(int(value) for value in framesteps)
+        if not self.framesteps or any(value <= 0 for value in self.framesteps):
+            raise ValueError(f'framesteps必须包含正整数, got {framesteps!r}')
+        if (self.resize_hw is not None
+                and (len(self.resize_hw) != 2
+                     or min(self.resize_hw) <= 0)):
+            raise ValueError(f'resize_hw必须为两个正整数, got {resize_hw!r}')
         self.t_half_prob = t_half_prob
         self.mv_prob = mv_prob
         self.mv_sign = mv_sign
@@ -170,6 +182,19 @@ class TierDataset(Dataset):
         self.small_motion_max_ratio = float(small_motion_max_ratio)
         self.motion_crop_jitter = float(motion_crop_jitter)
         self.val_with_mv = bool(val_with_mv)
+        self.val_samples_per_scene = None
+        if val_samples_per_scene is not None:
+            try:
+                val_sample_cap = int(val_samples_per_scene)
+                is_integer = float(val_samples_per_scene) == val_sample_cap
+            except (TypeError, ValueError):
+                is_integer = False
+                val_sample_cap = 0
+            if not is_integer or val_sample_cap <= 0:
+                raise ValueError(
+                    'val_samples_per_scene必须为正整数或null，'
+                    f'got {val_samples_per_scene!r}')
+            self.val_samples_per_scene = val_sample_cap
         self.augment_profile = str(augment_profile).lower()
         if self.augment_profile not in ('legacy', 'vimeo'):
             raise ValueError(
@@ -201,13 +226,27 @@ class TierDataset(Dataset):
                            f'(建议重跑 build_lists.py 生成)')
 
         max_s = max(self.framesteps)
-        # train: 每scene权重 = s=1可采三元组数; val: 确定性展开全部 s=1 三元组
+        # train: 每scene权重 = s=1可采三元组数；val可确定性均匀限量，
+        # 避免少数长scene产生数百次完整分辨率前向。
         self._weights = [max(s['n'] - 2 * max_s, 1) for s in self.scenes]
         self._cum = np.cumsum(self._weights)
         if split == 'val':
-            self._val_index = [(si, i) for si, s in enumerate(self.scenes)
-                               for i in range(s['n'] - 2)]
+            self._val_index = []
+            for si, scene in enumerate(self.scenes):
+                sample_count = scene['n'] - 2
+                cap = self.val_samples_per_scene
+                if cap is None or sample_count <= cap:
+                    indices = range(sample_count)
+                elif cap == 1:
+                    indices = (sample_count // 2,)
+                else:
+                    # 固定包含首尾，并在中间等距取点；不依赖随机种子。
+                    indices = tuple(round(
+                        index * (sample_count - 1) / (cap - 1))
+                        for index in range(cap))
+                self._val_index.extend((si, index) for index in indices)
         self._frame_cache: Dict[str, List[Path]] = {}
+        self._mv_path_cache: Dict[Tuple[str, str], Dict[int, Path]] = {}
 
     # ── 帧文件定位 (优先帧索引, 无索引才回退listdir并惰性缓存) ─────────────
     def _frames_of(self, scene: dict) -> List[Path]:
@@ -223,8 +262,25 @@ class TierDataset(Dataset):
                 self._frame_cache[rel] = _list_frames(d, IMG_EXTS)
         return self._frame_cache[rel]
 
-    def _mv_path(self, scene: dict, frame_path: Path, which: str) -> Path:
-        return (self.root / scene['rel'] / which / frame_path.name).with_suffix('.exr')
+    def _mv_path(self, scene: dict, frame_path: Path,
+                 which: str) -> Optional[Path]:
+        """按帧号匹配MV，兼容image与flow使用不同文件名前缀的Spring数据。"""
+        directory = self.root / scene['rel'] / which
+        exact = (directory / frame_path.name).with_suffix('.exr')
+        if exact.is_file():
+            return exact
+        numbers = re.findall(r'(\d+)', frame_path.stem)
+        if not numbers:
+            return None
+        key = (scene['rel'], which)
+        if key not in self._mv_path_cache:
+            mapping = {}
+            for path in _list_frames(directory, MV_EXTS):
+                matches = re.findall(r'(\d+)', path.stem)
+                if matches:
+                    mapping[int(matches[-1])] = path
+            self._mv_path_cache[key] = mapping
+        return self._mv_path_cache[key].get(int(numbers[-1]))
 
     # ── 读取 ────────────────────────────────────────────────────────────────
     @staticmethod
@@ -244,9 +300,15 @@ class TierDataset(Dataset):
         转向等合法的非匀速运动硬判为无效。"""
         if not _HAS_FILE_UTILS:
             return None
+        mv1_path = self._mv_path(scene, gt_path, 'mv1')
+        mv0_path = self._mv_path(scene, gt_path, 'mv0')
+        if mv1_path is None or mv0_path is None:
+            logger.warning(
+                f'mv文件缺失: {scene["rel"]}/{gt_path.name}')
+            return None
         try:
-            mv1 = fu_read(str(self._mv_path(scene, gt_path, 'mv1')), type='flo')
-            mv0 = fu_read(str(self._mv_path(scene, gt_path, 'mv0')), type='flo')
+            mv1 = fu_read(str(mv1_path), type='flo')
+            mv0 = fu_read(str(mv0_path), type='flo')
         except Exception as e:                      # 截断exr等解码失败
             logger.warning(f'mv读取失败(损坏?): {scene["rel"]}/{gt_path.name} ({e})')
             return None
@@ -439,6 +501,39 @@ class TierDataset(Dataset):
             flow[..., 4] *= (inside0 & inside1).astype(flow.dtype)
         return cropped
 
+    def _resize_before_crop(self, arrs: List[np.ndarray]) -> List[np.ndarray]:
+        """按curriculum尺寸缩放整帧，再执行固定大小随机裁剪。
+
+        图像使用面积/线性插值；若包含teacher flow，则同步缩放位移数值并
+        使用最近邻处理valid通道。官方X-TRAIN不含flow，但这里保持通用。
+        """
+        if self.resize_hw is None:
+            return arrs
+        target_h, target_w = self.resize_hw
+        source_h, source_w = arrs[0].shape[:2]
+        if (source_h, source_w) == (target_h, target_w):
+            return arrs
+        sx, sy = target_w / source_w, target_h / source_h
+        interpolation = (
+            cv2.INTER_AREA if target_h < source_h or target_w < source_w
+            else cv2.INTER_LINEAR)
+        resized = []
+        for index, array in enumerate(arrs):
+            if index < 3:
+                resized.append(cv2.resize(
+                    array, (target_w, target_h), interpolation=interpolation))
+                continue
+            flow = cv2.resize(
+                array[..., :4], (target_w, target_h),
+                interpolation=cv2.INTER_LINEAR)
+            flow[..., (0, 2)] *= sx
+            flow[..., (1, 3)] *= sy
+            valid = cv2.resize(
+                array[..., 4], (target_w, target_h),
+                interpolation=cv2.INTER_NEAREST)[..., None]
+            resized.append(np.concatenate((flow, valid), axis=-1))
+        return resized
+
     def _augment(self, img0, gt, img1, t, mv):
         if self.augment_profile == 'vimeo':
             if mv is not None:
@@ -503,6 +598,7 @@ class TierDataset(Dataset):
             mv = self._read_mv_pair(scene, frames[ig], h, w)    # 读取失败→None
 
         arrs = [img0, gt, img1] + ([mv] if mv is not None else [])
+        arrs = self._resize_before_crop(arrs)
         arrs = self._crop(arrs)
         img0, gt, img1 = arrs[0], arrs[1], arrs[2]
         mv = arrs[3] if mv is not None else None
@@ -540,15 +636,21 @@ class MixedTierDataset(Dataset):
     """
 
     def __init__(self, root, lists: Dict[str, str], ratios: Dict[str, float],
+                 source_options: Optional[Dict[str, dict]] = None,
                  **tier_kwargs):
-        self.datasets: Dict[str, TierDataset] = {
-            name: TierDataset(root, lf, split='train', **tier_kwargs)
-            for name, lf in lists.items()
-        }
+        source_options = source_options or {}
+        self.datasets: Dict[str, TierDataset] = {}
+        for name, list_file in lists.items():
+            options = dict(tier_kwargs)
+            options.update(source_options.get(name, {}))
+            self.datasets[name] = TierDataset(
+                root, list_file, split='train', **options)
+        self._batch_pattern = None
         self.set_ratios(ratios)
         self._epoch_size = sum(len(d) for d in self.datasets.values())
 
-    def set_ratios(self, ratios: Dict[str, float]) -> None:
+    def set_ratios(self, ratios: Dict[str, float],
+                   batch_counts: Optional[Dict[str, int]] = None) -> None:
         negative = [n for n, value in ratios.items() if float(value) < 0]
         if negative:
             raise ValueError(f'tier权重不能为负数: {negative}')
@@ -562,17 +664,78 @@ class MixedTierDataset(Dataset):
             raise ValueError('tier配比中至少需要一个正权重分类')
         self._names = names
         self._probs = [ratios[n] / total for n in names]
+        self._batch_pattern = None
+        if batch_counts is not None:
+            invalid = {
+                name: value for name, value in batch_counts.items()
+                if int(value) != value or int(value) < 0
+            }
+            missing_counts = [
+                name for name, value in batch_counts.items()
+                if int(value) > 0 and name not in self.datasets]
+            if invalid:
+                raise ValueError(f'batch_counts必须为非负整数: {invalid}')
+            if missing_counts:
+                raise ValueError(f'batch_counts引用了未加载tier: {missing_counts}')
+            pattern = [
+                name for name, value in batch_counts.items()
+                for _ in range(int(value))
+            ]
+            if not pattern:
+                raise ValueError('batch_counts至少需要一个正数')
+            self._batch_pattern = pattern
         logger.info(f'tier配比: {dict(zip(self._names, [round(p,3) for p in self._probs]))}')
+        if self._batch_pattern is not None:
+            logger.info(f'固定batch组成: {batch_counts}')
 
     def set_crop_size(self, crop_hw: Tuple[int, int]) -> None:
         for d in self.datasets.values():
             d.crop_hw = crop_hw
 
+    def configure_source(self, name: str, framesteps=None,
+                         resize_hw=None) -> None:
+        if name not in self.datasets:
+            raise ValueError(f'curriculum引用了未加载tier: {name}')
+        dataset = self.datasets[name]
+        if framesteps is not None:
+            values = tuple(int(value) for value in framesteps)
+            if not values or any(value <= 0 for value in values):
+                raise ValueError(f'framesteps必须包含正整数: {framesteps!r}')
+            minimum_frames = 2 * max(values) + 1
+            too_short = sum(
+                scene['n'] < minimum_frames for scene in dataset.scenes)
+            if too_short:
+                raise ValueError(
+                    f'{name}有{too_short}个scene不足{minimum_frames}帧，'
+                    '请重新生成对应训练清单')
+            dataset.framesteps = values
+            # curriculum改变窗口跨度后同步更新scene采样权重；否则65帧
+            # X-TRAIN在s=32时仍会沿用s=1的窗口数量。
+            max_s = max(values)
+            dataset._weights = [
+                max(scene['n'] - 2 * max_s, 1)
+                for scene in dataset.scenes]
+            dataset._cum = np.cumsum(dataset._weights)
+            self._epoch_size = sum(
+                len(source) for source in self.datasets.values())
+        if resize_hw is not None:
+            values = tuple(int(value) for value in resize_hw)
+            if len(values) != 2 or min(values) <= 0:
+                raise ValueError(f'resize_hw必须为两个正整数: {resize_hw!r}')
+            dataset.resize_hw = values
+
+    @property
+    def batch_pattern_size(self) -> Optional[int]:
+        return len(self._batch_pattern) if self._batch_pattern is not None else None
+
     def __len__(self) -> int:
         return self._epoch_size
 
     def __getitem__(self, index: int):
-        name = random.choices(self._names, weights=self._probs, k=1)[0]
+        name = (
+            self._batch_pattern[index % len(self._batch_pattern)]
+            if self._batch_pattern is not None
+            else random.choices(self._names, weights=self._probs, k=1)[0])
         ds = self.datasets[name]
         return ds[random.randrange(len(ds))]
 
