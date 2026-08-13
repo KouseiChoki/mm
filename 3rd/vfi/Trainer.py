@@ -114,16 +114,26 @@ class Model:
         self.local = bool(enabled)
 
     def set_trainable_scope(self, scope='all'):
-        """切换训练参数范围；official IFBlock阶段仅更新local_block。"""
+        """切换训练参数范围。
+
+        official IFBlock阶段仅更新local_block；refiner校准阶段仅更新
+        unet，避免改变已经验证过的flow、mask和merged结果。
+        """
         scope = str(scope).lower()
-        if scope not in ('all', 'local', 'local_ifblock'):
+        if scope not in ('all', 'local', 'local_ifblock', 'refiner'):
             raise ValueError(
-                f'trainable只支持all/local/local_ifblock, got {scope!r}')
+                'trainable只支持all/local/local_ifblock/refiner, '
+                f'got {scope!r}')
         local_only = scope in ('local', 'local_ifblock')
         trainable, total = 0, 0
         for name, parameter in self.net.named_parameters():
-            parameter.requires_grad_(
-                name.startswith('local_block.') if local_only else True)
+            if local_only:
+                enabled = name.startswith('local_block.')
+            elif scope == 'refiner':
+                enabled = name.startswith('unet.')
+            else:
+                enabled = True
+            parameter.requires_grad_(enabled)
             count = parameter.numel()
             total += count
             if parameter.requires_grad:

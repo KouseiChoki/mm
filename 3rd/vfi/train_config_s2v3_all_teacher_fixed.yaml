@@ -1,9 +1,16 @@
-# Machine A: SSM2 + version3，严格使用opensource中的Vimeo90K/X4K1000FPS，
-# 周二验收版：按官方3:1比例缩放为240-epoch运动课程 + 80-epoch IFBlock专项训练。
-# 单卡启动:
-#   python train.py --config train_config_s2v3_official.yaml
+# S2V3 all-data + teacher修正版。
+# 修正依据：MV符号/顺序/单位已实测正确；旧实验的问题是teacher监督过强、
+# 静止区域占比过高，而不是flow convention错误。
+#
+# 先生成一次快速MV缓存（约占原分辨率4通道float16的空间）：
+#   conda run -n vfi python data_prepare/build_mv_cache.py \
+#     --root /home/zhenying/qhong/data/ssd/vfi_database --workers 8 --verify
+# 从头训练：
+#   conda run -n vfi python train.py --config train_config_s2v3_all_teacher_fixed.yaml
+# 当前32核机器建议用下面三个运行时覆盖项；它们不改变归档yaml，可安全resume：
+#   --loader_workers 24 --loader_prefetch 4 --loader_out_of_order
 
-exp_name: 0807_s2v3_official_tuesday
+exp_name: 0810_s2v3_all_teacher_flow_fixed
 seed: 1234
 
 model:
@@ -23,30 +30,28 @@ model:
   blend_mode: soft
   pervfi_mask_loss_weight: 0.0
   loss_type: lap
-  # 官方loss: final Lap + 0.5 * 每级warp Lap；单值会广播到当前阶段。
   merge_loss_weights: [0.5]
   normalize_pixel_loss: false
   residual_loss_weight: 0.0
 
-  # Machine A不使用teacher flow，保持官方纯重建监督。
-  flow_loss_weight: 0.0
-  flow_loss_warmup_steps: 0
+  # teacher仅占micro batch的10%。flow loss从0.01降至0.002，避免压过图像loss。
+  # balance=0.8表示moving/static=80%/20%；旧值0.1实际是10%/90%。
+  flow_loss_weight: 0.002
+  flow_loss_warmup_steps: 10000
   flow_stage_gamma: 0.2
   flow_motion_threshold: 1.0
-  flow_motion_balance: 0.1
-  flow_motion_gain: 0.0
+  flow_motion_balance: 0.8
+  flow_motion_gain: 1.0
   flow_motion_scale: 10.0
   flow_motion_weight_cap: 4.0
   flow_charbonnier_eps: 1.0e-3
 
-  # 激进S2V3：Mamba2 + v3 refiner + 第三个1/4特征flow head。
   flow_num_stages: 3
   compact_quarter_head: false
   zero_init_residual_heads: true
   local_zero_init: false
 
 optim:
-  # VFIMamba官方设置：warmup 2000，2e-4 cosine降至2e-5。
   lr_max: 2.0e-4
   lr_min: 2.0e-5
   warmup_steps: 2000
@@ -64,21 +69,26 @@ optim:
 data:
   root: /home/zhenying/qhong/data/ssd/vfi_database
   lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
-  tiers: [vimeo, xtrain]
+  tiers: [easy, normal, hard, vimeo, xtrain, teacher]
   batch_size: 20
   num_workers: 12
   val_num_workers: 4
   val_samples_per_scene: 1
   crop_sizes:
     - [256, 256, 20]
-  framesteps: [1]
+  framesteps: [1, 2]
   t_half_prob: 1.0
-  mv_prob: 0.0
+  mv_prob: 1.0
   mv_sign: [1, 1]
   mv_symmetry_confidence: false
   occ_alpha: 0.05
   occ_beta: 1.0
-  motion_aware_crop_prob: 0.0
+
+  # teacher MV优先mmap读取未压缩float16缓存；required防止静默退回慢EXR。
+  mv_cache_dirname: mv_cache_f16
+  mv_cache_required: true
+  mv_cache_preview_stride: 4
+  motion_aware_crop_prob: 0.5
   motion_crop_threshold: 1.0
   small_motion_min_pixels: 8
   small_motion_max_ratio: 0.05
@@ -92,26 +102,31 @@ data:
       framesteps: [1]
       resize_hw: [256, 256]
       augment_profile: vimeo
+    teacher:
+      framesteps: [1]
+      augment_profile: legacy
   val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
     vimeo: vimeo_val.txt
     xtrain: xtrain_val.txt
     teacher: teacher_val.txt
 
 phases:
-  - name: official_curriculum
+  - name: all_teacher_fixed
     epochs: 240
-    # 51,312 / global Vimeo batch32 ≈ 1,604 optimizer steps/epoch。
     steps_per_epoch: 1604
     grad_accum_steps: 2
     lr_schedule: phase
     trainable: all
-    # 前240轮先训练主网络，不启用尚未专项训练的IFBlock。
     local: false
     crop_sizes:
       - [256, 256, 20]
-    # 单卡micro batch 16 Vimeo + 4 X-TRAIN；累积2次=官方32+8。
-    ratios: {vimeo: 0.8, xtrain: 0.2}
-    batch_counts: {vimeo: 16, xtrain: 4}
+    # micro batch20: 10 Vimeo + 2 X-TRAIN + 2×3常规 + 2 teacher。
+    ratios: {vimeo: 0.5, xtrain: 0.1, easy: 0.1, normal: 0.1, hard: 0.1, teacher: 0.1}
+    batch_counts: {vimeo: 10, xtrain: 2, easy: 2, normal: 2, hard: 2, teacher: 2}
     curriculum:
       source: xtrain
       every_epochs: 40
@@ -121,7 +136,7 @@ phases:
       resize_start: 256
       resize_multiplier: 1.1
 
-  - name: official_ifblock_finetune
+  - name: teacher_ifblock_fixed
     epochs: 80
     steps_per_epoch: 1604
     grad_accum_steps: 2
@@ -129,10 +144,10 @@ phases:
     trainable: local_ifblock
     local: true
     crop_sizes:
-      - [256, 256, 16]
-    # micro batch16累积2次，保持Vimeo global batch32。
-    ratios: {vimeo: 1.0, xtrain: 0.0}
-    batch_counts: {vimeo: 16}
+      - [256, 256, 20]
+    # local阶段仍保留10% teacher，避免再次被flow loss主导。
+    ratios: {vimeo: 0.9, teacher: 0.1, xtrain: 0.0, easy: 0.0, normal: 0.0, hard: 0.0}
+    batch_counts: {vimeo: 18, teacher: 2}
 
 monitor:
   eval_every_epochs: 20
@@ -140,10 +155,9 @@ monitor:
   log_every_steps: 100
   print_every_steps: 10
   spike_ratio: 3.0
-  spike_dir: spike_samples_s2v3_official_tuesday
+  spike_dir: spike_samples_s2v3_all_teacher_flow_fixed
   flow_loss_dump_threshold: 40
-  dump_dir: anomaly_dumps_s2v3_official_tuesday
-  dump_max: 200
-  # 两台机器统一按teacher运动区域EPE选best，Machine A仅验证、不训练teacher。
+  dump_dir: anomaly_dumps_s2v3_all_teacher_flow_fixed
+  dump_max: 20
   best_metric: teacher/moving_flow_epe
   best_mode: min

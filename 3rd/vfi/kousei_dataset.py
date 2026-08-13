@@ -135,6 +135,9 @@ class TierDataset(Dataset):
     mv_symmetry_confidence : 是否将 |mv0+mv1| 作为软置信度; 默认关闭,
                              不再把非匀速运动误判为无效flow
     motion_aware_crop_prob : teacher样本以小运动连通域为中心裁剪的概率
+    mv_cache_dirname : scene内离线MV缓存目录；None表示只读取EXR
+    mv_cache_required : 为True时缓存缺失/损坏直接报错，禁止静默回退慢速EXR
+    mv_cache_preview_stride : 小运动裁剪预览图的降采样步长
     val_samples_per_scene : 验证时每个scene最多均匀抽取的三元组数；None=全部
     """
 
@@ -153,6 +156,9 @@ class TierDataset(Dataset):
                  small_motion_min_pixels: int = 8,
                  small_motion_max_ratio: float = 0.05,
                  motion_crop_jitter: float = 0.2,
+                 mv_cache_dirname: Optional[str] = None,
+                 mv_cache_required: bool = False,
+                 mv_cache_preview_stride: int = 4,
                  val_with_mv: bool = False,
                  val_samples_per_scene: Optional[int] = None,
                  augment_profile: str = 'legacy',
@@ -181,6 +187,16 @@ class TierDataset(Dataset):
         self.small_motion_min_pixels = int(small_motion_min_pixels)
         self.small_motion_max_ratio = float(small_motion_max_ratio)
         self.motion_crop_jitter = float(motion_crop_jitter)
+        self.mv_cache_dirname = (
+            str(mv_cache_dirname).strip() if mv_cache_dirname else None)
+        self.mv_cache_required = bool(mv_cache_required)
+        if self.mv_cache_required and self.mv_cache_dirname is None:
+            raise ValueError('mv_cache_required=true时必须配置mv_cache_dirname')
+        self.mv_cache_preview_stride = int(mv_cache_preview_stride)
+        if self.mv_cache_preview_stride <= 0:
+            raise ValueError(
+                'mv_cache_preview_stride必须为正整数，'
+                f'got {mv_cache_preview_stride!r}')
         self.val_with_mv = bool(val_with_mv)
         self.val_samples_per_scene = None
         if val_samples_per_scene is not None:
@@ -247,6 +263,11 @@ class TierDataset(Dataset):
                 self._val_index.extend((si, index) for index in indices)
         self._frame_cache: Dict[str, List[Path]] = {}
         self._mv_path_cache: Dict[Tuple[str, str], Dict[int, Path]] = {}
+        self._cache_warnings = set()
+        if (self.mv_cache_required
+                and (self.split == 'train' or self.val_with_mv)
+                and any(scene['has_mv'] for scene in self.scenes)):
+            self._validate_required_mv_cache()
 
     # ── 帧文件定位 (优先帧索引, 无索引才回退listdir并惰性缓存) ─────────────
     def _frames_of(self, scene: dict) -> List[Path]:
@@ -281,6 +302,124 @@ class TierDataset(Dataset):
                     mapping[int(matches[-1])] = path
             self._mv_path_cache[key] = mapping
         return self._mv_path_cache[key].get(int(numbers[-1]))
+
+    def _mv_cache_paths(self, scene: dict,
+                        frame_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
+        if self.mv_cache_dirname is None:
+            return None, None
+        directory = self.root / scene['rel'] / self.mv_cache_dirname
+        return (directory / f'{frame_path.stem}.npy',
+                directory / f'{frame_path.stem}.motion.npy')
+
+    def _validate_required_mv_cache(self) -> None:
+        """训练开始前一次性检查，避免跑了数小时后才遇到缺失缓存。"""
+        missing = []
+        checked = 0
+        need_preview = self.split == 'train' and self.motion_aware_crop_prob > 0
+        for scene in self.scenes:
+            if not scene['has_mv']:
+                continue
+            # teacher监督的GT固定为三元组中间帧，首尾永远不会访问且通常无MV。
+            for frame_path in self._frames_of(scene)[1:-1]:
+                cache_path, preview_path = self._mv_cache_paths(scene, frame_path)
+                checked += 1
+                if cache_path is None or not cache_path.is_file():
+                    missing.append(str(cache_path))
+                if (need_preview and preview_path is not None
+                        and not preview_path.is_file()):
+                    missing.append(str(preview_path))
+                if len(missing) >= 10:
+                    break
+            if len(missing) >= 10:
+                break
+        if missing:
+            examples = '\n  '.join(missing)
+            raise FileNotFoundError(
+                f'MV快速缓存不完整（前{len(missing)}个缺失项）:\n  {examples}\n'
+                '请先运行 data_prepare/build_mv_cache.py --verify')
+        logger.info(
+            'MV快速缓存预检通过: %d frames, cache=%s',
+            checked, self.mv_cache_dirname)
+
+    def _warn_cache_once(self, key: str, message: str) -> None:
+        if key not in self._cache_warnings:
+            self._cache_warnings.add(key)
+            logger.warning(message)
+
+    def _normalized_mv_to_flow(self, normalized: np.ndarray,
+                               source_h: int, source_w: int) -> np.ndarray:
+        """将缓存/EXR中的归一化 [H,W,4] MV 转为像素 flow+valid。"""
+        if normalized.ndim != 3 or normalized.shape[-1] != 4:
+            raise ValueError(f'MV缓存应为[H,W,4], got {normalized.shape}')
+        flow = normalized.astype(np.float32, copy=True)
+        finite = np.isfinite(flow).all(axis=-1)
+        np.nan_to_num(flow, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+        sx, sy = self.mv_sign
+        flow[..., (0, 2)] *= sx * source_w
+        flow[..., (1, 3)] *= sy * source_h
+
+        region_h, region_w = flow.shape[:2]
+        xs = np.arange(region_w, dtype=np.float32)[None, :]
+        ys = np.arange(region_h, dtype=np.float32)[:, None]
+        inside1 = (
+            (xs + flow[..., 0] >= 0) & (xs + flow[..., 0] <= region_w - 1)
+            & (ys + flow[..., 1] >= 0) & (ys + flow[..., 1] <= region_h - 1))
+        inside0 = (
+            (xs + flow[..., 2] >= 0) & (xs + flow[..., 2] <= region_w - 1)
+            & (ys + flow[..., 3] >= 0) & (ys + flow[..., 3] <= region_h - 1))
+        valid = (finite & inside1 & inside0).astype(np.float32)
+
+        if self.mv_symmetry_confidence:
+            sym = np.linalg.norm(flow[..., 0:2] + flow[..., 2:4], axis=-1)
+            mag = (np.linalg.norm(flow[..., 0:2], axis=-1)
+                   + np.linalg.norm(flow[..., 2:4], axis=-1))
+            denom = np.maximum(self.occ_alpha * mag + self.occ_beta, 1e-6)
+            valid *= 1.0 / (1.0 + sym / denom)
+        return np.concatenate((flow, valid[..., None]), axis=-1)
+
+    def _read_mv_cache(self, scene: dict, gt_path: Path,
+                       image_h: int, image_w: int,
+                       crop: Optional[Tuple[int, int, int, int]] = None
+                       ) -> Optional[np.ndarray]:
+        """mmap未压缩float16缓存；有crop时只触发对应页面的磁盘读取。"""
+        cache_path, _ = self._mv_cache_paths(scene, gt_path)
+        if cache_path is None:
+            return None
+        if not cache_path.is_file():
+            message = (
+                f'MV缓存缺失: {cache_path}. 请先运行 '
+                'data_prepare/build_mv_cache.py。')
+            if self.mv_cache_required:
+                raise FileNotFoundError(message)
+            self._warn_cache_once('missing', message + ' 回退EXR读取。')
+            return None
+        try:
+            cached = np.load(cache_path, mmap_mode='r', allow_pickle=False)
+            if cached.ndim != 3 or cached.shape[-1] != 4:
+                raise ValueError(
+                    f'期望[H,W,4]，实际{cached.shape}')
+            if cached.shape[:2] != (image_h, image_w):
+                raise ValueError(
+                    f'缓存尺寸{cached.shape[:2]}与图像{(image_h, image_w)}不一致')
+            if crop is None:
+                top, left, region_h, region_w = 0, 0, image_h, image_w
+            else:
+                top, left, region_h, region_w = crop
+                if (top < 0 or left < 0 or top + region_h > image_h
+                        or left + region_w > image_w):
+                    raise ValueError(f'非法MV cache crop: {crop}')
+            # 保持mmap view；唯一一次float32拷贝在_normalized_mv_to_flow完成。
+            normalized = cached[
+                top:top + region_h, left:left + region_w, :]
+            return self._normalized_mv_to_flow(
+                normalized, source_h=image_h, source_w=image_w)
+        except Exception as exc:
+            message = f'MV缓存读取失败: {cache_path} ({exc})'
+            if self.mv_cache_required:
+                raise RuntimeError(message) from exc
+            self._warn_cache_once('broken', message + '，回退EXR读取。')
+            return None
 
     # ── 读取 ────────────────────────────────────────────────────────────────
     @staticmethod
@@ -322,35 +461,9 @@ class TierDataset(Dataset):
                 f'mv1={getattr(mv1, "shape", None)} '
                 f'mv0={getattr(mv0, "shape", None)} image={(h, w)}')
             return None
-        mv1 = mv1[..., :2].astype(np.float32)
-        mv0 = mv0[..., :2].astype(np.float32)
-        finite = np.isfinite(mv1).all(axis=-1) & np.isfinite(mv0).all(axis=-1)
-        # NaN * 0 仍为 NaN；进入torch前必须先替换，valid负责跳过这些像素。
-        np.nan_to_num(mv1, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        np.nan_to_num(mv0, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
-        sx, sy = self.mv_sign
-        for mv in (mv1, mv0):
-            mv[..., 0] *= sx * w                                # 归一化 → 像素
-            mv[..., 1] *= sy * h
-
-        xs = np.arange(w, dtype=np.float32)[None, :]
-        ys = np.arange(h, dtype=np.float32)[:, None]
-        inside1 = (
-            (xs + mv1[..., 0] >= 0) & (xs + mv1[..., 0] <= w - 1)
-            & (ys + mv1[..., 1] >= 0) & (ys + mv1[..., 1] <= h - 1))
-        inside0 = (
-            (xs + mv0[..., 0] >= 0) & (xs + mv0[..., 0] <= w - 1)
-            & (ys + mv0[..., 1] >= 0) & (ys + mv0[..., 1] <= h - 1))
-        valid = (finite & inside1 & inside0).astype(np.float32)
-
-        if self.mv_symmetry_confidence:
-            sym = np.linalg.norm(mv1 + mv0, axis=-1)
-            mag = np.linalg.norm(mv1, axis=-1) + np.linalg.norm(mv0, axis=-1)
-            denom = np.maximum(self.occ_alpha * mag + self.occ_beta, 1e-6)
-            valid *= 1.0 / (1.0 + sym / denom)
-
         # 网络约定: flow[:, :2]=F_t→0=mv1(gt→上一帧),  flow[:,2:4]=F_t→1=mv0(gt→下一帧)
-        return np.concatenate([mv1, mv0, valid[..., None]], axis=-1)   # [H,W,5]
+        normalized = np.concatenate((mv1[..., :2], mv0[..., :2]), axis=-1)
+        return self._normalized_mv_to_flow(normalized, h, w)   # [H,W,5]
 
     # ── 采样 ────────────────────────────────────────────────────────────────
     def _pick_scene(self, index: int) -> dict:
@@ -427,6 +540,81 @@ class TierDataset(Dataset):
         top = min(max(top, 0), image_h - crop_h)
         left = min(max(left, 0), image_w - crop_w)
         return top, left
+
+    def _motion_crop_origin_preview(
+            self, scene: dict, gt_path: Path, crop_h: int, crop_w: int,
+            image_h: int, image_w: int) -> Optional[Tuple[int, int]]:
+        """从低分辨率motion sidecar选择小物体crop，避免读取整帧MV。"""
+        _, preview_path = self._mv_cache_paths(scene, gt_path)
+        if preview_path is None:
+            return None
+        if not preview_path.is_file():
+            message = (
+                f'MV motion预览缺失: {preview_path}. 请重新运行 '
+                'data_prepare/build_mv_cache.py。')
+            if self.mv_cache_required:
+                raise FileNotFoundError(message)
+            self._warn_cache_once('preview_missing', message + ' 回退随机裁剪。')
+            return None
+        try:
+            motion = np.load(preview_path, allow_pickle=False)
+            if motion.ndim != 2:
+                raise ValueError(f'期望二维数组，实际{motion.shape}')
+            stride = self.mv_cache_preview_stride
+            expected = ((image_h + stride - 1) // stride,
+                        (image_w + stride - 1) // stride)
+            if motion.shape != expected:
+                raise ValueError(
+                    f'预览尺寸{motion.shape}与期望{expected}不一致；'
+                    '生成缓存和训练配置的preview_stride必须相同')
+        except Exception as exc:
+            message = f'MV motion预览读取失败: {preview_path} ({exc})'
+            if self.mv_cache_required:
+                raise RuntimeError(message) from exc
+            self._warn_cache_once('preview_broken', message + '，回退随机裁剪。')
+            return None
+
+        motion_mask = (
+            np.isfinite(motion)
+            & (motion >= self.motion_crop_threshold)).astype(np.uint8)
+        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(
+            motion_mask, connectivity=8)
+        max_area = max(
+            self.small_motion_min_pixels,
+            int(crop_h * crop_w * self.small_motion_max_ratio))
+        cell_area = stride * stride
+        candidates = []
+        for label in range(1, num_labels):
+            area = int(stats[label, cv2.CC_STAT_AREA]) * cell_area
+            if self.small_motion_min_pixels <= area <= max_area:
+                candidates.append((label, area))
+        if not candidates:
+            return None
+
+        label, _ = random.choices(
+            candidates, weights=[1.0 / np.sqrt(a) for _, a in candidates], k=1)[0]
+        center_x, center_y = centroids[label]
+        center_x = (center_x + 0.5) * stride
+        center_y = (center_y + 0.5) * stride
+        jitter_y = int(random.uniform(-1, 1) * crop_h * self.motion_crop_jitter)
+        jitter_x = int(random.uniform(-1, 1) * crop_w * self.motion_crop_jitter)
+        top = int(round(center_y - crop_h / 2 + jitter_y))
+        left = int(round(center_x - crop_w / 2 + jitter_x))
+        return (min(max(top, 0), image_h - crop_h),
+                min(max(left, 0), image_w - crop_w))
+
+    def _cached_crop_origin(self, scene: dict, gt_path: Path,
+                            crop_h: int, crop_w: int,
+                            image_h: int, image_w: int) -> Tuple[int, int]:
+        origin = None
+        if (self.motion_aware_crop_prob > 0
+                and random.random() < self.motion_aware_crop_prob):
+            origin = self._motion_crop_origin_preview(
+                scene, gt_path, crop_h, crop_w, image_h, image_w)
+        if origin is not None:
+            return origin
+        return (np.random.randint(0, image_h - crop_h + 1),
+                np.random.randint(0, image_w - crop_w + 1))
 
     @staticmethod
     def _pad_to_crop(arrs: List[np.ndarray], crop_h: int,
@@ -593,15 +781,37 @@ class TierDataset(Dataset):
         img1 = self._read_img(frames[i1])
 
         mv = None
+        used_direct_cache_crop = False
         if want_mv:
             h, w = gt.shape[:2]
-            mv = self._read_mv_pair(scene, frames[ig], h, w)    # 读取失败→None
+            cache_path, _ = self._mv_cache_paths(scene, frames[ig])
+            can_direct_crop = (
+                cache_path is not None and cache_path.is_file()
+                and self.resize_hw is None and self.crop_hw is not None
+                and h >= self.crop_hw[0] and w >= self.crop_hw[1])
+            if can_direct_crop:
+                crop_h, crop_w = self.crop_hw
+                top, left = self._cached_crop_origin(
+                    scene, frames[ig], crop_h, crop_w, h, w)
+                mv = self._read_mv_cache(
+                    scene, frames[ig], h, w,
+                    crop=(top, left, crop_h, crop_w))
+                if mv is not None:
+                    img0 = img0[top:top + crop_h, left:left + crop_w]
+                    gt = gt[top:top + crop_h, left:left + crop_w]
+                    img1 = img1[top:top + crop_h, left:left + crop_w]
+                    used_direct_cache_crop = True
+            elif self.mv_cache_dirname is not None:
+                mv = self._read_mv_cache(scene, frames[ig], h, w)
+            if mv is None:
+                mv = self._read_mv_pair(scene, frames[ig], h, w)  # EXR回退
 
-        arrs = [img0, gt, img1] + ([mv] if mv is not None else [])
-        arrs = self._resize_before_crop(arrs)
-        arrs = self._crop(arrs)
-        img0, gt, img1 = arrs[0], arrs[1], arrs[2]
-        mv = arrs[3] if mv is not None else None
+        if not used_direct_cache_crop:
+            arrs = [img0, gt, img1] + ([mv] if mv is not None else [])
+            arrs = self._resize_before_crop(arrs)
+            arrs = self._crop(arrs)
+            img0, gt, img1 = arrs[0], arrs[1], arrs[2]
+            mv = arrs[3] if mv is not None else None
 
         if self.do_augment:
             img0, gt, img1, t, mv = self._augment(img0, gt, img1, t, mv)

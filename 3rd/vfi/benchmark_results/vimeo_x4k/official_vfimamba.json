@@ -1,0 +1,31 @@
+{
+  "model": "official_vfimamba",
+  "datasets": {
+    "vimeo90k": {
+      "protocol": "official tri_testlist; im1,im3 -> im2",
+      "cases_done": 3782,
+      "predicted_frames": 3782,
+      "psnr_sum": 138555.78645515442,
+      "ssim_sum": 3713.7326330542564,
+      "psnr": 36.63558605371613,
+      "ssim": 0.9819494005960487,
+      "complete": true
+    },
+    "x4k1000fps_holdout": {
+      "protocol": "xtrain_val; 65-frame 768x768 clips; recursive 8x on 0->32 and 32->64; uint8 metric",
+      "cases_done": 36,
+      "scene_count": 18,
+      "predicted_frames": 252,
+      "psnr_sum": 7898.536766052246,
+      "ssim_sum": 228.54201292991638,
+      "psnr": 31.343399865286692,
+      "ssim": 0.9069127497218904,
+      "complete": true
+    }
+  },
+  "complete": true,
+  "checkpoint": "/home/zhenying/qhong/repo/VFIMamba_official_eval/ckpt/VFIMamba.pkl",
+  "tta": true,
+  "color_order": "BGR",
+  "metric": "per-frame mean PSNR + official VFIMamba ssim_matlab"
+}

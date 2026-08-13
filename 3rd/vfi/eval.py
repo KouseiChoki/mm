@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 import yaml
@@ -132,8 +133,27 @@ def output_indices(src0: Path, src1: Path, pair_index: int) -> tuple[int, int, i
     return doubled0, (doubled0 + doubled1) // 2, doubled1
 
 
-def write_image(path: Path, image: np.ndarray) -> None:
-    write(str(path), np.clip(image, 0.0, 1.0), dtype='image')
+def write_image(path: Path, image: np.ndarray, min_disk: bool = False) -> Path:
+    """写出评测帧；节省空间模式使用8-bit无损WebP。
+
+    OpenCV约定 ``IMWRITE_WEBP_QUALITY > 100`` 为无损编码。相比有损
+    JPEG/WebP，它不会给栅栏、网格等高频纹理额外引入压缩伪影。
+    """
+    clipped = np.clip(image, 0.0, 1.0)
+    if not min_disk:
+        write(str(path), clipped, dtype='image')
+        return path
+
+    output_path = path.with_suffix('.webp')
+    encoded = (clipped * 255).astype(np.uint8)
+    if encoded.ndim == 3 and encoded.shape[2] >= 3:
+        encoded = encoded[..., [2, 1, 0] + list(range(3, encoded.shape[2]))]
+    success = cv2.imwrite(
+        str(output_path), encoded,
+        [cv2.IMWRITE_WEBP_QUALITY, 101])
+    if not success:
+        raise OSError(f'无损WebP写入失败: {output_path}')
+    return output_path
 
 
 def evaluate_sequence(model: Model, frames: list[Path], save_dir: Path,
@@ -144,7 +164,7 @@ def evaluate_sequence(model: Model, frames: list[Path], save_dir: Path,
         len(frames) - 1,
         args.max_pairs_per_scene if args.max_pairs_per_scene > 0 else len(frames) - 1)
 
-    first_extension = frames[0].suffix.lower()
+    first_extension = '.webp' if args.min_disk else frames[0].suffix.lower()
     if first_extension == '.jpeg':
         first_extension = '.jpg'
 
@@ -176,9 +196,15 @@ def evaluate_sequence(model: Model, frames: list[Path], save_dir: Path,
         prediction_np = prediction[0].detach().cpu().numpy().transpose(1, 2, 0)
         index0, middle_index, index1 = output_indices(src0, src1, pair_index)
         if pair_index == 0:
-            write_image(save_dir / f'{index0:06d}{first_extension}', image0)
-        write_image(save_dir / f'{middle_index:06d}{first_extension}', prediction_np)
-        write_image(save_dir / f'{index1:06d}{first_extension}', image1)
+            write_image(
+                save_dir / f'{index0:06d}{first_extension}', image0,
+                min_disk=args.min_disk)
+        write_image(
+            save_dir / f'{middle_index:06d}{first_extension}', prediction_np,
+            min_disk=args.min_disk)
+        write_image(
+            save_dir / f'{index1:06d}{first_extension}', image1,
+            min_disk=args.min_disk)
 
         del tensor0, tensor1, prediction, prediction_np, image0, image1
 
@@ -220,6 +246,11 @@ def parse_args():
         help='每个序列最多测试的相邻帧对数量；0=全部，用于快速检查')
     parser.add_argument('--dry_run', '--dry-run', action='store_true',
                         help='只扫描并打印测试集，不加载模型或写输出')
+    parser.add_argument(
+        '--min_disk', '--min-disk', '--compact-output',
+        dest='min_disk', action='store_true',
+        help='所有输出帧统一保存为8-bit无损WebP，显著降低硬盘占用；'
+             '不会引入有损压缩伪影，但编码速度比默认模式慢')
 
     local_group = parser.add_mutually_exclusive_group()
     local_group.add_argument('--local', dest='local', action='store_true')
@@ -264,6 +295,8 @@ def main():
         raise ValueError(f'测试集下没有发现至少包含两帧的图像序列: {root}')
     print(f'[data] root={root}')
     print(f'[data] output={output}')
+    print('[data] output format=' + (
+        'lossless WebP (min-disk)' if args.min_disk else 'source extension'))
     print(f'[data] sequences={len(sequences)} adjacent_pairs={pair_count}')
     for folder, frames in sequences:
         print(f'  {folder.relative_to(root)}: {len(frames)} frames / {len(frames) - 1} pairs')
@@ -294,6 +327,8 @@ def main():
         'local': args.local,
         'tta': tta_mode,
         'scale': args.scale,
+        'min_disk': args.min_disk,
+        'output_format': 'webp-lossless-8bit' if args.min_disk else 'source',
         'sequence_count': len(sequences),
         'processed_pairs': processed_pairs,
         'elapsed_seconds': elapsed,
@@ -301,7 +336,11 @@ def main():
         'scenes': scene_results,
     }
     with (output / 'summary.json').open('w') as file:
-        json.dump(summary, file, indent=2, ensure_ascii=False)
+        json.dump(
+            summary, file,
+            indent=None if args.min_disk else 2,
+            separators=(',', ':') if args.min_disk else None,
+            ensure_ascii=False)
     print(f'[done] {processed_pairs} pairs, {elapsed / 60.0:.2f} min')
     print(f'[done] output:  {output}')
     print(f'[done] summary: {output / "summary.json"}')

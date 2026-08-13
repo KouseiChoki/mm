@@ -303,6 +303,10 @@ def build_val_loaders(data_cfg, lists_dir):
             data_cfg.get('mv_symmetry_confidence', False)),
         'occ_alpha': float(data_cfg.get('occ_alpha', 0.05)),
         'occ_beta': float(data_cfg.get('occ_beta', 1.0)),
+        'mv_cache_dirname': data_cfg.get('mv_cache_dirname'),
+        'mv_cache_required': bool(data_cfg.get('mv_cache_required', False)),
+        'mv_cache_preview_stride': int(
+            data_cfg.get('mv_cache_preview_stride', 4)),
         'val_samples_per_scene': data_cfg.get('val_samples_per_scene'),
     }
     loaders = {}
@@ -437,6 +441,11 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     lists = resolve_train_lists(
         lists_dir, C['phases'], tiers=d.get('tiers'))
     crop_sizes = [tuple(c) for c in d['crop_sizes']]
+    if d.get('mv_cache_dirname'):
+        print('[data] teacher MV cache: '
+              f'{d["mv_cache_dirname"]} (mmap crop, '
+              f'required={bool(d.get("mv_cache_required", False))}, '
+              f'preview_stride={int(d.get("mv_cache_preview_stride", 4))})')
 
     train_set = MixedTierDataset(
         d['root'], lists,
@@ -455,6 +464,9 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         small_motion_min_pixels=d.get('small_motion_min_pixels', 8),
         small_motion_max_ratio=d.get('small_motion_max_ratio', 0.05),
         motion_crop_jitter=d.get('motion_crop_jitter', 0.2),
+        mv_cache_dirname=d.get('mv_cache_dirname'),
+        mv_cache_required=d.get('mv_cache_required', False),
+        mv_cache_preview_stride=d.get('mv_cache_preview_stride', 4),
         augment_profile=d.get('augment_profile', 'legacy'),
     )
     val_loaders = build_val_loaders(d, lists_dir)
@@ -545,10 +557,17 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                     f'{phase["name"]}.batch_counts总数({pattern_size}) '
                     f'必须等于batch size({sel[2]})')
             train_set.set_crop_size((sel[0], sel[1]))
+            loader_workers = int(d['num_workers'])
+            loader_prefetch = int(d.get('prefetch_factor', 2))
+            loader_in_order = bool(d.get('in_order', True))
+            if loader_workers <= 0:
+                loader_prefetch = None
             train_loader = DataLoader(train_set, batch_size=sel[2],
-                                    num_workers=d['num_workers'], pin_memory=True,
-                                    drop_last=True, shuffle=False,
-                                    worker_init_fn=seed_worker)
+                                      num_workers=loader_workers, pin_memory=True,
+                                      drop_last=True, shuffle=False,
+                                      worker_init_fn=seed_worker,
+                                      prefetch_factor=loader_prefetch,
+                                      in_order=loader_in_order)
             it = iter(train_loader)
 
             for i in range(phase_steps_per_epoch):
@@ -682,11 +701,37 @@ if __name__ == '__main__':
     parser.add_argument(
         '--resume', action='store_true',
         help='恢复optimizer/epoch/step/RNG；普通finetune不要传此参数')
+    parser.add_argument(
+        '--loader_workers', type=int, default=None,
+        help='仅覆盖本次运行的DataLoader worker数，不改变/归档yaml')
+    parser.add_argument(
+        '--loader_prefetch', type=int, default=None,
+        help='仅覆盖本次运行每个worker的预取batch数')
+    parser.add_argument(
+        '--loader_out_of_order', action='store_true',
+        help='允许先返回已完成batch，避免单个慢PNG读取阻塞整个DataLoader')
     args = parser.parse_args()
     if args.resume and not args.restore_ckpt:
         parser.error('--resume requires --restore_ckpt')
 
     C = load_config(args.config)
+    data_cfg = C['data']
+    if args.loader_workers is not None:
+        if args.loader_workers < 0:
+            parser.error('--loader_workers必须>=0')
+        data_cfg['num_workers'] = args.loader_workers
+    if args.loader_prefetch is not None:
+        if args.loader_prefetch <= 0:
+            parser.error('--loader_prefetch必须为正整数')
+        data_cfg['prefetch_factor'] = args.loader_prefetch
+    if args.loader_out_of_order:
+        data_cfg['in_order'] = False
+    if (args.loader_workers is not None or args.loader_prefetch is not None
+            or args.loader_out_of_order):
+        print('[loader override] '
+              f'workers={data_cfg["num_workers"]} '
+              f'prefetch={data_cfg.get("prefetch_factor", 2)} '
+              f'in_order={data_cfg.get("in_order", True)}')
 
     seed = C.get('seed', 1234)
     random.seed(seed)

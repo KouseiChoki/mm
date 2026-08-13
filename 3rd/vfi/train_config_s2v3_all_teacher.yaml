@@ -1,9 +1,10 @@
 # Machine B: 同样的S2V3与官方curriculum，但主训练混入全部生产数据，
 # 并对teacher样本启用直接多阶段flow监督。
+# 周二验收版按3:1比例缩放为240+80 epochs，并保留完整六档curriculum。
 # 单卡启动:
 #   python train.py --config train_config_s2v3_all_teacher.yaml
 
-exp_name: 0807_s2v3_all_teacher_curriculum
+exp_name: 0807_s2v3_all_teacher_tuesday
 seed: 1234
 
 model:
@@ -63,12 +64,12 @@ data:
   root: /home/zhenying/qhong/data/ssd/vfi_database
   lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
   tiers: [easy, normal, hard, vimeo, xtrain, teacher]
-  batch_size: 10
-  num_workers: 8
+  batch_size: 20
+  num_workers: 12
   val_num_workers: 4
   val_samples_per_scene: 1
   crop_sizes:
-    - [256, 256, 10]
+    - [256, 256, 20]
   framesteps: [1, 2]
   t_half_prob: 1.0
   mv_prob: 1.0
@@ -104,21 +105,21 @@ data:
 
 phases:
   - name: all_teacher_curriculum
-    epochs: 300
+    epochs: 240
     steps_per_epoch: 1604
-    grad_accum_steps: 4
+    grad_accum_steps: 2
     lr_schedule: phase
     trainable: all
     # 与官方策略一致：主训练阶段绕过IFBlock，teacher先监督全局flow heads。
     local: false
     crop_sizes:
-      - [256, 256, 10]
+      - [256, 256, 20]
     # 累积后global batch40: 16 Vimeo + 4 X-TRAIN + 4×3常规 + 8 teacher。
     ratios: {vimeo: 0.4, xtrain: 0.1, easy: 0.1, normal: 0.1, hard: 0.1, teacher: 0.2}
-    batch_counts: {vimeo: 4, xtrain: 1, easy: 1, normal: 1, hard: 1, teacher: 2}
+    batch_counts: {vimeo: 8, xtrain: 2, easy: 2, normal: 2, hard: 2, teacher: 4}
     curriculum:
       source: xtrain
-      every_epochs: 50
+      every_epochs: 40
       max_stage: 5
       framestep_start: 1
       framestep_multiplier: 2
@@ -126,27 +127,27 @@ phases:
       resize_multiplier: 1.1
 
   - name: teacher_ifblock_finetune
-    epochs: 100
+    epochs: 80
     steps_per_epoch: 1604
-    grad_accum_steps: 4
+    grad_accum_steps: 2
     lr_schedule: phase
     trainable: local_ifblock
     local: true
     crop_sizes:
-      - [256, 256, 10]
-    # 保留Vimeo小运动，同时让local IFBlock继续接受teacher flow监督。
+      - [256, 256, 20]
+    # micro batch20累积2次；保留Vimeo小运动，并继续使用teacher flow监督。
     ratios: {vimeo: 0.8, teacher: 0.2, xtrain: 0.0, easy: 0.0, normal: 0.0, hard: 0.0}
-    batch_counts: {vimeo: 8, teacher: 2}
+    batch_counts: {vimeo: 16, teacher: 4}
 
 monitor:
-  eval_every_epochs: 10
+  eval_every_epochs: 20
   save_every_epochs: 10
   log_every_steps: 100
   print_every_steps: 10
   spike_ratio: 3.0
-  spike_dir: spike_samples_s2v3_all_teacher
+  spike_dir: spike_samples_s2v3_all_teacher_tuesday
   flow_loss_dump_threshold: 40
-  dump_dir: anomaly_dumps_s2v3_all_teacher
+  dump_dir: anomaly_dumps_s2v3_all_teacher_tuesday
   dump_max: 500
   best_metric: teacher/moving_flow_epe
   best_mode: min
