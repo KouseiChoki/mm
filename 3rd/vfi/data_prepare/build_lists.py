@@ -13,10 +13,11 @@ VFI 训练数据清单生成脚本 (build_lists.py)
     ├── illumination/.../scene/*.png|jpg            ← 光暗/曝光变化
     ├── noise/       .../scene/*.png|jpg            ← 噪点/低信噪比
     ├── val/    电影名/scene0001/*.png|jpg        ← 预划分的验证集
-    └── teacher/ ...任意深度.../12fps|24fps|48fps/{image, mv0, mv1}/
+    └── teacher/ ...任意深度.../{image, mv0, mv1}/
                  image/*.png|jpg  mv0/*.exr  mv1/*.exr
-                 (同时包含 image+mv0+mv1 三个子目录的文件夹即为一个 teacher scene,
-                  fps 从路径中的 "12fps/24fps/48fps" 目录名解析)
+                 或 image/*.png|jpg + mv_cache_f16/<image_stem>.npy
+                 (原生 Sintel/FlyingThings 由 convert_native_teacher.py 直接生成
+                  float16 cache，避免额外的 EXR 中间副本)
 
 输出 (默认写到 <root>/lists/):
     <tier>_train.txt / <tier>_val.txt / teacher_train.txt / teacher_val.txt /
@@ -57,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 IMG_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 MV_EXTS = {'.exr'}
+MV_CACHE_DIRNAME = 'mv_cache_f16'
 TIERS = (
     'easy', 'normal', 'hard',
     'opensource', 'illumination', 'noise',
@@ -70,6 +72,13 @@ OFFICIAL_OPENSOURCE_SUBSETS = {
 }
 VAL_DIR = 'val'
 TEACHER_DIR = 'teacher'
+TEACHER_SOURCE_TIERS = {
+    'unreal': 'teacher_unreal',
+    'spring': 'teacher_spring',
+    'sintel': 'teacher_sintel',
+    'flyingthings': 'teacher_flyingthings',
+    'flyingthings3d': 'teacher_flyingthings',
+}
 
 _FPS_RE = re.compile(r'^(\d+)\s*fps$', re.IGNORECASE)
 
@@ -124,11 +133,61 @@ def teacher_group_key(row: dict) -> str:
         scene = re.sub(r'^(?:clean|final)', '', parts[2], flags=re.IGNORECASE)
         return '/'.join((*parts[:2], scene))
 
+    # Sintel clean/final共享同一套flow，必须按sequence绑定切分，
+    # 否则会出现clean训练、final验证的内容泄漏。
+    if (len(parts) >= 4 and parts[0] == 'teacher'
+            and parts[1].lower() == 'sintel'
+            and parts[2].lower() in {'clean', 'final'}):
+        return '/'.join((parts[0], parts[1], parts[3]))
+
+    # FlyingThings clean/final以及left/right都是同一时间序列；
+    # 以 TRAIN/A/0000 为组，所有render/view一起进train或val。
+    if (len(parts) >= 7 and parts[0] == 'teacher'
+            and parts[1].lower() in {'flyingthings', 'flyingthings3d'}
+            and parts[3].lower() in {'clean', 'final'}):
+        return '/'.join((parts[0], parts[1], parts[2], parts[4], parts[5]))
+
     # Spring 等无 fps 数据通常以 scene/left、scene/right 组织。
     for index, part in enumerate(parts):
         if _FPS_RE.match(part):
             return '/'.join(parts[:index])
     return str(Path(row['rel']).parent)
+
+
+def teacher_source_key(row: dict) -> str:
+    """按teacher数据集来源分层，避免Sintel等小数据集在全局抽样时
+    恰好没有任何验证scene。"""
+    parts = Path(row['rel']).parts
+    return '/'.join(parts[:2]) if len(parts) >= 2 else row['rel']
+
+
+def teacher_tier_name(row: dict) -> Optional[str]:
+    """Map ``teacher/<source>/...`` to a separately sampleable train tier."""
+    parts = Path(row['rel']).parts
+    if len(parts) < 2 or parts[0] != TEACHER_DIR:
+        return None
+    return TEACHER_SOURCE_TIERS.get(parts[1].lower())
+
+
+def split_teacher_rows(rows: List[dict], val_ratio: float,
+                       seed: int) -> Tuple[List[dict], List[dict]]:
+    """每个teacher来源独立按内容组切分，小来源也至少有一组val。"""
+    by_source = {}
+    for row in rows:
+        by_source.setdefault(teacher_source_key(row), []).append(row)
+    train_rows = []
+    val_rows = []
+    for source in sorted(by_source):
+        source_seed = seed + sum(
+            (index + 1) * ord(char) for index, char in enumerate(source))
+        source_train, source_val = split_rows(
+            by_source[source], val_ratio, source_seed,
+            group_key=teacher_group_key)
+        train_rows.extend(source_train)
+        val_rows.extend(source_val)
+    train_rows.sort(key=lambda row: row['rel'])
+    val_rows.sort(key=lambda row: row['rel'])
+    return train_rows, val_rows
 
 
 def split_rows(rows: List[dict], val_ratio: float, seed: int,
@@ -195,6 +254,23 @@ def scan_tier(root: Path, tier_dir: str, tier_label: str,
 # teacher 扫描: 任意深度下同时包含 image/mv0/mv1 的目录
 # ─────────────────────────────────────────────────────────────────────────────
 
+def cache_frame_numbers(d: Path) -> List[int]:
+    """返回原生teacher主缓存对应的帧号，忽略motion/cycle sidecar。"""
+    if not d.is_dir():
+        return []
+    numbers = []
+    for entry in os.scandir(d):
+        name = entry.name
+        if (name.startswith('.') or not name.endswith('.npy')
+                or name.endswith('.motion.npy')
+                or name.endswith('.cycle.npy')):
+            continue
+        number = extract_number(name)
+        if number is not None:
+            numbers.append(number)
+    return sorted(set(numbers))
+
+
 def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
                  pair_ratio: float, broken: list,
                  teacher_fps: Optional[List[int]]) -> List[dict]:
@@ -209,7 +285,10 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
     pbar = tqdm(desc='扫描 teacher (遍历目录)', unit='dir')
     for dirpath, dirnames, _ in os.walk(base):
         pbar.update(1)
-        if not {'image', 'mv0', 'mv1'}.issubset(set(dirnames)):
+        children = set(dirnames)
+        has_exr_layout = {'image', 'mv0', 'mv1'}.issubset(children)
+        has_native_cache = {'image', MV_CACHE_DIRNAME}.issubset(children)
+        if not has_exr_layout and not has_native_cache:
             continue
         sdir = Path(dirpath)
         fps = fps_from_path(sdir)
@@ -222,8 +301,14 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
 
         img_entries = frame_entries(sdir / 'image', IMG_EXTS)
         img_nums = [n for n, _ in img_entries]
-        mv0_nums = set(frame_numbers(sdir / 'mv0', MV_EXTS))
-        mv1_nums = set(frame_numbers(sdir / 'mv1', MV_EXTS))
+        if has_exr_layout:
+            mv0_nums = set(frame_numbers(sdir / 'mv0', MV_EXTS))
+            mv1_nums = set(frame_numbers(sdir / 'mv1', MV_EXTS))
+            paired = sum(
+                1 for n in img_nums if n in mv0_nums and n in mv1_nums)
+        else:
+            cache_nums = set(cache_frame_numbers(sdir / MV_CACHE_DIRNAME))
+            paired = sum(1 for n in img_nums if n in cache_nums)
 
         if len(img_nums) < min_frames:
             broken.append(f'{rel}\t帧数不足({len(img_nums)}<{min_frames})')
@@ -233,7 +318,6 @@ def scan_teacher(root: Path, min_frames: int, allow_gaps: bool,
             broken.append(f'{rel}\t帧号断号({gaps}处缺口)')
             continue
 
-        paired = sum(1 for n in img_nums if n in mv0_nums and n in mv1_nums)
         ratio = paired / max(len(img_nums), 1)
         if ratio < pair_ratio:
             broken.append(f'{rel}\tmv配对率过低({paired}/{len(img_nums)}={ratio:.0%})')
@@ -398,9 +482,8 @@ def main() -> None:
     # teacher
     rows = scan_teacher(root, min_frames, args.allow_gaps,
                         args.pair_ratio, broken, args.teacher_fps)
-    train_rows, val_rows = split_rows(
-        rows, args.val_ratio, args.val_seed + 1000003,
-        group_key=teacher_group_key)
+    train_rows, val_rows = split_teacher_rows(
+        rows, args.val_ratio, args.val_seed + 1000003)
     write_list(out_dir / 'teacher_train.txt', train_rows)
     write_val_list(out_dir / 'teacher_val.txt', val_rows)
     sampled_val_rows.extend(val_rows)
@@ -413,6 +496,21 @@ def main() -> None:
         f'val={len(val_rows):>5} scenes/'
         f'{sum(r["n"] for r in val_rows):>8}帧  '
         f'train_fps={dict(sorted(fps_dist.items()))}')
+
+    # 同时保留teacher汇总清单和四个可独立配比的来源tier。
+    # 子清单严格沿用上面已完成的分组train/val切分，不二次抽样。
+    for source_tier in sorted(set(TEACHER_SOURCE_TIERS.values())):
+        source_train = [
+            row for row in train_rows if teacher_tier_name(row) == source_tier]
+        source_val = [
+            row for row in val_rows if teacher_tier_name(row) == source_tier]
+        write_list(out_dir / f'{source_tier}_train.txt', source_train)
+        write_val_list(out_dir / f'{source_tier}_val.txt', source_val)
+        summary_lines.append(
+            f'{source_tier:>20}: train={len(source_train):>6} scenes/'
+            f'{sum(r["n"] for r in source_train):>9}帧  '
+            f'val={len(source_val):>5} scenes/'
+            f'{sum(r["n"] for r in source_val):>8}帧')
 
     # 合并各分类抽样验证集与 root/val 中已有的预划分验证集。
     predefined_val_rows = scan_tier(

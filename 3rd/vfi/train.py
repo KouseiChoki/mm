@@ -31,6 +31,7 @@ from Trainer import Model
 from kousei_dataset import MixedTierDataset, TierDataset, resolve_train_lists
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,6 +156,196 @@ def get_grad_norm(net):
     return total ** 0.5
 
 
+def build_record_paths(exp, monitor_cfg, project_dir=PROJECT_DIR):
+    """Resolve all non-checkpoint training artifacts under record/<exp>."""
+    record_root = str(monitor_cfg.get('record_root', 'record')).strip()
+    if not record_root:
+        raise ValueError('monitor.record_root不能为空')
+    if not os.path.isabs(record_root):
+        record_root = os.path.join(project_dir, record_root)
+    exp = str(exp).strip()
+    if not exp or os.path.isabs(exp) or '..' in exp.split(os.sep):
+        raise ValueError(f'exp_name必须是record内的相对目录名, got {exp!r}')
+    experiment_dir = os.path.abspath(os.path.join(record_root, exp))
+
+    def subdir(key, default):
+        value = str(monitor_cfg.get(key, default)).strip()
+        if not value:
+            value = default
+        if os.path.isabs(value) or '..' in value.split(os.sep):
+            raise ValueError(
+                f'monitor.{key}必须是record/<exp>内的相对目录名, got {value!r}')
+        return os.path.join(experiment_dir, value)
+
+    paths = {
+        'root': experiment_dir,
+        'tensorboard': subdir('tensorboard_dir', 'tensorboard'),
+        'spikes': subdir('spike_dir', 'spike_samples'),
+        'anomalies': subdir('dump_dir', 'anomaly_dumps'),
+        'mv_comparisons': subdir('mv_compare_dir', 'mv_comparisons'),
+    }
+    os.makedirs(paths['root'], exist_ok=True)
+    return paths
+
+
+def _flow_to_bgr(flow, valid, max_magnitude):
+    """Convert a [2,H,W] pixel flow to a direction/magnitude HSV image."""
+    import cv2
+
+    flow = np.nan_to_num(np.asarray(flow, dtype=np.float32), copy=False)
+    dx, dy = flow[0], flow[1]
+    magnitude = np.sqrt(dx * dx + dy * dy)
+    angle = np.arctan2(dy, dx)
+    hsv = np.zeros((*magnitude.shape, 3), dtype=np.uint8)
+    hsv[..., 0] = np.mod((angle + np.pi) * (179.0 / (2.0 * np.pi)), 180).astype(
+        np.uint8)
+    hsv[..., 1] = 255
+    hsv[..., 2] = np.clip(
+        magnitude / max(float(max_magnitude), 1e-6) * 255.0, 0, 255).astype(
+            np.uint8)
+    result = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    result[~valid] = 0
+    return result
+
+
+def _write_original_style_mv_exr(path, pixel_flow):
+    """Write XY like cal_mv.py: normalized R/G, zero B/A, half PIZ EXR."""
+    from file_utils import mvwrite
+
+    pixel_flow = np.nan_to_num(
+        np.asarray(pixel_flow, dtype=np.float32), copy=True)
+    if pixel_flow.ndim != 3 or pixel_flow.shape[0] != 2:
+        raise ValueError(f'MV EXR输入应为[2,H,W], got {pixel_flow.shape}')
+    height, width = pixel_flow.shape[1:]
+    normalized = np.zeros((height, width, 4), dtype=np.float32)
+    normalized[..., 0] = pixel_flow[0] / width
+    normalized[..., 1] = pixel_flow[1] / height
+    mvwrite(path, normalized, compress='piz', precision='half')
+
+
+class MVComparisonDumper:
+    """Persist exact predicted/GT MV plus directly comparable visualizations."""
+
+    def __init__(self, output_dir, every_epochs=0, max_samples=8):
+        self.output_dir = output_dir
+        self.every_epochs = int(every_epochs)
+        self.max_samples = int(max_samples)
+        if self.every_epochs < 0:
+            raise ValueError('monitor.mv_compare_every_epochs必须>=0')
+        if self.every_epochs > 0 and self.max_samples <= 0:
+            raise ValueError('monitor.mv_compare_max_samples必须为正整数')
+
+    def due(self, epoch):
+        return self.every_epochs > 0 and int(epoch) % self.every_epochs == 0
+
+    def dump_sample(self, epoch, sample_index, frames, pred_frame,
+                    flow_pred, flow_gt, timestep, metadata=None):
+        import cv2
+
+        sample_dir = os.path.join(
+            self.output_dir, f'epoch_{int(epoch):04d}',
+            f'sample_{int(sample_index):04d}')
+        os.makedirs(sample_dir, exist_ok=True)
+
+        frames_np = frames.detach().float().cpu().clamp(0, 1).numpy()
+        pred_frame_np = pred_frame.detach().float().cpu().clamp(0, 1).numpy()
+        pred_mv = flow_pred.detach().float().cpu().numpy().astype(np.float32)
+        safe_pred_mv = np.nan_to_num(pred_mv, copy=True)
+        gt_all = flow_gt.detach().float().cpu().numpy().astype(np.float32)
+        gt_mv = np.nan_to_num(gt_all[:4], copy=True)
+        valid_weight = np.nan_to_num(
+            gt_all[4], nan=0.0, posinf=0.0, neginf=0.0).clip(0, 1)
+        valid = valid_weight > 0
+
+        np.savez_compressed(
+            os.path.join(sample_dir, 'mv.npz'),
+            pred_mv1=pred_mv[:2], pred_mv0=pred_mv[2:4],
+            gt_mv1=gt_mv[:2], gt_mv0=gt_mv[2:4],
+            valid=valid_weight)
+        for name, value in (
+                ('pred_mv1.exr', safe_pred_mv[:2]),
+                ('gt_mv1.exr', gt_mv[:2]),
+                ('pred_mv0.exr', safe_pred_mv[2:4]),
+                ('gt_mv0.exr', gt_mv[2:4])):
+            _write_original_style_mv_exr(
+                os.path.join(sample_dir, name), value)
+
+        for name, channel_slice in (
+                ('img0', slice(0, 3)), ('img1', slice(3, 6)),
+                ('middle_gt', slice(6, 9))):
+            image = (frames_np[channel_slice].transpose(1, 2, 0)[..., ::-1]
+                     * 255.0).round().astype(np.uint8)
+            cv2.imwrite(os.path.join(sample_dir, f'{name}.png'), image)
+        pred_image = (pred_frame_np.transpose(1, 2, 0)[..., ::-1]
+                      * 255.0).round().astype(np.uint8)
+        cv2.imwrite(os.path.join(sample_dir, 'middle_pred.png'), pred_image)
+        cv2.imwrite(
+            os.path.join(sample_dir, 'valid.png'),
+            (valid_weight * 255.0).round().astype(np.uint8))
+
+        epe_values = []
+        scales = []
+        for direction, channel_slice in (
+                ('mv1_to_previous', slice(0, 2)),
+                ('mv0_to_next', slice(2, 4))):
+            pred_direction = safe_pred_mv[channel_slice]
+            gt_direction = gt_mv[channel_slice]
+            pred_mag = np.linalg.norm(pred_direction, axis=0)
+            gt_mag = np.linalg.norm(gt_direction, axis=0)
+            if valid.any():
+                shared = np.concatenate((pred_mag[valid], gt_mag[valid]))
+                scale = max(float(np.percentile(shared, 99.0)), 1.0)
+            else:
+                scale = 1.0
+            scales.append(scale)
+            cv2.imwrite(
+                os.path.join(sample_dir, f'pred_{direction}.png'),
+                _flow_to_bgr(pred_direction, valid, scale))
+            cv2.imwrite(
+                os.path.join(sample_dir, f'gt_{direction}.png'),
+                _flow_to_bgr(gt_direction, valid, scale))
+
+            epe = np.linalg.norm(pred_direction - gt_direction, axis=0)
+            weighted_count = float(valid_weight.sum())
+            mean_epe = (
+                float((epe * valid_weight).sum() / weighted_count)
+                if weighted_count > 0 else None)
+            epe_values.append(mean_epe)
+            error_scale = max(
+                float(np.percentile(epe[valid], 99.0)), 1.0) if valid.any() else 1.0
+            error_u8 = np.clip(epe / error_scale * 255.0, 0, 255).astype(np.uint8)
+            error_bgr = cv2.applyColorMap(error_u8, cv2.COLORMAP_TURBO)
+            error_bgr[~valid] = 0
+            cv2.imwrite(
+                os.path.join(sample_dir, f'error_{direction}.png'), error_bgr)
+
+        meta = {
+            'epoch': int(epoch),
+            'sample_index': int(sample_index),
+            'timestep': float(timestep),
+            'valid_ratio': float(valid.mean()),
+            'prediction_finite_ratio': float(np.isfinite(pred_mv).all(axis=0).mean()),
+            'mv1_epe': epe_values[0],
+            'mv0_epe': epe_values[1],
+            'mean_epe': (
+                0.5 * (epe_values[0] + epe_values[1])
+                if all(value is not None for value in epe_values) else None),
+            'visualization_p99_magnitude': {
+                'mv1_to_previous': scales[0], 'mv0_to_next': scales[1]},
+            'metadata': metadata or {},
+            'convention': {
+                'mv1': 'middle/current -> previous input',
+                'mv0': 'middle/current -> next input',
+                'mv.npz_unit': 'pixels',
+                'exr_xy_unit': 'normalized: R=dx/width, G=dy/height',
+                'exr_channels': 'RGBA half; B/A are zero (training uses XY only)',
+            },
+        }
+        with open(os.path.join(sample_dir, 'meta.yaml'), 'w') as handle:
+            yaml.safe_dump(meta, handle, allow_unicode=True, sort_keys=False)
+        return sample_dir
+
+
 class SpikeDetector:
     def __init__(self, window=50, spike_ratio=3.0, spike_dir='spike_samples'):
         self.window = window
@@ -244,9 +435,11 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
         flow_totals = {
             key: 0.0 for key in (
                 'sum', 'count', 'moving_sum', 'moving_count',
-                'static_sum', 'static_count')}
+                'static_sum', 'static_count', 'mv_pixels', 'mv_samples')}
+        teacher_groups = {}
 
-        for frames, timestep, flow_gt, has_mv in val_loader:
+        for sample_index, (frames, timestep, flow_gt, has_mv) in enumerate(
+                val_loader):
             frames = frames.to(device, non_blocking=True).float() / 255.
             timestep = timestep.to(device, non_blocking=True)
             imgs, gt = frames[:, :6], frames[:, 6:9]
@@ -259,6 +452,24 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
             psnr_sum += (-10.0 * torch.log10(mse)).sum().item()
             sample_count += int(gt.shape[0])
 
+            group = None
+            if name == 'teacher' and hasattr(
+                    val_loader.dataset, 'sample_metadata'):
+                metadata = val_loader.dataset.sample_metadata(sample_index)
+                group_name = f'{metadata["domain"]}_{metadata["fps"]}fps'
+                group = teacher_groups.setdefault(group_name, {
+                    key: 0.0 for key in (
+                        'psnr_sum', 'samples', 'sum', 'count',
+                        'moving_sum', 'moving_count', 'static_sum',
+                        'static_count', 'mv_pixels', 'mv_samples')})
+                group['psnr_sum'] += (-10.0 * torch.log10(mse)).sum().item()
+                group['samples'] += int(gt.shape[0])
+
+            mv_samples = float(has_mv.sum().item())
+            flow_totals['mv_samples'] += mv_samples
+            if group is not None:
+                group['mv_samples'] += mv_samples
+
             if flow_list and has_mv.sum().item() > 0:
                 flow_gt = flow_gt.to(device, non_blocking=True)
                 has_mv = has_mv.to(device, non_blocking=True)
@@ -267,6 +478,13 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
                 sums = model.flow_metric_sums(final_flow, flow_gt, has_mv)
                 for key, value in sums.items():
                     flow_totals[key] += value.item()
+                    if group is not None:
+                        group[key] += value.item()
+                mv_pixels = float(
+                    has_mv.sum().item() * flow_gt.shape[-2] * flow_gt.shape[-1])
+                flow_totals['mv_pixels'] += mv_pixels
+                if group is not None:
+                    group['mv_pixels'] += mv_pixels
 
         if sample_count:
             psnr = psnr_sum / sample_count
@@ -287,9 +505,106 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
                             f'val/{name}_{region}_flow_epe',
                             region_epe, nr_eval)
                         message += f' {region}_EPE={region_epe:.4f}'
+                if flow_totals['mv_pixels'] > 0:
+                    valid_ratio = (
+                        flow_totals['count'] / flow_totals['mv_pixels'])
+                    metrics[f'{name}/flow_valid_ratio'] = valid_ratio
+                    writer.add_scalar(
+                        f'val/{name}_flow_valid_ratio', valid_ratio, nr_eval)
+                    message += f' flow_valid={valid_ratio:.3f}'
+                flow_sample_coverage = (
+                    flow_totals['mv_samples'] / sample_count)
+                metrics[f'{name}/flow_sample_coverage'] = flow_sample_coverage
+                writer.add_scalar(
+                    f'val/{name}_flow_sample_coverage',
+                    flow_sample_coverage, nr_eval)
+                message += f' flow_samples={flow_sample_coverage:.3f}'
             print(message)
+
+            if name == 'teacher':
+                for group_name, group in sorted(teacher_groups.items()):
+                    if not group['samples']:
+                        continue
+                    group_psnr = group['psnr_sum'] / group['samples']
+                    prefix = f'{name}/{group_name}'
+                    metrics[f'{prefix}/psnr'] = group_psnr
+                    writer.add_scalar(
+                        f'val/{name}_{group_name}_psnr', group_psnr, nr_eval)
+                    group_message = (
+                        f'[eval {nr_eval}] {prefix}: PSNR={group_psnr:.4f}')
+                    if group['count'] > 0:
+                        group_epe = group['sum'] / group['count']
+                        group_valid = group['count'] / max(group['mv_pixels'], 1.0)
+                        group_coverage = (
+                            group['mv_samples'] / group['samples'])
+                        metrics[f'{prefix}/flow_epe'] = group_epe
+                        metrics[f'{prefix}/flow_valid_ratio'] = group_valid
+                        metrics[f'{prefix}/flow_sample_coverage'] = group_coverage
+                        writer.add_scalar(
+                            f'val/{name}_{group_name}_flow_epe',
+                            group_epe, nr_eval)
+                        writer.add_scalar(
+                            f'val/{name}_{group_name}_flow_valid_ratio',
+                            group_valid, nr_eval)
+                        writer.add_scalar(
+                            f'val/{name}_{group_name}_flow_sample_coverage',
+                            group_coverage, nr_eval)
+                        group_message += (
+                            f' flow_EPE={group_epe:.4f}'
+                            f' flow_valid={group_valid:.3f}'
+                            f' flow_samples={group_coverage:.3f}')
+                    print(group_message)
     model.train()
     return metrics
+
+
+@torch.no_grad()
+def dump_mv_comparisons(model, val_loaders, epoch, dumper,
+                        use_amp, amp_dtype):
+    """Run a small deterministic teacher-val subset and dump both MV fields."""
+    if not dumper.due(epoch):
+        return 0
+    val_loader = val_loaders.get('teacher')
+    if val_loader is None:
+        print('[mv-compare] WARNING: 没有teacher验证集，跳过MV输出')
+        return 0
+
+    was_training = bool(model.net.training)
+    model.eval()
+    saved = 0
+    for sample_index, (frames, timestep, flow_gt, has_mv) in enumerate(val_loader):
+        if saved >= dumper.max_samples:
+            break
+        if has_mv.sum().item() <= 0:
+            continue
+
+        frames_gpu = frames.to(device, non_blocking=True).float() / 255.0
+        timestep_gpu = timestep.to(device, non_blocking=True)
+        imgs = frames_gpu[:, :6]
+        imgs_pad, (pad_right, pad_bottom) = model.pad_to_multiple(imgs, 16)
+        with torch.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
+            flow_list, _, _, _, _, _, pred_pad = model.net(
+                imgs_pad, timestep=timestep_gpu, scale=0, local=model.local)
+        if not flow_list:
+            print('[mv-compare] WARNING: 模型没有输出flow，跳过MV输出')
+            break
+        pred = model.unpad(pred_pad, pad_right, pad_bottom)
+        final_flow = model.unpad(flow_list[-1], pad_right, pad_bottom)
+        metadata = (
+            val_loader.dataset.sample_metadata(sample_index)
+            if hasattr(val_loader.dataset, 'sample_metadata') else {})
+        output = dumper.dump_sample(
+            epoch=epoch, sample_index=sample_index,
+            frames=frames_gpu[0], pred_frame=pred[0],
+            flow_pred=final_flow[0], flow_gt=flow_gt[0],
+            timestep=timestep.reshape(-1)[0].item(), metadata=metadata)
+        saved += 1
+        print(f'[mv-compare {saved}/{dumper.max_samples}] → {output}')
+
+    if was_training:
+        model.train()
+    print(f'[mv-compare] epoch={epoch} saved={saved} root={dumper.output_dir}')
+    return saved
 
 
 def build_val_loaders(data_cfg, lists_dir):
@@ -307,6 +622,17 @@ def build_val_loaders(data_cfg, lists_dir):
         'mv_cache_required': bool(data_cfg.get('mv_cache_required', False)),
         'mv_cache_preview_stride': int(
             data_cfg.get('mv_cache_preview_stride', 4)),
+        'mv_cycle_confidence': data_cfg.get(
+            'val_mv_cycle_confidence',
+            data_cfg.get('mv_cycle_confidence', 'none')),
+        'mv_cycle_cache_required': bool(
+            data_cfg.get(
+                'val_mv_cycle_cache_required',
+                data_cfg.get('mv_cycle_cache_required', False))),
+        'mv_cycle_cache_root': data_cfg.get('mv_cycle_cache_root'),
+        'mv_cycle_on_the_fly': bool(data_cfg.get(
+            'val_mv_cycle_on_the_fly',
+            data_cfg.get('mv_cycle_on_the_fly', False))),
         'val_samples_per_scene': data_cfg.get('val_samples_per_scene'),
     }
     loaders = {}
@@ -322,9 +648,10 @@ def build_val_loaders(data_cfg, lists_dir):
                 continue
             print(f'[eval] WARNING: 验证清单不存在，跳过 {name}: {path}')
             continue
+        is_teacher = name == 'teacher' or name.startswith('teacher_')
         dataset = TierDataset(
             data_cfg['root'], path, split='val',
-            val_with_mv=(name == 'teacher'), **common)
+            val_with_mv=is_teacher, **common)
         cap = data_cfg.get('val_samples_per_scene')
         print(f'[eval] {name}: {len(dataset)} samples / '
               f'{len(dataset.scenes)} scenes '
@@ -351,11 +678,21 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     if config_path:
         archive_config(config_path, ckpt_dir)
     d, opt, mon = C['data'], C['optim'], C['monitor']
-    writer = SummaryWriter(f'log/train_{exp}')
+    record_paths = build_record_paths(exp, mon)
+    writer = SummaryWriter(record_paths['tensorboard'])
     spike_det = SpikeDetector(spike_ratio=mon['spike_ratio'],
-                              spike_dir=mon['spike_dir'])
-    dumper = AnomalyDumper(dump_dir=mon.get('dump_dir', 'anomaly_dumps'),
+                              spike_dir=record_paths['spikes'])
+    dumper = AnomalyDumper(dump_dir=record_paths['anomalies'],
                            max_dumps=mon.get('dump_max', 50))
+    mv_dumper = MVComparisonDumper(
+        output_dir=record_paths['mv_comparisons'],
+        every_epochs=mon.get('mv_compare_every_epochs', 0),
+        max_samples=mon.get('mv_compare_max_samples', 8))
+    print(f'[record] {record_paths["root"]}')
+    if mv_dumper.every_epochs > 0:
+        print('[mv-compare] enabled: '
+              f'every={mv_dumper.every_epochs} epochs, '
+              f'max_samples={mv_dumper.max_samples}')
     flow_dump_thresh = mon.get('flow_loss_dump_threshold', 30.0)
 
     amp_name = str(opt.get('amp_dtype', 'bf16')).lower()
@@ -445,7 +782,9 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         print('[data] teacher MV cache: '
               f'{d["mv_cache_dirname"]} (mmap crop, '
               f'required={bool(d.get("mv_cache_required", False))}, '
-              f'preview_stride={int(d.get("mv_cache_preview_stride", 4))})')
+              f'preview_stride={int(d.get("mv_cache_preview_stride", 4))}, '
+              f'cycle={d.get("mv_cycle_confidence", "none")}, '
+              f'cycle_required={bool(d.get("mv_cycle_cache_required", False))})')
 
     train_set = MixedTierDataset(
         d['root'], lists,
@@ -467,6 +806,10 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         mv_cache_dirname=d.get('mv_cache_dirname'),
         mv_cache_required=d.get('mv_cache_required', False),
         mv_cache_preview_stride=d.get('mv_cache_preview_stride', 4),
+        mv_cycle_confidence=d.get('mv_cycle_confidence', 'none'),
+        mv_cycle_cache_required=d.get('mv_cycle_cache_required', False),
+        mv_cycle_cache_root=d.get('mv_cycle_cache_root'),
+        mv_cycle_on_the_fly=d.get('mv_cycle_on_the_fly', False),
         augment_profile=d.get('augment_profile', 'legacy'),
     )
     val_loaders = build_val_loaders(d, lists_dir)
@@ -523,10 +866,17 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         if phase_lr_schedule not in ('global', 'phase'):
             raise ValueError(
                 f'{phase["name"]}.lr_schedule只支持global或phase')
+        default_phase_lr_steps = int(phase['epochs']) * phase_steps_per_epoch
+        phase_lr_total_steps = int(
+            phase.get('lr_total_steps', default_phase_lr_steps))
+        if phase_lr_total_steps <= 0:
+            raise ValueError(f'{phase["name"]}.lr_total_steps必须为正整数')
         print(f'\n════════ Phase [{phase["name"]}] {phase["epochs"]} epochs '
               f'local={"on" if local_enabled else "off/frozen"} '
               f'trainable={phase.get("trainable", "all")} '
-              f'accum={grad_accum_steps} lr_schedule={phase_lr_schedule} ════════')
+              f'accum={grad_accum_steps} lr_schedule={phase_lr_schedule} '
+              f'lr_steps={phase_lr_total_steps if phase_lr_schedule == "phase" else total_steps} '
+              f'════════')
         train_set.set_ratios(
             phase['ratios'], batch_counts=phase.get('batch_counts'))
 
@@ -571,13 +921,17 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
             it = iter(train_loader)
 
             for i in range(phase_steps_per_epoch):
-                lr_step = (
+                schedule_step = (
                     phase_epoch * phase_steps_per_epoch + i
                     if phase_lr_schedule == 'phase' else step)
-                lr_total = (
-                    int(phase['epochs']) * phase_steps_per_epoch
+                schedule_total = (
+                    phase_lr_total_steps
                     if phase_lr_schedule == 'phase' else total_steps)
-                lr = get_learning_rate(lr_step, lr_total, phase_opt)
+                # A fixed phase lr_total_steps preserves a short controlled
+                # schedule while permitting a longer low-LR weekend extension.
+                schedule_step = min(schedule_step, schedule_total)
+                lr = get_learning_rate(
+                    schedule_step, schedule_total, phase_opt)
 
                 data_time = 0.0
                 train_time = 0.0
@@ -671,6 +1025,8 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                             **capture_rng_state(),
                         })
                     print(f'[best] {best_metric_name}={best_metric_value:.6f}')
+            dump_mv_comparisons(
+                model, val_loaders, nr_eval, mv_dumper, use_amp, amp_dtype)
             if epoch_global % mon['save_every_epochs'] == 0:
                 model.save_model(
                     exp, epoch_global, step=step, scaler=scaler,

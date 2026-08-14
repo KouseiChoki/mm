@@ -70,6 +70,8 @@ DEFAULT_TRAIN_TIERS = (
     'easy', 'normal', 'hard',
     'opensource', 'illumination', 'noise',
     'teacher',
+    'teacher_unreal', 'teacher_spring',
+    'teacher_sintel', 'teacher_flyingthings',
 )
 
 
@@ -138,6 +140,11 @@ class TierDataset(Dataset):
     mv_cache_dirname : scene内离线MV缓存目录；None表示只读取EXR
     mv_cache_required : 为True时缓存缺失/损坏直接报错，禁止静默回退慢速EXR
     mv_cache_preview_stride : 小运动裁剪预览图的降采样步长
+    mv_cycle_confidence : 'none' | 'hard' | 'soft'。使用离线前后向
+                          cycle sidecar过滤遮挡/错误teacher MV
+    mv_cycle_cache_required : cycle开启时sidecar缺失是否直接报错
+    mv_cycle_on_the_fly : sidecar缺失时是否从相邻帧同crop MV cache
+                          即时计算cycle confidence
     val_samples_per_scene : 验证时每个scene最多均匀抽取的三元组数；None=全部
     """
 
@@ -159,6 +166,10 @@ class TierDataset(Dataset):
                  mv_cache_dirname: Optional[str] = None,
                  mv_cache_required: bool = False,
                  mv_cache_preview_stride: int = 4,
+                 mv_cycle_confidence: str = 'none',
+                 mv_cycle_cache_required: bool = False,
+                 mv_cycle_cache_root: Optional[str] = None,
+                 mv_cycle_on_the_fly: bool = False,
                  val_with_mv: bool = False,
                  val_samples_per_scene: Optional[int] = None,
                  augment_profile: str = 'legacy',
@@ -197,6 +208,19 @@ class TierDataset(Dataset):
             raise ValueError(
                 'mv_cache_preview_stride必须为正整数，'
                 f'got {mv_cache_preview_stride!r}')
+        self.mv_cycle_confidence = str(mv_cycle_confidence).strip().lower()
+        if self.mv_cycle_confidence not in ('none', 'hard', 'soft'):
+            raise ValueError(
+                'mv_cycle_confidence只支持none/hard/soft，'
+                f'got {mv_cycle_confidence!r}')
+        self.mv_cycle_cache_required = bool(mv_cycle_cache_required)
+        self.mv_cycle_cache_root = (
+            Path(mv_cycle_cache_root).expanduser()
+            if mv_cycle_cache_root else None)
+        self.mv_cycle_on_the_fly = bool(mv_cycle_on_the_fly)
+        if self.mv_cycle_confidence != 'none' and self.mv_cache_dirname is None:
+            raise ValueError(
+                'mv_cycle_confidence开启时必须配置mv_cache_dirname')
         self.val_with_mv = bool(val_with_mv)
         self.val_samples_per_scene = None
         if val_samples_per_scene is not None:
@@ -304,12 +328,17 @@ class TierDataset(Dataset):
         return self._mv_path_cache[key].get(int(numbers[-1]))
 
     def _mv_cache_paths(self, scene: dict,
-                        frame_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
+                        frame_path: Path
+                        ) -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
         if self.mv_cache_dirname is None:
-            return None, None
+            return None, None, None
         directory = self.root / scene['rel'] / self.mv_cache_dirname
+        cycle_directory = (
+            self.mv_cycle_cache_root / scene['rel']
+            if self.mv_cycle_cache_root is not None else directory)
         return (directory / f'{frame_path.stem}.npy',
-                directory / f'{frame_path.stem}.motion.npy')
+                directory / f'{frame_path.stem}.motion.npy',
+                cycle_directory / f'{frame_path.stem}.cycle.npy')
 
     def _validate_required_mv_cache(self) -> None:
         """训练开始前一次性检查，避免跑了数小时后才遇到缺失缓存。"""
@@ -321,13 +350,18 @@ class TierDataset(Dataset):
                 continue
             # teacher监督的GT固定为三元组中间帧，首尾永远不会访问且通常无MV。
             for frame_path in self._frames_of(scene)[1:-1]:
-                cache_path, preview_path = self._mv_cache_paths(scene, frame_path)
+                cache_path, preview_path, cycle_path = self._mv_cache_paths(
+                    scene, frame_path)
                 checked += 1
                 if cache_path is None or not cache_path.is_file():
                     missing.append(str(cache_path))
                 if (need_preview and preview_path is not None
                         and not preview_path.is_file()):
                     missing.append(str(preview_path))
+                if (self.mv_cycle_confidence != 'none'
+                        and self.mv_cycle_cache_required
+                        and (cycle_path is None or not cycle_path.is_file())):
+                    missing.append(str(cycle_path))
                 if len(missing) >= 10:
                     break
             if len(missing) >= 10:
@@ -347,7 +381,9 @@ class TierDataset(Dataset):
             logger.warning(message)
 
     def _normalized_mv_to_flow(self, normalized: np.ndarray,
-                               source_h: int, source_w: int) -> np.ndarray:
+                               source_h: int, source_w: int,
+                               cycle_confidence: Optional[np.ndarray] = None
+                               ) -> np.ndarray:
         """将缓存/EXR中的归一化 [H,W,4] MV 转为像素 flow+valid。"""
         if normalized.ndim != 3 or normalized.shape[-1] != 4:
             raise ValueError(f'MV缓存应为[H,W,4], got {normalized.shape}')
@@ -370,6 +406,22 @@ class TierDataset(Dataset):
             & (ys + flow[..., 3] >= 0) & (ys + flow[..., 3] <= region_h - 1))
         valid = (finite & inside1 & inside0).astype(np.float32)
 
+        if cycle_confidence is not None:
+            if cycle_confidence.shape != flow.shape[:2]:
+                raise ValueError(
+                    'cycle confidence应为[H,W]，'
+                    f'got {cycle_confidence.shape}')
+            confidence = np.asarray(cycle_confidence, dtype=np.float32)
+            if cycle_confidence.dtype == np.uint8:
+                confidence *= 1.0 / 255.0
+            confidence = np.nan_to_num(
+                confidence, nan=0.0, posinf=0.0, neginf=0.0)
+            confidence = np.clip(confidence, 0.0, 1.0)
+            if self.mv_cycle_confidence == 'hard':
+                valid *= (confidence >= 0.5).astype(np.float32)
+            elif self.mv_cycle_confidence == 'soft':
+                valid *= confidence
+
         if self.mv_symmetry_confidence:
             sym = np.linalg.norm(flow[..., 0:2] + flow[..., 2:4], axis=-1)
             mag = (np.linalg.norm(flow[..., 0:2], axis=-1)
@@ -378,12 +430,101 @@ class TierDataset(Dataset):
             valid *= 1.0 / (1.0 + sym / denom)
         return np.concatenate((flow, valid[..., None]), axis=-1)
 
+    @staticmethod
+    def _direction_cycle_confidence(
+            forward_normalized: np.ndarray,
+            backward_normalized: Optional[np.ndarray],
+            source_h: int, source_w: int,
+            alpha: float, beta: float) -> np.ndarray:
+        """在当前crop坐标系中做forward-backward consistency。
+
+        flow数值仍按原图宽高反归一化；终点离开crop的像素
+        本来就无法由当前输入监督，因此直接置0。
+        """
+        height, width = forward_normalized.shape[:2]
+        if backward_normalized is None:
+            return np.zeros((height, width), dtype=np.float32)
+        if backward_normalized.shape != forward_normalized.shape:
+            raise ValueError(
+                f'cycle前后向尺寸不一致: '
+                f'{forward_normalized.shape} vs {backward_normalized.shape}')
+
+        forward = np.asarray(forward_normalized, dtype=np.float32).copy()
+        backward = np.asarray(backward_normalized, dtype=np.float32).copy()
+        forward[..., 0] *= source_w
+        forward[..., 1] *= source_h
+        backward[..., 0] *= source_w
+        backward[..., 1] *= source_h
+        finite_forward = np.isfinite(forward).all(axis=-1)
+        finite_backward = np.isfinite(backward).all(axis=-1)
+        np.nan_to_num(forward, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        np.nan_to_num(backward, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+
+        xs, ys = np.meshgrid(
+            np.arange(width, dtype=np.float32),
+            np.arange(height, dtype=np.float32))
+        map_x = xs + forward[..., 0]
+        map_y = ys + forward[..., 1]
+        inside = (
+            (map_x >= 0) & (map_x <= width - 1)
+            & (map_y >= 0) & (map_y <= height - 1))
+        sampled_backward = cv2.remap(
+            backward, map_x, map_y, interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE)
+        sampled_value_finite = np.isfinite(sampled_backward).all(axis=-1)
+        sampled_source_finite = cv2.remap(
+            finite_backward.astype(np.uint8), map_x, map_y,
+            interpolation=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0).astype(bool)
+        np.nan_to_num(
+            sampled_backward, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+        residual_sq = np.square(forward + sampled_backward).sum(axis=-1)
+        magnitude_sq = (
+            np.square(forward).sum(axis=-1)
+            + np.square(sampled_backward).sum(axis=-1))
+        threshold = np.maximum(alpha * magnitude_sq + beta, 1e-6)
+        confidence = threshold / (threshold + residual_sq)
+        confidence[~(
+            finite_forward & sampled_value_finite
+            & sampled_source_finite & inside)] = 0.0
+        return np.clip(confidence, 0.0, 1.0)
+
+    def _cycle_from_neighbor_cache(
+            self, scene: dict, normalized: np.ndarray,
+            previous_path: Path, next_path: Path,
+            image_h: int, image_w: int,
+            crop: Tuple[int, int, int, int]) -> np.ndarray:
+        """仅mmap相邻帧同crop，避免整帧读取和离线sidecar写入。"""
+        top, left, region_h, region_w = crop
+
+        def neighbor_direction(path: Path, channels: slice):
+            cache_path, _, _ = self._mv_cache_paths(scene, path)
+            if cache_path is None or not cache_path.is_file():
+                return None
+            cached = np.load(cache_path, mmap_mode='r', allow_pickle=False)
+            if cached.shape != (image_h, image_w, 4):
+                raise ValueError(
+                    f'相邻MV cache尺寸错误: {cache_path} {cached.shape}')
+            return cached[
+                top:top + region_h, left:left + region_w, channels]
+
+        previous_to_current = neighbor_direction(previous_path, slice(2, 4))
+        next_to_current = neighbor_direction(next_path, slice(0, 2))
+        confidence_previous = self._direction_cycle_confidence(
+            normalized[..., 0:2], previous_to_current,
+            image_h, image_w, self.occ_alpha, self.occ_beta)
+        confidence_next = self._direction_cycle_confidence(
+            normalized[..., 2:4], next_to_current,
+            image_h, image_w, self.occ_alpha, self.occ_beta)
+        return np.minimum(confidence_previous, confidence_next)
+
     def _read_mv_cache(self, scene: dict, gt_path: Path,
                        image_h: int, image_w: int,
-                       crop: Optional[Tuple[int, int, int, int]] = None
+                       crop: Optional[Tuple[int, int, int, int]] = None,
+                       neighbor_paths: Optional[Tuple[Path, Path]] = None
                        ) -> Optional[np.ndarray]:
         """mmap未压缩float16缓存；有crop时只触发对应页面的磁盘读取。"""
-        cache_path, _ = self._mv_cache_paths(scene, gt_path)
+        cache_path, _, cycle_path = self._mv_cache_paths(scene, gt_path)
         if cache_path is None:
             return None
         if not cache_path.is_file():
@@ -409,11 +550,37 @@ class TierDataset(Dataset):
                 if (top < 0 or left < 0 or top + region_h > image_h
                         or left + region_w > image_w):
                     raise ValueError(f'非法MV cache crop: {crop}')
-            # 保持mmap view；唯一一次float32拷贝在_normalized_mv_to_flow完成。
             normalized = cached[
                 top:top + region_h, left:left + region_w, :]
+            cycle = None
+            if self.mv_cycle_confidence != 'none':
+                if self.mv_cycle_on_the_fly and neighbor_paths is not None:
+                    cycle = self._cycle_from_neighbor_cache(
+                        scene, normalized,
+                        neighbor_paths[0], neighbor_paths[1],
+                        image_h, image_w,
+                        (top, left, region_h, region_w))
+                elif cycle_path is None or not cycle_path.is_file():
+                    message = f'MV cycle缓存缺失: {cycle_path}'
+                    if self.mv_cycle_cache_required:
+                        raise FileNotFoundError(message)
+                    else:
+                        self._warn_cache_once(
+                            'cycle_missing', message + '，本次回退基础valid。')
+                else:
+                    cycle_cached = np.load(
+                        cycle_path, mmap_mode='r', allow_pickle=False)
+                    if (cycle_cached.ndim != 2
+                            or cycle_cached.shape != (image_h, image_w)):
+                        raise ValueError(
+                            f'cycle缓存尺寸{cycle_cached.shape}与'
+                            f'期望{(image_h, image_w)}不一致')
+                    cycle = cycle_cached[
+                        top:top + region_h, left:left + region_w]
+            # 保持mmap view；唯一一次float32拷贝在_normalized_mv_to_flow完成。
             return self._normalized_mv_to_flow(
-                normalized, source_h=image_h, source_w=image_w)
+                normalized, source_h=image_h, source_w=image_w,
+                cycle_confidence=cycle)
         except Exception as exc:
             message = f'MV缓存读取失败: {cache_path} ({exc})'
             if self.mv_cache_required:
@@ -545,7 +712,7 @@ class TierDataset(Dataset):
             self, scene: dict, gt_path: Path, crop_h: int, crop_w: int,
             image_h: int, image_w: int) -> Optional[Tuple[int, int]]:
         """从低分辨率motion sidecar选择小物体crop，避免读取整帧MV。"""
-        _, preview_path = self._mv_cache_paths(scene, gt_path)
+        _, preview_path, _ = self._mv_cache_paths(scene, gt_path)
         if preview_path is None:
             return None
         if not preview_path.is_file():
@@ -765,6 +932,23 @@ class TierDataset(Dataset):
             return len(self._val_index)
         return int(self._cum[-1])
 
+    def sample_metadata(self, index: int) -> dict:
+        """返回验证样本的数据域和帧率，不改变DataLoader四元组接口。"""
+        if self.split != 'val':
+            raise ValueError('sample_metadata仅用于val dataset')
+        scene_index, frame_index = self._val_index[index]
+        scene = self.scenes[scene_index]
+        parts = Path(scene['rel']).parts
+        domain = next(
+            (name for name in ('clean', 'final')
+             if any(part.lower().startswith(name) for part in parts)),
+            'other')
+        return {
+            'rel': scene['rel'], 'tier': scene['tier'],
+            'fps': scene['fps'], 'domain': domain,
+            'middle_index': frame_index + 1,
+        }
+
     def __getitem__(self, index: int):
         if self.split == 'val':
             si, i0 = self._val_index[index]
@@ -784,7 +968,7 @@ class TierDataset(Dataset):
         used_direct_cache_crop = False
         if want_mv:
             h, w = gt.shape[:2]
-            cache_path, _ = self._mv_cache_paths(scene, frames[ig])
+            cache_path, _, _ = self._mv_cache_paths(scene, frames[ig])
             can_direct_crop = (
                 cache_path is not None and cache_path.is_file()
                 and self.resize_hw is None and self.crop_hw is not None
@@ -795,14 +979,17 @@ class TierDataset(Dataset):
                     scene, frames[ig], crop_h, crop_w, h, w)
                 mv = self._read_mv_cache(
                     scene, frames[ig], h, w,
-                    crop=(top, left, crop_h, crop_w))
+                    crop=(top, left, crop_h, crop_w),
+                    neighbor_paths=(frames[ig - 1], frames[ig + 1]))
                 if mv is not None:
                     img0 = img0[top:top + crop_h, left:left + crop_w]
                     gt = gt[top:top + crop_h, left:left + crop_w]
                     img1 = img1[top:top + crop_h, left:left + crop_w]
                     used_direct_cache_crop = True
             elif self.mv_cache_dirname is not None:
-                mv = self._read_mv_cache(scene, frames[ig], h, w)
+                mv = self._read_mv_cache(
+                    scene, frames[ig], h, w,
+                    neighbor_paths=(frames[ig - 1], frames[ig + 1]))
             if mv is None:
                 mv = self._read_mv_pair(scene, frames[ig], h, w)  # EXR回退
 
@@ -825,7 +1012,9 @@ class TierDataset(Dataset):
         timestep = torch.tensor(float(t)).reshape(1, 1, 1)
         if mv is not None:
             flow_gt = torch.from_numpy(np.ascontiguousarray(mv)).permute(2, 0, 1).float()
-            has_mv = torch.tensor(1.0)
+            # cycle全部失败（如final多出尾帧）时保留图像重建，
+            # 但不再把该样本声称为可用teacher flow。
+            has_mv = torch.tensor(float(np.any(mv[..., 4] > 0)))
         else:
             flow_gt = torch.zeros(5, h, w)                      # 第5通道valid=0
             has_mv = torch.tensor(0.0)
