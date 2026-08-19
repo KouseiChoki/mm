@@ -82,6 +82,37 @@ The full machine-readable report is written to
 `record/explicit_matching_preflight/mms3_batch4_384x704.json` and is not
 required in Git.
 
+## mms2 synchronization and smoke result
+
+The experiment branch is installed as an isolated worktree at
+`/home/zhenying/qhong/repo/mm-explicit`, so the existing
+`pervfi-local-ablation` worktree and its uncommitted files are untouched.
+The baseline checkpoint, GMFlow checkpoint and four train/validation lists
+match the hashes above.  The fixed real test set also matches mms3 at 1659
+files and 19,698,369,552 bytes; an rsync dry run reports no differences.
+
+Environment: Python 3.10.20, PyTorch 2.11.0+cu130, CUDA 13.0, RTX 5090.
+
+- all 33 unit/config tests pass;
+- shape: batch 4, `384x704`, BF16;
+- one training step: 8.09 seconds;
+- peak allocated/reserved: 13.37/14.17 GiB;
+- zero-initialized matching residual before training: exactly `0.0 px`;
+- mean selected-query confidence on the same five X4K scenes: 0.1336;
+- mean backward-consistent ratio: 38.87%;
+- mean queries above confidence 0.25: 22.18%;
+- mean feature-similarity gain: 0.0938;
+- improved-query ratio: 86.72%;
+- mean proposed displacement: 20.08 px.
+
+The full report is written to
+`record/explicit_matching_preflight/mms2_batch4_384x704.json` in the mms2
+worktree.  The fixed real-evaluation dry run resolves all 16 sequences and
+1447 adjacent pairs.
+
+Recommended assignment: run the control on mms2 and the matching arm on mms3.
+Both use the same GPU model, software versions, checkpoint and data hashes.
+
 ## Gate criteria
 
 Stop the matching arm instead of extending it if any condition holds:
