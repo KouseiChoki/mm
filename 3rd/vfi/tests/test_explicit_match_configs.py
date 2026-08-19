@@ -33,6 +33,21 @@ class ExplicitMatchConfigTest(unittest.TestCase):
                 sum(phase['batch_counts'].values()),
                 phase['crop_sizes'][0][2])
 
+    def test_validation_is_limited_to_available_ablation_sources(self):
+        for path in (CONTROL, MATCH):
+            config = yaml.safe_load(path.read_text())
+            self.assertEqual(
+                set(config['data']['val_lists']),
+                {'hard', 'vimeo', 'xtrain'})
+
+    def test_matching_attention_budget_matches_training_crop(self):
+        config = yaml.safe_load(MATCH.read_text())
+        height, width, _ = config['data']['crop_sizes'][0]
+        expected_tokens = (height // 8) * (width // 8)
+        self.assertEqual(
+            config['model']['sparse_matching_max_feature_tokens'],
+            expected_tokens)
+
 
 if __name__ == '__main__':
     unittest.main()

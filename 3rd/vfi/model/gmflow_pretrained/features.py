@@ -5,10 +5,12 @@ repository.  This wrapper intentionally exposes only the 1/8 correspondence
 features used by SGM-VFI; it does not run GMFlow's dense flow decoder.
 """
 
+import math
 from pathlib import Path
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .backbone import CNNEncoder
 from .position import PositionEmbeddingSine
@@ -24,9 +26,13 @@ class GMFlowFeatureEncoder(nn.Module):
     """
 
     def __init__(self, checkpoint_path=None, checkpoint_required=True,
-                 feature_channels=128, num_transformer_layers=6):
+                 feature_channels=128, num_transformer_layers=6,
+                 max_feature_tokens=4224):
         super().__init__()
         self.feature_channels = int(feature_channels)
+        self.max_feature_tokens = int(max_feature_tokens)
+        if self.max_feature_tokens <= 0:
+            raise ValueError('max_feature_tokens must be positive')
         self.backbone = CNNEncoder(
             output_dim=self.feature_channels, num_output_scales=1)
         self.transformer = FeatureTransformer(
@@ -51,6 +57,26 @@ class GMFlowFeatureEncoder(nn.Module):
             elif checkpoint_required:
                 raise FileNotFoundError(
                     f'GMFlow checkpoint not found: {resolved}')
+
+    def _bounded_image_size(self, height, width):
+        """Limit full-attention tokens while preserving image aspect ratio."""
+        feature_height = math.ceil(height / 8)
+        feature_width = math.ceil(width / 8)
+        if feature_height * feature_width <= self.max_feature_tokens:
+            return height, width
+        scale = math.sqrt(
+            self.max_feature_tokens / (feature_height * feature_width))
+        target_height = max(8, int(height * scale) // 8 * 8)
+        target_width = max(8, int(width * scale) // 8 * 8)
+        while ((target_height // 8) * (target_width // 8)
+               > self.max_feature_tokens):
+            if target_width >= target_height and target_width > 8:
+                target_width -= 8
+            elif target_height > 8:
+                target_height -= 8
+            else:
+                break
+        return target_height, target_width
 
     @staticmethod
     def resolve_checkpoint(checkpoint_path):
@@ -89,6 +115,14 @@ class GMFlowFeatureEncoder(nn.Module):
         if img0.shape != img1.shape or img0.shape[1] != 3:
             raise ValueError(
                 'GMFlow features require equal-shape RGB endpoint tensors')
+        target_size = self._bounded_image_size(*img0.shape[-2:])
+        if target_size != img0.shape[-2:]:
+            img0 = F.interpolate(
+                img0, size=target_size, mode='bilinear',
+                align_corners=False, antialias=True)
+            img1 = F.interpolate(
+                img1, size=target_size, mode='bilinear',
+                align_corners=False, antialias=True)
         dtype = self.backbone.conv1.weight.dtype
         normalized0 = (
             img0.to(dtype=dtype) - self.image_mean.to(dtype=dtype)

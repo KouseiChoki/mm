@@ -14,7 +14,7 @@
 #     --config train_config_0729_lc_explicit_match_gmflow.yaml \
 #     --restore_ckpt ckpt/0729_lc_v3s2/0729_lc_v3s2_800.pkl
 
-exp_name: 0819_0729_lc_explicit_match_gmflow
+exp_name: 0819_0729_lc_explicit_match_gmflow_v2
 seed: 1234
 
 model:
@@ -70,6 +70,9 @@ model:
   sparse_matching_feature_source: gmflow
   sparse_matching_pretrained_path: pretrained/gmflow_sintel-0c07dcb3.pth
   sparse_matching_pretrained_required: true
+  # Full attention is quadratic. Match large validation frames after an
+  # aspect-preserving resize capped at the training crop's 48x88 tokens.
+  sparse_matching_max_feature_tokens: 4224
   sparse_matching_hidden_channels: 64
   sparse_matching_topk_ratio: 0.05
   sparse_matching_min_points: 64
@@ -139,13 +142,12 @@ data:
       framesteps: [4, 8, 16, 32]
       augment_profile: legacy
   val_lists:
-    all: val.txt
     hard: hard_val.txt
     vimeo: vimeo_val.txt
     xtrain: xtrain_val.txt
 
 phases:
-  - name: explicit_match_gmflow_gate
+  - name: explicit_match_gmflow_gate_v2
     epochs: 10
     steps_per_epoch: 401
     grad_accum_steps: 3

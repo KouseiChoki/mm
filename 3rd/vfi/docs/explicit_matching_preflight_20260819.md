@@ -113,6 +113,25 @@ worktree.  The fixed real-evaluation dry run resolves all 16 sequences and
 Recommended assignment: run the control on mms2 and the matching arm on mms3.
 Both use the same GPU model, software versions, checkpoint and data hashes.
 
+## First-launch corrections
+
+The first launch exposed two validation-only problems; neither arm produced a
+checkpoint, so both must restart from the fixed v2 configs and the original
+0729 checkpoint.
+
+- `val.txt` contained 44 predefined FlyingThings scenes that are unavailable
+  on mms2 and outside this hard/Vimeo/X4K ablation.  Both configs now validate
+  only `hard_val.txt`, `vimeo_val.txt` and `xtrain_val.txt`.
+- Full GMFlow attention is quadratic in feature pixels.  Native large-frame
+  validation could request another 11.6 GiB even though the 384x704 training
+  crop passed.  `sparse_matching_max_feature_tokens=4224` now preserves the
+  training path exactly and aspect-resizes only larger matching inputs before
+  mapping corrections back to native coordinates.
+
+A 2160x3840 GMFlow feature smoke now peaks at 0.57 GiB, and a full matching
+model forward on a native 768x768 X4K validation frame peaks at 1.29 GiB.
+Both return finite outputs.
+
 ## Gate criteria
 
 Stop the matching arm instead of extending it if any condition holds:

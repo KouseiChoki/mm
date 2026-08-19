@@ -11,6 +11,15 @@ CHECKPOINT = VFI_ROOT / 'pretrained' / 'gmflow_sintel-0c07dcb3.pth'
 
 
 class GMFlowFeatureEncoderTest(unittest.TestCase):
+    def test_large_images_are_bounded_to_attention_budget(self):
+        encoder = GMFlowFeatureEncoder(
+            checkpoint_path=None, max_feature_tokens=4224)
+        height, width = encoder._bounded_image_size(2160, 3840)
+        self.assertEqual(height % 8, 0)
+        self.assertEqual(width % 8, 0)
+        self.assertLessEqual((height // 8) * (width // 8), 4224)
+        self.assertAlmostEqual(width / height, 3840 / 2160, delta=0.08)
+
     @unittest.skipUnless(CHECKPOINT.is_file(), 'GMFlow checkpoint unavailable')
     def test_official_checkpoint_loads_and_returns_eighth_scale_features(self):
         encoder = GMFlowFeatureEncoder(CHECKPOINT).eval()

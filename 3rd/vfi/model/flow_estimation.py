@@ -228,7 +228,7 @@ class SparseGlobalMatcher(nn.Module):
 
     def _sparse_proposal(self, query_feature0, endpoint_feature0, feature1,
                          flow_low, score, timestep_low,
-                         current_feature1=None):
+                         current_feature1=None, effective_feature_scale=None):
         """Return sparse midpoint-preserving flow correction and support.
 
         All coordinates and flow values in this method use feature-grid
@@ -331,7 +331,9 @@ class SparseGlobalMatcher(nn.Module):
             confidence.detach() >= 0.25).to(confidence.dtype).mean()
 
         # Bound a single wrong global match before the learned adapter sees it.
-        max_displacement_low = self.max_displacement / self.feature_scale
+        feature_scale = float(
+            effective_feature_scale or self.feature_scale)
+        max_displacement_low = self.max_displacement / feature_scale
         delta_norm = torch.linalg.vector_norm(
             delta, dim=1, keepdim=True).clamp(min=1e-6)
         delta = delta * torch.clamp(
@@ -358,7 +360,7 @@ class SparseGlobalMatcher(nn.Module):
         confident = confidence[:, None].sum().clamp(min=1e-6)
         self.last_proposal_abs = (
             point_proposal.detach().abs().sum() / (4.0 * confident)
-            * self.feature_scale)
+            * feature_scale)
         return proposal, support
 
     def forward(self, feature0, feature1, img0, img1, flow, timestep):
@@ -397,7 +399,8 @@ class SparseGlobalMatcher(nn.Module):
 
         proposal, support = self._sparse_proposal(
             warped_feature0, feature0, feature1, flow_low, score,
-            timestep_low, current_feature1=warped_feature1)
+            timestep_low, current_feature1=warped_feature1,
+            effective_feature_scale=0.5 * (scale_x + scale_y))
         adapter_input = torch.cat((
             flow_low, proposal, support, feature_score[:, None],
             photo_score[:, None]), dim=1)
@@ -713,7 +716,9 @@ class MultiScaleFlow(nn.Module):
                     checkpoint_required=bool(kargs.get(
                         'sparse_matching_pretrained_required', True)),
                     feature_channels=feature_channels,
-                    num_transformer_layers=6)
+                    num_transformer_layers=6,
+                    max_feature_tokens=int(kargs.get(
+                        'sparse_matching_max_feature_tokens', 4224)))
                 for parameter in (
                         self.sparse_matching_feature_encoder.parameters()):
                     parameter.requires_grad_(False)
