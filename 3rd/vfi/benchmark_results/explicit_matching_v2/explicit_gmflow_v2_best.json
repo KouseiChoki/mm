@@ -1,0 +1,31 @@
+{
+  "model": "explicit_gmflow_v2_best",
+  "datasets": {
+    "vimeo90k": {
+      "protocol": "official tri_testlist; im1,im3 -> im2",
+      "cases_done": 3782,
+      "predicted_frames": 3782,
+      "psnr_sum": 134453.93964195251,
+      "ssim_sum": 3699.1040455698967,
+      "psnr": 35.5510152411297,
+      "ssim": 0.978081450441538,
+      "complete": true
+    },
+    "x4k1000fps_holdout": {
+      "protocol": "xtrain_val; 65-frame 768x768 clips; recursive 8x on 0->32 and 32->64; uint8 metric",
+      "cases_done": 36,
+      "scene_count": 18,
+      "predicted_frames": 252,
+      "psnr_sum": 8001.975761413574,
+      "ssim_sum": 229.37710011005402,
+      "psnr": 31.753872069101487,
+      "ssim": 0.9102265877383096,
+      "complete": true
+    }
+  },
+  "complete": true,
+  "checkpoint": "ckpt/0819_0729_lc_explicit_match_gmflow_v2/0819_0729_lc_explicit_match_gmflow_v2_best.pkl",
+  "tta": false,
+  "color_order": "RGB",
+  "metric": "per-frame mean PSNR + official VFIMamba ssim_matlab"
+}

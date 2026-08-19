@@ -1,5 +1,8 @@
 # Explicit matching preflight (2026-08-19)
 
+The completed A/B outcome is recorded in
+[`explicit_matching_result_20260819.md`](explicit_matching_result_20260819.md).
+
 ## Experiment contract
 
 Both arms restore `0729_lc_v3s2_800.pkl` without `--resume`.  They use the

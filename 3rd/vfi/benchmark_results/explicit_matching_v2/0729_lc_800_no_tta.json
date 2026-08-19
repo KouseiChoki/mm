@@ -1,0 +1,31 @@
+{
+  "model": "0729_lc_800_no_tta",
+  "datasets": {
+    "vimeo90k": {
+      "protocol": "official tri_testlist; im1,im3 -> im2",
+      "cases_done": 3782,
+      "predicted_frames": 3782,
+      "psnr_sum": 134389.28985404968,
+      "ssim_sum": 3698.9756113290787,
+      "psnr": 35.53392116712049,
+      "ssim": 0.9780474910970594,
+      "complete": true
+    },
+    "x4k1000fps_holdout": {
+      "protocol": "xtrain_val; 65-frame 768x768 clips; recursive 8x on 0->32 and 32->64; uint8 metric",
+      "cases_done": 36,
+      "scene_count": 18,
+      "predicted_frames": 252,
+      "psnr_sum": 7818.444412231445,
+      "ssim_sum": 227.7156652212143,
+      "psnr": 31.025573064410498,
+      "ssim": 0.9036335921476758,
+      "complete": true
+    }
+  },
+  "complete": true,
+  "checkpoint": "ckpt/0729_lc_v3s2/0729_lc_v3s2_800.pkl",
+  "tta": false,
+  "color_order": "RGB",
+  "metric": "per-frame mean PSNR + official VFIMamba ssim_matlab"
+}
