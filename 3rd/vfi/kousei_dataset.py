@@ -137,6 +137,8 @@ class TierDataset(Dataset):
     mv_symmetry_confidence : 是否将 |mv0+mv1| 作为软置信度; 默认关闭,
                              不再把非匀速运动误判为无效flow
     motion_aware_crop_prob : teacher样本以小运动连通域为中心裁剪的概率
+    interpolation_aware_crop_prob : 无MV样本按三帧线性插值残差选取
+                                     小面积难区裁剪的概率
     mv_cache_dirname : scene内离线MV缓存目录；None表示只读取EXR
     mv_cache_required : 为True时缓存缺失/损坏直接报错，禁止静默回退慢速EXR
     mv_cache_preview_stride : 小运动裁剪预览图的降采样步长
@@ -163,6 +165,8 @@ class TierDataset(Dataset):
                  small_motion_min_pixels: int = 8,
                  small_motion_max_ratio: float = 0.05,
                  motion_crop_jitter: float = 0.2,
+                 interpolation_aware_crop_prob: float = 0.0,
+                 interpolation_residual_threshold: float = 0.04,
                  mv_cache_dirname: Optional[str] = None,
                  mv_cache_required: bool = False,
                  mv_cache_preview_stride: int = 4,
@@ -198,6 +202,18 @@ class TierDataset(Dataset):
         self.small_motion_min_pixels = int(small_motion_min_pixels)
         self.small_motion_max_ratio = float(small_motion_max_ratio)
         self.motion_crop_jitter = float(motion_crop_jitter)
+        self.interpolation_aware_crop_prob = float(
+            interpolation_aware_crop_prob)
+        self.interpolation_residual_threshold = float(
+            interpolation_residual_threshold)
+        if not 0.0 <= self.interpolation_aware_crop_prob <= 1.0:
+            raise ValueError(
+                'interpolation_aware_crop_prob必须位于[0,1]，'
+                f'got {interpolation_aware_crop_prob!r}')
+        if self.interpolation_residual_threshold < 0.0:
+            raise ValueError(
+                'interpolation_residual_threshold必须>=0，'
+                f'got {interpolation_residual_threshold!r}')
         self.mv_cache_dirname = (
             str(mv_cache_dirname).strip() if mv_cache_dirname else None)
         self.mv_cache_required = bool(mv_cache_required)
@@ -821,7 +837,75 @@ class TierDataset(Dataset):
                                      constant_values=0))
         return padded
 
-    def _crop(self, arrs: List[np.ndarray]) -> List[np.ndarray]:
+    def _interpolation_crop_origin(
+            self, img0: np.ndarray, gt: np.ndarray, img1: np.ndarray,
+            timestep: float, crop_h: int, crop_w: int,
+            image_h: int, image_w: int) -> Optional[Tuple[int, int]]:
+        """用三帧线性插值残差定位无MV样本中的小面积难区。
+
+        旧的motion-aware crop只对teacher MV样本生效，常规训练集仍是
+        纯随机裁剪。这里利用训练时本来就存在的中间帧，寻找不能由两端
+        线性平均解释的小运动物体、遮挡边界和复杂纹理区域。它只改变
+        crop抽样分布，不向网络输入GT，也不会改变推理路径。
+        """
+        if min(image_h - crop_h, image_w - crop_w) < 0:
+            return None
+        # 大分辨率场景只在稀疏网格上选中心，避免给本就紧张的数据加载
+        # 再增加一次全分辨率connected-components扫描。
+        scale_ratio = max(image_h / crop_h, image_w / crop_w)
+        stride = max(1, min(4, int(scale_ratio)))
+        sampled0 = img0[::stride, ::stride]
+        sampled_gt = gt[::stride, ::stride]
+        sampled1 = img1[::stride, ::stride]
+        mix = (1.0 - float(timestep)) * sampled0.astype(np.float32)
+        mix += float(timestep) * sampled1.astype(np.float32)
+        residual = np.mean(
+            np.abs(sampled_gt.astype(np.float32) - mix), axis=-1) / 255.0
+        hard = (residual >= self.interpolation_residual_threshold).astype(
+            np.uint8)
+        cell_area = stride * stride
+        min_cells = max(
+            1, int(np.ceil(self.small_motion_min_pixels / cell_area)))
+        if int(hard.sum()) < min_cells:
+            return None
+
+        num_labels, labels, stats, centroids = (
+            cv2.connectedComponentsWithStats(hard, connectivity=8))
+        max_area = max(
+            self.small_motion_min_pixels,
+            int(crop_h * crop_w * self.small_motion_max_ratio))
+        component_sums = np.bincount(
+            labels.ravel(), weights=residual.ravel(), minlength=num_labels)
+        candidates = []
+        for label in range(1, num_labels):
+            cells = int(stats[label, cv2.CC_STAT_AREA])
+            area = cells * cell_area
+            if self.small_motion_min_pixels <= area <= max_area:
+                strength = float(component_sums[label] / max(cells, 1))
+                # 强残差、小面积目标优先，同时保留随机性避免反复抽同一位置。
+                candidates.append((label, area, strength))
+        if not candidates:
+            return None
+
+        label, _, _ = random.choices(
+            candidates,
+            weights=[strength / np.sqrt(area)
+                     for _, area, strength in candidates],
+            k=1)[0]
+        center_x, center_y = centroids[label]
+        center_x = (center_x + 0.5) * stride
+        center_y = (center_y + 0.5) * stride
+        jitter_y = int(
+            random.uniform(-1, 1) * crop_h * self.motion_crop_jitter)
+        jitter_x = int(
+            random.uniform(-1, 1) * crop_w * self.motion_crop_jitter)
+        top = int(round(center_y - crop_h / 2 + jitter_y))
+        left = int(round(center_x - crop_w / 2 + jitter_x))
+        return (min(max(top, 0), image_h - crop_h),
+                min(max(left, 0), image_w - crop_w))
+
+    def _crop(self, arrs: List[np.ndarray],
+              timestep: float = 0.5) -> List[np.ndarray]:
         if self.crop_hw is None:
             return arrs
         h, w = self.crop_hw
@@ -835,6 +919,10 @@ class TierDataset(Dataset):
         if (mv is not None and self.motion_aware_crop_prob > 0
                 and random.random() < self.motion_aware_crop_prob):
             origin = self._motion_crop_origin(mv, h, w, ih, iw)
+        elif (mv is None and self.interpolation_aware_crop_prob > 0
+              and random.random() < self.interpolation_aware_crop_prob):
+            origin = self._interpolation_crop_origin(
+                arrs[0], arrs[1], arrs[2], timestep, h, w, ih, iw)
         if origin is None:
             top = np.random.randint(0, ih - h + 1)
             left = np.random.randint(0, iw - w + 1)
@@ -996,7 +1084,7 @@ class TierDataset(Dataset):
         if not used_direct_cache_crop:
             arrs = [img0, gt, img1] + ([mv] if mv is not None else [])
             arrs = self._resize_before_crop(arrs)
-            arrs = self._crop(arrs)
+            arrs = self._crop(arrs, timestep=t)
             img0, gt, img1 = arrs[0], arrs[1], arrs[2]
             mv = arrs[3] if mv is not None else None
 

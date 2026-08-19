@@ -85,6 +85,46 @@ class CharbonnierLoss(torch.nn.Module):
         return torch.sqrt((input - target).square() + self.eps ** 2).mean()
 
 
+class EdgeCharbonnierLoss(torch.nn.Module):
+    """Low-memory luminance Sobel loss for motion/detail boundaries."""
+
+    def __init__(self, eps=1e-3):
+        super().__init__()
+        self.eps = float(eps)
+        sobel_x = torch.tensor([
+            [-1.0, 0.0, 1.0],
+            [-2.0, 0.0, 2.0],
+            [-1.0, 0.0, 1.0],
+        ]) / 4.0
+        kernels = torch.stack((sobel_x, sobel_x.t()), dim=0)[:, None]
+        self.register_buffer('kernels', kernels, persistent=False)
+
+    @staticmethod
+    def _gray(image):
+        if image.shape[1] != 3:
+            raise ValueError(
+                f'EdgeCharbonnierLoss expects RGB, got {image.shape}')
+        return (
+            0.2989 * image[:, 0:1]
+            + 0.5870 * image[:, 1:2]
+            + 0.1140 * image[:, 2:3]
+        )
+
+    def _gradient(self, image):
+        gray = F.pad(self._gray(image), (1, 1, 1, 1), mode='reflect')
+        return F.conv2d(gray, self.kernels.to(dtype=gray.dtype))
+
+    def forward(self, input, target, weight=None):
+        difference = self._gradient(input) - self._gradient(target)
+        error = torch.sqrt(difference.square() + self.eps ** 2).mean(
+            dim=1, keepdim=True)
+        if weight is None:
+            return error.mean()
+        if weight.ndim != 4 or weight.shape[1] != 1:
+            raise ValueError(f'edge weight must be [B,1,H,W], got {weight.shape}')
+        return (error * weight).sum() / weight.sum().clamp(min=1.0)
+
+
 class CensusLoss(torch.nn.Module):
     """Differentiable 7x7 census/soft-Hamming loss used by LC-Mamba.
 

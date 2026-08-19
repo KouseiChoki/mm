@@ -1,0 +1,143 @@
+# 0729 LC texture-preserving GT-MV repair (primary experiment).
+# Fine-tune from 0729_lc_v3s2_800.pkl; do not use --resume.
+exp_name: 0817_0729_lc_flowheads_cycle
+seed: 1234
+
+model:
+  # Preserve the exact 0729 architecture and reconstruction behavior.
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.01
+
+  # Proven FlyingThings hard-cycle supervision; deliberately much weaker than
+  # the failed 0.002/25%-teacher repair experiment.
+  flow_loss_weight: 0.0005
+  flow_loss_warmup_steps: 2000
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.5
+  flow_motion_gain: 0.5
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 3.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: true
+
+optim:
+  lr_max: 1.0e-5
+  lr_min: 1.0e-6
+  warmup_steps: 500
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 0.2
+  flow_lr_scale: 1.0
+  refine_lr_scale: 0.2
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [opensource, easy, normal, hard, teacher_flyingthings]
+  batch_size: 6
+  num_workers: 24
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes: [[384, 704, 6]]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+
+  mv_cache_dirname: mv_cache_f16
+  mv_cache_required: true
+  mv_cache_preview_stride: 4
+  mv_cycle_confidence: hard
+  mv_cycle_cache_required: true
+  val_mv_cycle_confidence: hard
+  # Aggregate legacy teacher validation lacks a few cycle sidecars.
+  val_mv_cycle_cache_required: false
+  mv_cycle_on_the_fly: false
+  val_mv_cycle_on_the_fly: false
+  motion_aware_crop_prob: 0.7
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  source_options:
+    teacher_flyingthings:
+      framesteps: [1]
+      augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    opensource: opensource_val.txt
+    teacher: teacher_val.txt
+    teacher_flyingthings: teacher_flyingthings_val.txt
+
+phases:
+  - name: lc_flowheads_cycle
+    # The previous FlyingThings run kept improving through epochs 130-140.
+    # Finish the controlled LR curve in 30 epochs, then consolidate at lr_min.
+    epochs: 150
+    steps_per_epoch: 401
+    grad_accum_steps: 2
+    lr_schedule: phase
+    lr_total_steps: 12030
+    # Train all three learned-feature flow heads plus both local IFBlocks;
+    # preserve the texture backbone and final refiner exactly as 0729.
+    trainable: flow_heads
+    local: true
+    crop_sizes: [[384, 704, 6]]
+    ratios: {opensource: 0.333333, easy: 0.166667, normal: 0.166667, hard: 0.166667, teacher_flyingthings: 0.166667}
+    batch_counts: {opensource: 2, easy: 1, normal: 1, hard: 1, teacher_flyingthings: 1}
+
+monitor:
+  record_root: record
+  eval_every_epochs: 5
+  save_every_epochs: 5
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps
+  dump_max: 20
+  mv_compare_every_epochs: 5
+  mv_compare_max_samples: 2
+  mv_compare_dir: mv_comparisons
+  best_metric: all/psnr
+  best_mode: max

@@ -1,0 +1,145 @@
+# P3 stage-1: two bilateral motion hypotheses for occlusion/boundary ambiguity.
+#
+# Restore 0729_lc_v3s2_800.pkl without --resume.  Hypothesis 0 is the frozen
+# 0729 flow/mask.  A small quarter-resolution branch predicts hypothesis 1,
+# and a zero-initialized signed mixing residual combines the two candidates
+# only where the primary warps disagree.  The first final output is exactly
+# the old 0729 result.  A light candidate-oracle loss directly trains the
+# alternative warp so this branch cannot repeat the inactive P1/P2 failure.
+exp_name: 0818_0729_lc_multi_hypothesis_smoke
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.01
+
+  # Direct supervision of the second warped candidate, restricted by the
+  # detached primary-warp disagreement map.  It trains candidate flow/mask
+  # even while the final zero-initialized mixing channel is still closed.
+  multi_hypothesis_oracle_weight: 0.1
+  multi_hypothesis_oracle_eps: 1.0e-3
+
+  flow_loss_weight: 0.0
+  flow_loss_warmup_steps: 0
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 0.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: true
+  content_aware_upsampling: false
+  sparse_matching: false
+
+  multi_hypothesis: true
+  multi_hypothesis_hidden_channels: 48
+  multi_hypothesis_work_scale: 4
+  multi_hypothesis_max_flow_delta: 4.0
+  multi_hypothesis_max_mask_delta: 2.0
+  multi_hypothesis_max_mix: 0.5
+  multi_hypothesis_disagreement_threshold: 0.03
+  multi_hypothesis_candidate_init_std: 0.005
+
+optim:
+  lr_max: 1.0e-4
+  lr_min: 1.0e-5
+  warmup_steps: 200
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 1.0
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, opensource]
+  batch_size: 6
+  num_workers: 24
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes: [[384, 704, 6]]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 0.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+  motion_aware_crop_prob: 0.0
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    opensource: opensource_val.txt
+
+phases:
+  - name: multi_hypothesis_smoke
+    # Ten epochs answer the earlier 5-epoch budget concern while remaining a
+    # short gate.  4010 optimizer updates see about 48k random crops at the
+    # effective batch size of 12.
+    epochs: 10
+    steps_per_epoch: 401
+    grad_accum_steps: 2
+    lr_schedule: phase
+    trainable: multi_hypothesis
+    local: true
+    crop_sizes: [[384, 704, 6]]
+    ratios: {easy: 0.166667, normal: 0.166667, hard: 0.166667, opensource: 0.5}
+    batch_counts: {easy: 1, normal: 1, hard: 1, opensource: 3}
+
+monitor:
+  record_root: record
+  # Five validation passes, same validation cost as the prior 5-epoch smoke.
+  eval_every_epochs: 2
+  save_every_epochs: 1
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps
+  dump_max: 10
+  mv_compare_every_epochs: 0
+  mv_compare_max_samples: 0
+  mv_compare_dir: mv_comparisons
+  best_metric: hard/psnr
+  best_mode: max

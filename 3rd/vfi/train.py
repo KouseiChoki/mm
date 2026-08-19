@@ -718,6 +718,10 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         'normalize_pixel_loss', 'residual_loss_weight',
         'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
         'lc_warp_weight', 'pervfi_mask_loss_weight',
+        'multi_hypothesis_oracle_weight', 'multi_hypothesis_oracle_eps',
+        'edge_loss_weight', 'edge_warp_loss_weight',
+        'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
+        'edge_charbonnier_eps',
     )                                                        # 训练侧消费, 不进结构
     _extra = {k: v for k, v in m.items()
               if k not in ('F', 'depth', 'M', 'version') + _train_keys}
@@ -743,13 +747,44 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         lc_census_weight=m.get('lc_census_weight', 1.0),
         lc_lap_weight=m.get('lc_lap_weight', 1.0),
         lc_warp_weight=m.get('lc_warp_weight', 0.5),
-        pervfi_mask_loss_weight=m.get('pervfi_mask_loss_weight', 0.0))
+        pervfi_mask_loss_weight=m.get('pervfi_mask_loss_weight', 0.0),
+        multi_hypothesis_oracle_weight=m.get(
+            'multi_hypothesis_oracle_weight', 0.0),
+        multi_hypothesis_oracle_eps=m.get(
+            'multi_hypothesis_oracle_eps', 1e-3),
+        edge_loss_weight=m.get('edge_loss_weight', 0.0),
+        edge_warp_loss_weight=m.get('edge_warp_loss_weight', 0.0),
+        edge_motion_gain=m.get('edge_motion_gain', 0.0),
+        edge_motion_scale=m.get('edge_motion_scale', 0.1),
+        edge_weight_cap=m.get('edge_weight_cap', 4.0),
+        edge_charbonnier_eps=m.get('edge_charbonnier_eps', 1e-3))
     if m.get('blend_mode', 'soft') == 'pervfi':
         print('[blend] PerVFI-inspired quasi-binary asymmetric blending: '
               f'temperature={m.get("pervfi_mask_temperature", 0.5)} '
               f'disagreement={m.get("pervfi_disagreement_threshold", 0.03)} '
               f'strength={m.get("pervfi_blend_strength", 1.0)} '
               f'mask_loss={m.get("pervfi_mask_loss_weight", 0.0)}')
+    if m.get('sparse_matching', False):
+        print('[matching] sparse global correspondence: '
+              'feature=1/8 '
+              f'points={m.get("sparse_matching_topk_ratio", 0.02):.2%} '
+              f'max_points={m.get("sparse_matching_max_points", 128)} '
+              f'max_displacement='
+              f'{m.get("sparse_matching_max_displacement", 96.0):g}px')
+    if m.get('multi_hypothesis', False):
+        print('[multi-hypothesis] primary + one local alternative: '
+              f'work_scale=1/{m.get("multi_hypothesis_work_scale", 4)} '
+              f'max_flow_delta='
+              f'{m.get("multi_hypothesis_max_flow_delta", 4.0):g}px '
+              f'max_mix={m.get("multi_hypothesis_max_mix", 0.5):g} '
+              f'oracle_weight='
+              f'{m.get("multi_hypothesis_oracle_weight", 0.0):g}')
+    if (m.get('edge_loss_weight', 0.0) > 0.0
+            or m.get('edge_warp_loss_weight', 0.0) > 0.0):
+        print('[edge-loss] motion-weighted luminance Sobel: '
+              f'final={m.get("edge_loss_weight", 0.0):g} '
+              f'last_warp={m.get("edge_warp_loss_weight", 0.0):g} '
+              f'motion_gain={m.get("edge_motion_gain", 0.0):g}')
     if m['loss_type'] == 'lc':
         print('[loss] LC-Mamba: Charbonnier + Census7x7 + final Lap '
               f'+ {m.get("lc_warp_weight", 0.5)} * Σ(stage warp Lap)')
@@ -803,6 +838,10 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         small_motion_min_pixels=d.get('small_motion_min_pixels', 8),
         small_motion_max_ratio=d.get('small_motion_max_ratio', 0.05),
         motion_crop_jitter=d.get('motion_crop_jitter', 0.2),
+        interpolation_aware_crop_prob=d.get(
+            'interpolation_aware_crop_prob', 0.0),
+        interpolation_residual_threshold=d.get(
+            'interpolation_residual_threshold', 0.04),
         mv_cache_dirname=d.get('mv_cache_dirname'),
         mv_cache_required=d.get('mv_cache_required', False),
         mv_cache_preview_stride=d.get('mv_cache_preview_stride', 4),
@@ -997,11 +1036,35 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
 
                 print_every = max(int(mon.get('print_every_steps', 1)), 1)
                 if i % print_every == 0 or i + 1 == phase_steps_per_epoch:
+                    caun_delta = model.last_loss_components.get('caun_delta')
+                    caun_text = (
+                        f' caun_delta:{caun_delta.item():.4f}px'
+                        if caun_delta is not None else '')
+                    sparse_delta = model.last_loss_components.get(
+                        'sparse_match_delta')
+                    sparse_confidence = model.last_loss_components.get(
+                        'sparse_match_confidence')
+                    sparse_text = (
+                        f' sgm_delta:{sparse_delta.item():.4f}px'
+                        f' conf:{sparse_confidence.item():.3f}'
+                        if sparse_delta is not None else '')
+                    multi_delta = model.last_loss_components.get(
+                        'multi_hypothesis_output_delta')
+                    multi_flow = model.last_loss_components.get(
+                        'multi_hypothesis_flow_delta')
+                    multi_mix = model.last_loss_components.get(
+                        'multi_hypothesis_mix')
+                    multi_text = (
+                        f' mh_delta:{multi_delta.item():.5f}'
+                        f' alt_flow:{multi_flow.item():.3f}px'
+                        f' mix:{multi_mix.item():.4f}'
+                        if multi_delta is not None else '')
                     print(f'[{phase["name"]}] epoch:{epoch_global} '
                           f'{i}/{phase_steps_per_epoch} '
                           f'time:{data_time:.2f}+{train_time:.2f} '
                           f'loss:{loss:.4f} ema:{loss_ema:.4f} '
-                          f'flow:{loss_flow:.3f} lr:{lr:.2e}')
+                          f'flow:{loss_flow:.3f} lr:{lr:.2e}'
+                          f'{caun_text}{sparse_text}{multi_text}')
                 step += 1
 
             epoch_global += 1

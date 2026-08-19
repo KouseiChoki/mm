@@ -63,6 +63,474 @@ class Head(nn.Module):
         mask = x[:, 4:5]
         return flow, mask
 
+
+class ContentAwareFlowUpsampler(nn.Module):
+    """Feature-guided residual-kernel flow upsampling.
+
+    The learned kernel only changes the four flow channels.  The caller keeps
+    the historical bilinear path for mask logits, avoiding the flow/mask
+    coupling that made the teacher-flow repair regress in real footage.
+
+    The residual-kernel predictor's final layer is initialized to zero, so an
+    old checkpoint is bit-identical to bilinear upsampling while gradients can
+    train that layer from the first step.  Kernel weights are forced to sum to
+    zero over each 3x3 neighborhood, preserving constant flow fields and
+    limiting the branch to content-aware boundary corrections.
+    """
+
+    def __init__(self, guidance_channels, factor, hidden_channels=32,
+                 residual_scale=0.25):
+        super().__init__()
+        if factor <= 1:
+            raise ValueError(f'factor must be > 1, got {factor}')
+        self.factor = int(factor)
+        self.residual_scale = float(residual_scale)
+        if not 0.0 < self.residual_scale <= 1.0:
+            raise ValueError(
+                f'residual_scale must be in (0,1], got {residual_scale}')
+        hidden_channels = max(int(hidden_channels), 8)
+        self.kernel = nn.Sequential(
+            conv(guidance_channels + 4, hidden_channels),
+            conv(hidden_channels, hidden_channels),
+            nn.Conv2d(hidden_channels, 9 * self.factor * self.factor, 1),
+        )
+        # Exact no-op initialization with an immediately trainable output
+        # projection.  Earlier layers start receiving gradients after the
+        # first optimizer update.
+        nn.init.zeros_(self.kernel[-1].weight)
+        nn.init.zeros_(self.kernel[-1].bias)
+        self.last_residual_abs = None
+
+    def _residual_upsample(self, low_flow, weights):
+        batch, channels, height, width = low_flow.shape
+        factor = self.factor
+        weights = weights.view(
+            batch, 1, 9, factor, factor, height, width)
+        weights = torch.tanh(weights)
+        weights = weights - weights.mean(dim=2, keepdim=True)
+        padded_flow = F.pad(low_flow, (1, 1, 1, 1), mode='replicate')
+        patches = F.unfold(padded_flow, kernel_size=3)
+        patches = patches.view(
+            batch, channels, 9, 1, 1, height, width)
+        upsampled = torch.sum(weights * patches, dim=2)
+        return upsampled.permute(0, 1, 4, 2, 5, 3).reshape(
+            batch, channels, height * factor, width * factor)
+
+    def forward(self, low_flow, guidance):
+        factor = self.factor
+        target_size = (
+            low_flow.shape[-2] * factor, low_flow.shape[-1] * factor)
+        bilinear = F.interpolate(
+            low_flow, size=target_size, mode='bilinear',
+            align_corners=False) * factor
+        guidance_low = F.interpolate(
+            guidance, size=low_flow.shape[-2:], mode='bilinear',
+            align_corners=False)
+        weights = self.kernel(torch.cat((guidance_low, low_flow), dim=1))
+        residual = self._residual_upsample(low_flow, weights)
+        residual = residual * (factor * self.residual_scale)
+        self.last_residual_abs = residual.detach().abs().mean()
+        return bilinear + residual
+
+
+class SparseGlobalMatcher(nn.Module):
+    """Sparse all-pairs correspondence compensation on a low-res feature map.
+
+    This is a lightweight SGM-VFI-inspired ablation, not a reproduction of
+    SGM-VFI's GMFlow branch.  It keeps the converged local flow as the primary
+    estimate, selects only the highest-error target-grid positions, matches
+    them globally between the two endpoint feature maps, rejects ambiguous
+    matches with a top-1 margin and a backward consistency check, then learns
+    a small spatial adapter that merges the sparse proposal into the flow.
+
+    The adapter's output layer is zero initialized.  Enabling this module on
+    an old checkpoint is therefore an exact inference no-op, while the output
+    layer receives gradients from the first training step.
+    """
+
+    def __init__(self, feature_channels, feature_scale=8, hidden_channels=32,
+                 topk_ratio=0.02, min_points=16, max_points=128,
+                 confidence_scale=0.05, mutual_sigma=1.5,
+                 max_displacement=96.0, residual_scale=0.5,
+                 propagation_radius=2, photometric_weight=0.5):
+        super().__init__()
+        self.feature_channels = int(feature_channels)
+        self.feature_scale = int(feature_scale)
+        self.topk_ratio = float(topk_ratio)
+        self.min_points = int(min_points)
+        self.max_points = int(max_points)
+        self.confidence_scale = float(confidence_scale)
+        self.mutual_sigma = float(mutual_sigma)
+        self.max_displacement = float(max_displacement)
+        self.residual_scale = float(residual_scale)
+        self.propagation_radius = int(propagation_radius)
+        self.photometric_weight = float(photometric_weight)
+
+        if self.feature_scale <= 1:
+            raise ValueError('feature_scale must be > 1')
+        if not 0.0 < self.topk_ratio <= 1.0:
+            raise ValueError('topk_ratio must be in (0, 1]')
+        if self.min_points < 1 or self.max_points < self.min_points:
+            raise ValueError('require 1 <= min_points <= max_points')
+        if self.confidence_scale <= 0.0 or self.mutual_sigma <= 0.0:
+            raise ValueError('confidence_scale and mutual_sigma must be > 0')
+        if self.max_displacement <= 0.0:
+            raise ValueError('max_displacement must be > 0')
+        if not 0.0 < self.residual_scale <= 1.0:
+            raise ValueError('residual_scale must be in (0, 1]')
+        if self.propagation_radius < 0:
+            raise ValueError('propagation_radius must be >= 0')
+
+        # flow(4), sparse proposal(4), support confidence(1), feature
+        # disagreement(1), photometric disagreement(1).
+        adapter_in_channels = 11
+        hidden_channels = max(int(hidden_channels), 8)
+        self.adapter = nn.Sequential(
+            conv(adapter_in_channels, hidden_channels),
+            conv(hidden_channels, hidden_channels),
+            nn.Conv2d(hidden_channels, 4, 3, 1, 1),
+        )
+        nn.init.zeros_(self.adapter[-1].weight)
+        nn.init.zeros_(self.adapter[-1].bias)
+
+        self.last_selected_ratio = None
+        self.last_confidence = None
+        self.last_proposal_abs = None
+        self.last_residual_abs = None
+
+    @staticmethod
+    def _coordinate_grid(batch, height, width, device, dtype):
+        yy, xx = torch.meshgrid(
+            torch.arange(height, device=device, dtype=dtype),
+            torch.arange(width, device=device, dtype=dtype),
+            indexing='ij')
+        return torch.stack((xx, yy), dim=0).unsqueeze(0).expand(
+            batch, -1, -1, -1)
+
+    @staticmethod
+    def _gather_flat(values, indices):
+        """Gather [B,C,N] values with [B,K] indices -> [B,C,K]."""
+        return torch.gather(
+            values, 2, indices[:, None].expand(-1, values.shape[1], -1))
+
+    def _point_count(self, height, width):
+        points = round(height * width * self.topk_ratio)
+        return min(max(points, self.min_points), self.max_points,
+                   height * width)
+
+    def _sparse_proposal(self, query_feature0, endpoint_feature0, feature1,
+                         flow_low, score, timestep_low):
+        """Return sparse midpoint-preserving flow correction and support.
+
+        All coordinates and flow values in this method use feature-grid
+        pixels.  Matching a frame-0 endpoint to a shifted frame-1 endpoint by
+        ``delta`` is converted to ``[-t*delta, (1-t)*delta]``.  This preserves
+        the target point because (1-t)*d0 + t*d1 remains zero.
+        """
+        batch, _, height, width = query_feature0.shape
+        num_positions = height * width
+        num_points = self._point_count(height, width)
+
+        query0 = F.normalize(query_feature0, dim=1, eps=1e-6)
+        endpoint0_features = F.normalize(
+            endpoint_feature0, dim=1, eps=1e-6)
+        norm1 = F.normalize(feature1, dim=1, eps=1e-6)
+        flat_query0 = query0.flatten(2)
+        flat_endpoint0 = endpoint0_features.flatten(2)
+        flat1 = norm1.flatten(2)
+        flat_score = score.flatten(1)
+        point_indices = flat_score.topk(
+            num_points, dim=1, largest=True, sorted=False).indices
+
+        queries = self._gather_flat(
+            flat_query0, point_indices).transpose(1, 2)
+        correlations = torch.bmm(queries, flat1)
+        top_values, top_indices = correlations.topk(
+            k=min(2, num_positions), dim=2)
+        match_indices = top_indices[:, :, 0]
+        if num_positions > 1:
+            margin = top_values[:, :, 0] - top_values[:, :, 1]
+        else:
+            margin = torch.ones_like(top_values[:, :, 0])
+        margin_confidence = (
+            margin / self.confidence_scale).clamp(0.0, 1.0)
+
+        grid = self._coordinate_grid(
+            batch, height, width, query_feature0.device, query_feature0.dtype)
+        flat_grid = grid.flatten(2)
+        target_points = self._gather_flat(flat_grid, point_indices)
+        flow0_points = self._gather_flat(
+            flow_low[:, :2].flatten(2), point_indices)
+        flow1_points = self._gather_flat(
+            flow_low[:, 2:4].flatten(2), point_indices)
+        endpoint0 = target_points + flow0_points
+        endpoint1_current = target_points + flow1_points
+
+        match_x = (match_indices % width).to(query_feature0.dtype)
+        match_y = torch.div(
+            match_indices, width, rounding_mode='floor').to(
+                query_feature0.dtype)
+        endpoint1_match = torch.stack((match_x, match_y), dim=1)
+        delta = endpoint1_match - endpoint1_current
+
+        # A reverse match is cheap because it is evaluated only for the same
+        # sparse endpoints.  It strongly suppresses repeated-texture aliases.
+        reverse_queries = self._gather_flat(
+            flat1, match_indices).transpose(1, 2)
+        reverse_indices = torch.bmm(
+            reverse_queries, flat_endpoint0).argmax(dim=2)
+        reverse_x = (reverse_indices % width).to(query_feature0.dtype)
+        reverse_y = torch.div(
+            reverse_indices, width, rounding_mode='floor').to(
+                query_feature0.dtype)
+        reverse_points = torch.stack((reverse_x, reverse_y), dim=1)
+        mutual_error = torch.linalg.vector_norm(
+            reverse_points - endpoint0, dim=1)
+        mutual_confidence = torch.exp(
+            -0.5 * (mutual_error / self.mutual_sigma).square())
+
+        coordinate_valid = (
+            (endpoint0[:, 0] >= 0)
+            & (endpoint0[:, 0] <= width - 1)
+            & (endpoint0[:, 1] >= 0)
+            & (endpoint0[:, 1] <= height - 1)
+            & (endpoint1_current[:, 0] >= 0)
+            & (endpoint1_current[:, 0] <= width - 1)
+            & (endpoint1_current[:, 1] >= 0)
+            & (endpoint1_current[:, 1] <= height - 1))
+        confidence = (
+            margin_confidence * mutual_confidence
+            * coordinate_valid.to(margin_confidence.dtype))
+
+        # Bound a single wrong global match before the learned adapter sees it.
+        max_displacement_low = self.max_displacement / self.feature_scale
+        delta_norm = torch.linalg.vector_norm(
+            delta, dim=1, keepdim=True).clamp(min=1e-6)
+        delta = delta * torch.clamp(
+            max_displacement_low / delta_norm, max=1.0)
+
+        timestep_points = self._gather_flat(
+            timestep_low.flatten(2), point_indices)
+        correction0 = -timestep_points * delta
+        correction1 = (1.0 - timestep_points) * delta
+        point_proposal = torch.cat((correction0, correction1), dim=1)
+        point_proposal = point_proposal * confidence[:, None]
+
+        proposal = flow_low.new_zeros(batch, 4, num_positions)
+        proposal.scatter_(
+            2, point_indices[:, None].expand(-1, 4, -1), point_proposal)
+        support = flow_low.new_zeros(batch, 1, num_positions)
+        support.scatter_(2, point_indices[:, None], confidence[:, None])
+        proposal = proposal.view(batch, 4, height, width)
+        support = support.view(batch, 1, height, width)
+
+        self.last_selected_ratio = flow_low.new_tensor(
+            num_points / max(num_positions, 1))
+        self.last_confidence = confidence.detach().mean()
+        confident = confidence[:, None].sum().clamp(min=1e-6)
+        self.last_proposal_abs = (
+            point_proposal.detach().abs().sum() / (4.0 * confident)
+            * self.feature_scale)
+        return proposal, support
+
+    def forward(self, feature0, feature1, img0, img1, flow, timestep):
+        feature_size = feature0.shape[-2:]
+        height, width = feature_size
+        image_height, image_width = flow.shape[-2:]
+        scale_x = image_width / width
+        scale_y = image_height / height
+
+        flow_low = F.interpolate(
+            flow, size=feature_size, mode='bilinear', align_corners=False)
+        flow_low = flow_low.clone()
+        flow_low[:, 0::2] /= scale_x
+        flow_low[:, 1::2] /= scale_y
+
+        warped_feature0 = warp(feature0, flow_low[:, :2])
+        warped_feature1 = warp(feature1, flow_low[:, 2:4])
+        feature_score = 1.0 - F.cosine_similarity(
+            warped_feature0, warped_feature1, dim=1, eps=1e-6)
+
+        image0_low = F.interpolate(
+            img0, size=feature_size, mode='bilinear', align_corners=False)
+        image1_low = F.interpolate(
+            img1, size=feature_size, mode='bilinear', align_corners=False)
+        warped_image0 = warp(image0_low, flow_low[:, :2])
+        warped_image1 = warp(image1_low, flow_low[:, 2:4])
+        photo_score = (warped_image0 - warped_image1).abs().mean(dim=1)
+        score = feature_score + self.photometric_weight * photo_score
+
+        if torch.is_tensor(timestep):
+            timestep_low = F.interpolate(
+                timestep, size=feature_size, mode='nearest')
+        else:
+            timestep_low = flow_low[:, :1].new_full(
+                (flow_low.shape[0], 1, height, width), float(timestep))
+
+        proposal, support = self._sparse_proposal(
+            warped_feature0, feature0, feature1, flow_low, score,
+            timestep_low)
+        adapter_input = torch.cat((
+            flow_low, proposal, support, feature_score[:, None],
+            photo_score[:, None]), dim=1)
+        raw_residual = self.adapter(adapter_input)
+        max_residual_low = (
+            self.max_displacement / self.feature_scale
+            * self.residual_scale)
+        residual_low = torch.tanh(raw_residual) * max_residual_low
+
+        if self.propagation_radius > 0:
+            kernel = 2 * self.propagation_radius + 1
+            support_context = F.max_pool2d(
+                support, kernel_size=kernel, stride=1,
+                padding=self.propagation_radius)
+            residual_low = residual_low * support_context
+
+        residual = F.interpolate(
+            residual_low, size=flow.shape[-2:], mode='bilinear',
+            align_corners=False)
+        residual = residual.clone()
+        residual[:, 0::2] *= scale_x
+        residual[:, 1::2] *= scale_y
+        self.last_residual_abs = residual.detach().abs().mean()
+        return flow + residual
+
+
+class MultiHypothesisBranch(nn.Module):
+    """Generate and fuse one alternative bilateral motion hypothesis.
+
+    AMT predicts several fine-grained bilateral flow pairs, backward-warps
+    each pair, then combines the candidate images.  This lightweight ablation
+    keeps the converged 0729 flow as hypothesis 0 and predicts only one local
+    alternative at quarter resolution.  A signed, bounded mixing residual is
+    enabled only where the two primary warps disagree.
+
+    The alternative flow head starts with a very small non-zero initialization
+    so it can receive direct candidate supervision.  The mixing channel is
+    initialized to exactly zero, making the released model output bit-identical
+    to the original checkpoint on its first forward pass.
+    """
+
+    def __init__(self, hidden_channels=48, work_scale=4,
+                 max_flow_delta=4.0, max_mask_delta=2.0, max_mix=0.5,
+                 disagreement_threshold=0.03, candidate_init_std=0.005):
+        super().__init__()
+        self.work_scale = int(work_scale)
+        self.max_flow_delta = float(max_flow_delta)
+        self.max_mask_delta = float(max_mask_delta)
+        self.max_mix = float(max_mix)
+        self.disagreement_threshold = float(disagreement_threshold)
+        self.candidate_init_std = float(candidate_init_std)
+        if self.work_scale < 1:
+            raise ValueError('work_scale must be >= 1')
+        if self.max_flow_delta <= 0.0 or self.max_mask_delta <= 0.0:
+            raise ValueError('flow/mask delta limits must be > 0')
+        if not 0.0 < self.max_mix <= 1.0:
+            raise ValueError('max_mix must be in (0, 1]')
+        if self.disagreement_threshold <= 0.0:
+            raise ValueError('disagreement_threshold must be > 0')
+        if self.candidate_init_std <= 0.0:
+            raise ValueError('candidate_init_std must be > 0')
+
+        hidden_channels = max(int(hidden_channels), 8)
+        # img0/img1(6), primary warps(6), flow(4), mask/timestep(2) = 18.
+        self.body = nn.Sequential(
+            conv(18, hidden_channels),
+            conv(hidden_channels, hidden_channels),
+            conv(hidden_channels, hidden_channels),
+        )
+        # alternative flow residual(4), alternative mask residual(1),
+        # signed candidate-mixing residual(1).
+        self.output = nn.Conv2d(hidden_channels, 6, 3, 1, 1)
+        with torch.no_grad():
+            nn.init.normal_(
+                self.output.weight[:5], std=self.candidate_init_std)
+            nn.init.zeros_(self.output.bias[:5])
+            nn.init.zeros_(self.output.weight[5:6])
+            nn.init.zeros_(self.output.bias[5:6])
+
+        self.last_alternative_merged = None
+        self.last_region_gate = None
+        self.last_flow_delta_abs = None
+        self.last_candidate_delta_abs = None
+        self.last_mix_abs = None
+        self.last_output_delta_abs = None
+        self.last_region_ratio = None
+
+    def _low_resolution_inputs(self, img0, img1, warped_img0, warped_img1,
+                               flow, mask_logits, timestep):
+        if self.work_scale == 1:
+            return torch.cat((
+                img0, img1, warped_img0, warped_img1, flow, mask_logits,
+                timestep), dim=1)
+        size = (
+            max(img0.shape[-2] // self.work_scale, 1),
+            max(img0.shape[-1] // self.work_scale, 1))
+        images = [
+            F.interpolate(value, size=size, mode='bilinear',
+                          align_corners=False)
+            for value in (img0, img1, warped_img0, warped_img1)
+        ]
+        flow_low = F.interpolate(
+            flow, size=size, mode='bilinear', align_corners=False)
+        scale_y = img0.shape[-2] / size[0]
+        scale_x = img0.shape[-1] / size[1]
+        flow_low = flow_low.clone()
+        flow_low[:, 0::2] /= scale_x
+        flow_low[:, 1::2] /= scale_y
+        mask_low = F.interpolate(
+            mask_logits, size=size, mode='bilinear', align_corners=False)
+        timestep_low = F.interpolate(timestep, size=size, mode='nearest')
+        return torch.cat((*images, flow_low, mask_low, timestep_low), dim=1)
+
+    def predict_alternative(self, img0, img1, warped_img0, warped_img1,
+                            flow, mask_logits, timestep):
+        low_inputs = self._low_resolution_inputs(
+            img0, img1, warped_img0, warped_img1, flow, mask_logits,
+            timestep)
+        raw = self.output(self.body(low_inputs))
+        target_size = flow.shape[-2:]
+
+        flow_delta_low = torch.tanh(raw[:, :4]) * (
+            self.max_flow_delta / self.work_scale)
+        flow_delta = F.interpolate(
+            flow_delta_low, size=target_size, mode='bilinear',
+            align_corners=False) * self.work_scale
+        mask_delta = F.interpolate(
+            torch.tanh(raw[:, 4:5]) * self.max_mask_delta,
+            size=target_size, mode='bilinear', align_corners=False)
+        mix_logits = F.interpolate(
+            raw[:, 5:6], size=target_size, mode='bilinear',
+            align_corners=False)
+        return flow + flow_delta, mask_logits + mask_delta, mix_logits
+
+    def combine(self, primary_merged, alternative_merged, warped_img0,
+                warped_img1, mix_logits, flow, alternative_flow):
+        disagreement = (
+            warped_img0 - warped_img1).abs().mean(dim=1, keepdim=True)
+        region_gate = (
+            disagreement / self.disagreement_threshold).clamp(0.0, 1.0)
+        # The primary branch cannot game the gate while it is frozen during
+        # the stage-1 ablation.  Detaching also keeps the branch's semantics
+        # explicit if a later experiment unfreezes the full network.
+        region_gate = region_gate.detach()
+        mix = self.max_mix * torch.tanh(mix_logits) * region_gate
+        combined = primary_merged + mix * (
+            alternative_merged - primary_merged)
+
+        output_delta = combined - primary_merged
+        self.last_alternative_merged = alternative_merged
+        self.last_region_gate = region_gate
+        self.last_flow_delta_abs = (
+            alternative_flow - flow).detach().abs().mean()
+        self.last_candidate_delta_abs = (
+            alternative_merged - primary_merged).detach().abs().mean()
+        self.last_mix_abs = mix.detach().abs().mean()
+        self.last_output_delta_abs = output_delta.detach().abs().mean()
+        self.last_region_ratio = (
+            region_gate.detach() > 0.5).to(region_gate.dtype).mean()
+        return combined
+
 class IFBlock(nn.Module):
     """局部精化块。
 
@@ -76,7 +544,10 @@ class IFBlock(nn.Module):
     卷积主体的实际工作分辨率 = 全分辨率 / (scale * down)。
     """
 
-    def __init__(self, in_planes, c, scale, down=4, blocks=8, zero_init=False):
+    def __init__(self, in_planes, c, scale, down=4, blocks=8, zero_init=False,
+                 content_aware_upsampling=False,
+                 content_aware_hidden_channels=32,
+                 content_aware_residual_scale=0.25):
         super(IFBlock, self).__init__()
         assert down in (1, 2, 4), f'down must be 1/2/4, got {down}'
         self.scale = scale
@@ -113,18 +584,40 @@ class IFBlock(nn.Module):
         #   down>=2: 预测网格 = 全分辨率/(scale*down/2)
         #   down==1: 预测网格 = 全分辨率/scale
         self.up_factor = scale * down // 2 if down > 1 else scale
+        self.content_upsampler = None
+        if content_aware_upsampling:
+            if self.up_factor <= 1:
+                raise ValueError(
+                    'content-aware upsampling requires up_factor > 1')
+            self.content_upsampler = ContentAwareFlowUpsampler(
+                # IFBlock.in_planes includes the four flow channels appended
+                # in forward; guidance is the image/warp/mask/time part only.
+                guidance_channels=in_planes - 4,
+                factor=self.up_factor,
+                hidden_channels=content_aware_hidden_channels,
+                residual_scale=content_aware_residual_scale)
 
     def forward(self, x, flow):
         scale = self.scale
         if scale != 1:
             x = F.interpolate(x, scale_factor = 1. / scale, mode="bilinear", align_corners=False)
             flow = F.interpolate(flow, scale_factor = 1. / scale, mode="bilinear", align_corners=False) * 1. / scale
+        guidance = x
         x = torch.cat((x, flow), 1)
         x = self.conv0(x)
         x = self.convblock(x) + x
         tmp = self.lastconv(x)
         if self.up_factor != 1:
-            tmp = F.interpolate(tmp, scale_factor = self.up_factor, mode="bilinear", align_corners=False)
+            if self.content_upsampler is not None:
+                flow = self.content_upsampler(tmp[:, :4], guidance)
+                # Deliberately preserve historical mask interpolation.
+                mask = F.interpolate(
+                    tmp[:, 4:5], scale_factor=self.up_factor,
+                    mode="bilinear", align_corners=False)
+                return flow, mask
+            tmp = F.interpolate(
+                tmp, scale_factor=self.up_factor,
+                mode="bilinear", align_corners=False)
         flow = tmp[:, :4] * self.up_factor
         mask = tmp[:, 4:5]
         return flow, mask
@@ -148,11 +641,73 @@ class MultiScaleFlow(nn.Module):
         # 每级为 [scale, down, 通道倍率, blocks]，工作分辨率分别为 1/8、1/4。
         base_c = kargs['local_hidden_dims']
         local_zero_init = kargs.get('local_zero_init', False)
+        content_aware_upsampling = bool(
+            kargs.get('content_aware_upsampling', False))
+        content_aware_hidden_channels = int(
+            kargs.get('content_aware_hidden_channels', 32))
+        content_aware_residual_scale = float(
+            kargs.get('content_aware_residual_scale', 0.25))
         self.local_block = nn.ModuleList([
             IFBlock(18, c=max(int(base_c * cr) // 2 * 2, 16), scale=s, down=d,
-                    blocks=b, zero_init=local_zero_init)
-            for (s, d, cr, b) in LOCAL_CFG
+                    blocks=b, zero_init=local_zero_init,
+                    content_aware_upsampling=(
+                        content_aware_upsampling
+                        and index == len(LOCAL_CFG) - 1),
+                    content_aware_hidden_channels=(
+                        content_aware_hidden_channels),
+                    content_aware_residual_scale=(
+                        content_aware_residual_scale))
+            for index, (s, d, cr, b) in enumerate(LOCAL_CFG)
         ])
+
+        self.sparse_matcher = None
+        if bool(kargs.get('sparse_matching', False)):
+            # The penultimate backbone level is 1/8 for the current five-level
+            # architecture.  It is fine enough for small objects while keeping
+            # sparse all-pairs matching inexpensive.
+            self.sparse_matching_feature_index = -2
+            self.sparse_matcher = SparseGlobalMatcher(
+                feature_channels=kargs['embed_dims'][
+                    self.sparse_matching_feature_index],
+                feature_scale=kargs['scales'][-2],
+                hidden_channels=int(
+                    kargs.get('sparse_matching_hidden_channels', 32)),
+                topk_ratio=float(
+                    kargs.get('sparse_matching_topk_ratio', 0.02)),
+                min_points=int(
+                    kargs.get('sparse_matching_min_points', 16)),
+                max_points=int(
+                    kargs.get('sparse_matching_max_points', 128)),
+                confidence_scale=float(
+                    kargs.get('sparse_matching_confidence_scale', 0.05)),
+                mutual_sigma=float(
+                    kargs.get('sparse_matching_mutual_sigma', 1.5)),
+                max_displacement=float(
+                    kargs.get('sparse_matching_max_displacement', 96.0)),
+                residual_scale=float(
+                    kargs.get('sparse_matching_residual_scale', 0.5)),
+                propagation_radius=int(
+                    kargs.get('sparse_matching_propagation_radius', 2)),
+                photometric_weight=float(
+                    kargs.get('sparse_matching_photometric_weight', 0.5)))
+
+        self.multi_hypothesis = None
+        if bool(kargs.get('multi_hypothesis', False)):
+            self.multi_hypothesis = MultiHypothesisBranch(
+                hidden_channels=int(
+                    kargs.get('multi_hypothesis_hidden_channels', 48)),
+                work_scale=int(
+                    kargs.get('multi_hypothesis_work_scale', 4)),
+                max_flow_delta=float(
+                    kargs.get('multi_hypothesis_max_flow_delta', 4.0)),
+                max_mask_delta=float(
+                    kargs.get('multi_hypothesis_max_mask_delta', 2.0)),
+                max_mix=float(
+                    kargs.get('multi_hypothesis_max_mix', 0.5)),
+                disagreement_threshold=float(kargs.get(
+                    'multi_hypothesis_disagreement_threshold', 0.03)),
+                candidate_init_std=float(kargs.get(
+                    'multi_hypothesis_candidate_init_std', 0.005)))
 
         self.version = int(kargs['version'])
         # PerVFI-inspired ablation.  This deliberately keeps the existing
@@ -255,6 +810,30 @@ class MultiScaleFlow(nn.Module):
             flow = F.interpolate(flow, scale_factor=0.5, mode="bilinear", align_corners=False, recompute_scale_factor=False) * 0.5
         return y0, y1
 
+    def _apply_sparse_matching(self, af, img0, img1, flow, timestep):
+        if self.sparse_matcher is None:
+            return flow
+        feature = af[self.sparse_matching_feature_index]
+        batch = img0.shape[0]
+        return self.sparse_matcher(
+            feature[:batch], feature[batch:], img0, img1, flow, timestep)
+
+    def _apply_multi_hypothesis(self, img0, img1, warped_img0, warped_img1,
+                                flow, mask, timestep, primary_merged):
+        if self.multi_hypothesis is None:
+            return primary_merged
+        alternative_flow, alternative_mask, mix_logits = (
+            self.multi_hypothesis.predict_alternative(
+                img0, img1, warped_img0, warped_img1, flow, mask,
+                timestep))
+        alternative_warp0 = warp(img0, alternative_flow[:, :2])
+        alternative_warp1 = warp(img1, alternative_flow[:, 2:4])
+        _, alternative_merged = self._blend_warps(
+            alternative_warp0, alternative_warp1, alternative_mask)
+        return self.multi_hypothesis.combine(
+            primary_merged, alternative_merged, warped_img0, warped_img1,
+            mix_logits, flow, alternative_flow)
+
     def calculate_flow(self, imgs, timestep, local=False, af=None):
         img0, img1 = imgs[:, :3], imgs[:, 3:6]
         B = img0.size(0)
@@ -279,6 +858,9 @@ class MultiScaleFlow(nn.Module):
                     torch.cat((img0, img1, timestep), 1),
                     None
                     )
+
+        flow = self._apply_sparse_matching(
+            af, img0, img1, flow, timestep)
 
         if local:
             for block in self.local_block:
@@ -335,6 +917,18 @@ class MultiScaleFlow(nn.Module):
             mask_list.append(mask_prob)
             merged.append(stage_merged)
 
+        flow = self._apply_sparse_matching(
+            af, img0, img1, flow, timestep)
+        # Recompute the inputs consumed by the first local block.  With the
+        # zero-initialized adapter these are bit-identical to the old path.
+        warped_img0 = warp(img0, flow[:, :2])
+        warped_img1 = warp(img1, flow[:, 2:4])
+        if self.sparse_matcher is not None:
+            mask_prob, stage_merged = self._blend_warps(
+                warped_img0, warped_img1, mask)
+            mask_list[-1] = mask_prob
+            merged[-1] = stage_merged
+
         # LC loss需要监督全部learned-feature与local阶段；普通loss仍只消费
         # 原有返回的merged，保证既有实验语义不变。
         all_merged = list(merged)
@@ -374,6 +968,13 @@ class MultiScaleFlow(nn.Module):
                 mask_list.append(mask_prob)
                 merged.append(stage_merged)
                 all_merged.append(merged[-1])
+
+        merged[-1] = self._apply_multi_hypothesis(
+            img0, img1, warped_img0, warped_img1, flow, mask, timestep,
+            merged[-1])
+        # Keep the number and weighting of LC warp stages unchanged.  Only the
+        # final warp candidate is replaced by the multi-hypothesis result.
+        all_merged[-1] = merged[-1]
         
         if scale: 
             c0, c1 = self.warp_features(af1, flow)

@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 
-from model.loss import CensusLoss, CharbonnierLoss, LapLoss
+from model.loss import CensusLoss, CharbonnierLoss, EdgeCharbonnierLoss, LapLoss
 from config import *
 
 
@@ -39,7 +39,12 @@ class Model:
                  normalize_pixel_loss=True, residual_loss_weight=0.0,
                  lc_charbonnier_eps=1e-3, lc_census_weight=1.0,
                  lc_lap_weight=1.0, lc_warp_weight=0.5,
-                 pervfi_mask_loss_weight=0.0):
+                 pervfi_mask_loss_weight=0.0,
+                 multi_hypothesis_oracle_weight=0.0,
+                 multi_hypothesis_oracle_eps=1e-3,
+                 edge_loss_weight=0.0, edge_warp_loss_weight=0.0,
+                 edge_motion_gain=0.0, edge_motion_scale=0.1,
+                 edge_weight_cap=4.0, edge_charbonnier_eps=1e-3):
         """
         loss_type        : 'l1' | 'lap' | 'l1+lap' | 'lc'
         flow_loss_weight : teacher flow 监督的总权重, 0=关闭
@@ -71,6 +76,24 @@ class Model:
         self.lc_warp_weight = max(float(lc_warp_weight), 0.0)
         self.pervfi_mask_loss_weight = max(
             float(pervfi_mask_loss_weight), 0.0)
+        self.multi_hypothesis_oracle_weight = max(
+            float(multi_hypothesis_oracle_weight), 0.0)
+        self.multi_hypothesis_oracle_eps = max(
+            float(multi_hypothesis_oracle_eps), 1e-12)
+        self.edge_loss_weight = max(float(edge_loss_weight), 0.0)
+        self.edge_warp_loss_weight = max(
+            float(edge_warp_loss_weight), 0.0)
+        self.edge_motion_gain = max(float(edge_motion_gain), 0.0)
+        self.edge_motion_scale = max(float(edge_motion_scale), 1e-6)
+        self.edge_weight_cap = max(float(edge_weight_cap), 1.0)
+        self.edge_loss = (
+            EdgeCharbonnierLoss(eps=edge_charbonnier_eps).to(self._dev)
+            if self.edge_loss_weight > 0.0
+            or self.edge_warp_loss_weight > 0.0 else None)
+        if (self.multi_hypothesis_oracle_weight > 0.0
+                and getattr(self.net, 'multi_hypothesis', None) is None):
+            raise ValueError(
+                'multi_hypothesis_oracle_weight>0但模型未启用multi_hypothesis')
         self.flow_loss_weight = flow_loss_weight
         self.flow_loss_warmup_steps = max(int(flow_loss_warmup_steps), 0)
         self.flow_stage_gamma = float(flow_stage_gamma)
@@ -116,19 +139,32 @@ class Model:
     def set_trainable_scope(self, scope='all'):
         """切换训练参数范围。
 
-        official IFBlock阶段仅更新local_block；refiner校准阶段仅更新
-        unet，避免改变已经验证过的flow、mask和merged结果。
+        official IFBlock阶段仅更新local_block；flow_heads阶段更新粗光流
+        block和local_block；caun阶段仅更新内容感知上采样器；
+        sparse_matcher阶段仅更新稀疏全局匹配融合分支；multi_hypothesis
+        阶段仅更新双运动假设分支；refiner校准阶段仅更新unet。
         """
         scope = str(scope).lower()
-        if scope not in ('all', 'local', 'local_ifblock', 'refiner'):
+        if scope not in (
+                'all', 'local', 'local_ifblock', 'flow_heads', 'caun',
+                'sparse_matcher', 'multi_hypothesis', 'refiner'):
             raise ValueError(
-                'trainable只支持all/local/local_ifblock/refiner, '
+                'trainable只支持all/local/local_ifblock/flow_heads/caun/'
+                'sparse_matcher/multi_hypothesis/refiner, '
                 f'got {scope!r}')
         local_only = scope in ('local', 'local_ifblock')
         trainable, total = 0, 0
         for name, parameter in self.net.named_parameters():
             if local_only:
                 enabled = name.startswith('local_block.')
+            elif scope == 'flow_heads':
+                enabled = name.startswith(('block.', 'local_block.'))
+            elif scope == 'caun':
+                enabled = '.content_upsampler.' in name
+            elif scope == 'sparse_matcher':
+                enabled = name.startswith('sparse_matcher.')
+            elif scope == 'multi_hypothesis':
+                enabled = name.startswith('multi_hypothesis.')
             elif scope == 'refiner':
                 enabled = name.startswith('unet.')
             else:
@@ -138,6 +174,15 @@ class Model:
             total += count
             if parameter.requires_grad:
                 trainable += count
+        if scope == 'caun' and trainable == 0:
+            raise ValueError(
+                'trainable=caun但模型未启用content_aware_upsampling')
+        if scope == 'sparse_matcher' and trainable == 0:
+            raise ValueError(
+                'trainable=sparse_matcher但模型未启用sparse_matching')
+        if scope == 'multi_hypothesis' and trainable == 0:
+            raise ValueError(
+                'trainable=multi_hypothesis但模型未启用multi_hypothesis')
         self.optimG.zero_grad(set_to_none=True)
         print(f'[trainable] scope={scope} params={trainable:,}/{total:,} '
               f'({100.0 * trainable / max(total, 1):.2f}%)')
@@ -190,7 +235,9 @@ class Model:
                 continue
             if name.startswith('feature_bone.'):
                 family = 'backbone'
-            elif name.startswith(('block.', 'local_block.')):
+            elif name.startswith((
+                    'block.', 'local_block.', 'sparse_matcher.',
+                    'multi_hypothesis.')):
                 family = 'flow'
             else:
                 family = 'refine'
@@ -441,6 +488,16 @@ class Model:
         pixel_loss = (final_loss + weighted_merges) / denominator
         return pixel_loss, final_loss, merge_losses, weights
 
+    def _edge_motion_weight(self, imgs):
+        """Raise boundary supervision where the two source frames differ."""
+        if self.edge_motion_gain <= 0.0:
+            return imgs.new_ones((imgs.shape[0], 1, *imgs.shape[-2:]))
+        temporal_difference = (
+            imgs[:, :3] - imgs[:, 3:6]).abs().mean(dim=1, keepdim=True)
+        weight = 1.0 + self.edge_motion_gain * torch.clamp(
+            temporal_difference / self.edge_motion_scale, 0.0, 1.0)
+        return weight.clamp(max=self.edge_weight_cap).detach()
+
     @staticmethod
     def _safe_flow(flow_gt):
         finite = torch.isfinite(flow_gt[:, :4]).all(dim=1)
@@ -653,6 +710,49 @@ class Model:
                 + self.residual_loss_weight * loss_residual
                 + self.pervfi_mask_loss_weight * loss_mask)
 
+            # Final output and the last pure warp are both constrained at
+            # motion/detail boundaries.  Supervising the warp prevents the
+            # refiner alone from hiding inaccurate small-object flow.
+            loss_edge_final = loss.new_zeros(())
+            loss_edge_warp = loss.new_zeros(())
+            if self.edge_loss is not None:
+                edge_weight = self._edge_motion_weight(imgs)
+                if self.edge_loss_weight > 0.0:
+                    loss_edge_final = self.edge_loss(pred, gt, edge_weight)
+                    loss = loss + self.edge_loss_weight * loss_edge_final
+                if self.edge_warp_loss_weight > 0.0 and merged:
+                    loss_edge_warp = self.edge_loss(
+                        merged[-1], gt, edge_weight)
+                    loss = (
+                        loss
+                        + self.edge_warp_loss_weight * loss_edge_warp)
+
+            # The final output is an exact no-op at initialization because the
+            # hypothesis mixing channel starts at zero.  This auxiliary loss
+            # gives the alternative warp a direct signal in disagreement
+            # regions from the first step, preventing a dead second candidate.
+            loss_multi_oracle = loss.new_zeros(())
+            multi_hypothesis = getattr(
+                self.net, 'multi_hypothesis', None)
+            if (self.multi_hypothesis_oracle_weight > 0.0
+                    and multi_hypothesis is not None
+                    and multi_hypothesis.last_alternative_merged is not None):
+                alternative = self.unpad(
+                    multi_hypothesis.last_alternative_merged, pr, pb)
+                region_gate = self.unpad(
+                    multi_hypothesis.last_region_gate, pr, pb)
+                error = torch.sqrt(
+                    (alternative - gt).square()
+                    + self.multi_hypothesis_oracle_eps ** 2).mean(
+                        dim=1, keepdim=True)
+                loss_multi_oracle = (
+                    (error * region_gate).sum()
+                    / region_gate.sum().clamp(min=1.0))
+                loss = (
+                    loss
+                    + self.multi_hypothesis_oracle_weight
+                    * loss_multi_oracle)
+
             # teacher flow 多阶段监督 (仅对 has_mv=1 的样本生效)
             loss_flow = torch.zeros((), device=self._dev)
             flow_weight = self.flow_weight_at_step(loss_step)
@@ -683,7 +783,48 @@ class Model:
                 'flow_raw': loss_flow.detach(),
                 'flow_weighted': (flow_weight * loss_flow).detach(),
                 'flow_weight': loss.new_tensor(flow_weight),
+                'multi_hypothesis_oracle': loss_multi_oracle.detach(),
+                'multi_hypothesis_oracle_weighted': (
+                    self.multi_hypothesis_oracle_weight
+                    * loss_multi_oracle).detach(),
+                'edge_final': loss_edge_final.detach(),
+                'edge_final_weighted': (
+                    self.edge_loss_weight * loss_edge_final).detach(),
+                'edge_warp': loss_edge_warp.detach(),
+                'edge_warp_weighted': (
+                    self.edge_warp_loss_weight * loss_edge_warp).detach(),
             }
+            caun = getattr(self.net.local_block[-1],
+                           'content_upsampler', None)
+            if (caun is not None
+                    and caun.last_residual_abs is not None):
+                components['caun_delta'] = caun.last_residual_abs
+            sparse_matcher = getattr(self.net, 'sparse_matcher', None)
+            if (sparse_matcher is not None
+                    and sparse_matcher.last_residual_abs is not None):
+                components.update({
+                    'sparse_match_delta': sparse_matcher.last_residual_abs,
+                    'sparse_match_proposal': (
+                        sparse_matcher.last_proposal_abs),
+                    'sparse_match_confidence': (
+                        sparse_matcher.last_confidence),
+                    'sparse_match_selected_ratio': (
+                        sparse_matcher.last_selected_ratio),
+                })
+            if (multi_hypothesis is not None
+                    and multi_hypothesis.last_output_delta_abs is not None):
+                components.update({
+                    'multi_hypothesis_flow_delta': (
+                        multi_hypothesis.last_flow_delta_abs),
+                    'multi_hypothesis_candidate_delta': (
+                        multi_hypothesis.last_candidate_delta_abs),
+                    'multi_hypothesis_mix': (
+                        multi_hypothesis.last_mix_abs),
+                    'multi_hypothesis_output_delta': (
+                        multi_hypothesis.last_output_delta_abs),
+                    'multi_hypothesis_region_ratio': (
+                        multi_hypothesis.last_region_ratio),
+                })
             components.update(self.last_image_loss_components)
             for index, (merge_loss, merge_weight) in enumerate(
                     zip(merge_losses, merge_weights)):

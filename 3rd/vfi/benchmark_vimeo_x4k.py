@@ -86,7 +86,12 @@ def load_custom(ckpt_path: Path):
         'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
         'normalize_pixel_loss', 'residual_loss_weight',
         'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
-        'lc_warp_weight', 'pervfi_mask_loss_weight')
+        'lc_warp_weight', 'pervfi_mask_loss_weight',
+        'multi_hypothesis_oracle_weight',
+        'multi_hypothesis_oracle_eps',
+        'edge_loss_weight', 'edge_warp_loss_weight',
+        'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
+        'edge_charbonnier_eps')
     named = ('F', 'depth', 'M', 'version')
     extra = {key: value for key, value in model_cfg.items()
              if key not in named + train_only}

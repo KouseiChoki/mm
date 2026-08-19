@@ -172,6 +172,10 @@ _TRAIN_ONLY_KEYS = (
     'normalize_pixel_loss', 'residual_loss_weight',
     'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
     'lc_warp_weight', 'pervfi_mask_loss_weight',
+    'multi_hypothesis_oracle_weight', 'multi_hypothesis_oracle_eps',
+    'edge_loss_weight', 'edge_warp_loss_weight',
+    'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
+    'edge_charbonnier_eps',
 )                                                        # 训练侧消费, 不进结构
 _NAMED_KEYS = ('F', 'depth', 'M', 'version')
 
