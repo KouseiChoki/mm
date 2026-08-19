@@ -1,0 +1,146 @@
+# Hard-ROI causal A/B: weighted arm.  Apart from experiment/phase names, only
+# the three hard_roi_*_weight values differ from the control configuration.
+# Restore 0729 without --resume so optimizer/scheduler state starts fresh.
+
+exp_name: 0819_0729_lc_hard_roi_weighted
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.01
+
+  edge_loss_weight: 0.15
+  edge_warp_loss_weight: 0.10
+  edge_motion_gain: 2.0
+  edge_motion_scale: 0.10
+  edge_weight_cap: 3.0
+  edge_charbonnier_eps: 1.0e-3
+
+  # A/B shared ROI definition. Only the three weights differ between arms.
+  hard_roi_ratio: 0.10
+  hard_roi_min_residual: 0.04
+  hard_roi_dilation: 5  # 5x5 morphological dilation kernel
+  hard_roi_charbonnier_eps: 1.0e-3
+  hard_roi_final_weight: 0.10
+  hard_roi_warp_weight: 0.10
+  hard_roi_edge_weight: 0.05
+
+  flow_loss_weight: 0.0
+  flow_loss_warmup_steps: 0
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 0.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: true
+  content_aware_upsampling: false
+  sparse_matching: false
+  multi_hypothesis: false
+
+optim:
+  lr_max: 1.0e-5
+  lr_min: 2.0e-6
+  warmup_steps: 200
+  finetune: true
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 0.25
+  flow_lr_scale: 1.0
+  refine_lr_scale: 0.25
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [hard, vimeo, xtrain]
+  batch_size: 4
+  num_workers: 12
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes: [[384, 704, 4]]
+  framesteps: [1]
+  t_half_prob: 1.0
+  mv_prob: 0.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+  motion_aware_crop_prob: 0.0
+  interpolation_aware_crop_prob: 0.6
+  interpolation_residual_threshold: 0.04
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 12
+  small_motion_max_ratio: 0.08
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  source_options:
+    hard:
+      framesteps: [1, 2]
+      augment_profile: legacy
+    vimeo:
+      framesteps: [1]
+      augment_profile: legacy
+    xtrain:
+      framesteps: [4, 8, 16, 32]
+      augment_profile: legacy
+  val_lists:
+    hard: hard_val.txt
+    vimeo: vimeo_val.txt
+    xtrain: xtrain_val.txt
+
+phases:
+  - name: hard_roi_weighted_gate
+    epochs: 4
+    steps_per_epoch: 401
+    grad_accum_steps: 3
+    lr_schedule: phase
+    trainable: all
+    local: true
+    crop_sizes: [[384, 704, 4]]
+    ratios: {hard: 0.25, vimeo: 0.25, xtrain: 0.5}
+    batch_counts: {hard: 1, vimeo: 1, xtrain: 2}
+
+monitor:
+  record_root: record
+  eval_every_epochs: 1
+  save_every_epochs: 1
+  log_every_steps: 20
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps
+  dump_max: 20
+  best_metric: xtrain/roi_psnr
+  best_mode: max

@@ -432,6 +432,10 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
     for name, val_loader in val_loaders.items():
         psnr_sum = 0.0
         sample_count = 0
+        roi_totals = {
+            key: 0.0 for key in (
+                'psnr_sum', 'warp_psnr_sum', 'l1_sum', 'edge_sum',
+                'area_sum', 'samples', 'warp_samples')}
         flow_totals = {
             key: 0.0 for key in (
                 'sum', 'count', 'moving_sum', 'moving_count',
@@ -445,12 +449,75 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
             imgs, gt = frames[:, :6], frames[:, 6:9]
             imgs_pad, (pad_right, pad_bottom) = model.pad_to_multiple(imgs, 16)
             with torch.autocast('cuda', dtype=amp_dtype, enabled=use_amp):
-                flow_list, _, _, _, _, _, pred_pad = model.net(
+                flow_list, _, _, _, _, merged_pad, pred_pad = model.net(
                     imgs_pad, timestep=timestep, scale=0, local=model.local)
             pred = model.unpad(pred_pad, pad_right, pad_bottom)
             mse = (gt - pred).square().mean(dim=(1, 2, 3)).clamp(min=1e-12)
             psnr_sum += (-10.0 * torch.log10(mse)).sum().item()
             sample_count += int(gt.shape[0])
+
+            # Report the same pixel-level hard region for both A/B arms.  The
+            # control has zero ROI loss weights but still gets identical
+            # diagnostics, which makes the comparison causal and auditable.
+            if model.hard_roi_ratio > 0.0:
+                hard_roi = model.hard_roi_mask(
+                    imgs, gt, timestep, ratio=model.hard_roi_ratio,
+                    min_residual=model.hard_roi_min_residual,
+                    dilation=model.hard_roi_dilation)
+                roi_area = hard_roi.mean(dim=(1, 2, 3))
+                roi_totals['area_sum'] += roi_area.sum().item()
+                denominators = hard_roi.sum(dim=(1, 2, 3))
+                valid = denominators > 0
+                if valid.any():
+                    denominators = denominators.clamp(min=1.0)
+                    pred_sq = (pred - gt).square().mean(dim=1, keepdim=True)
+                    pred_l1 = (pred - gt).abs().mean(dim=1, keepdim=True)
+                    roi_mse = (
+                        (pred_sq * hard_roi).sum(dim=(1, 2, 3))
+                        / denominators).clamp(min=1e-12)
+                    roi_l1 = (
+                        (pred_l1 * hard_roi).sum(dim=(1, 2, 3))
+                        / denominators)
+                    roi_psnr = -10.0 * torch.log10(roi_mse)
+                    roi_totals['psnr_sum'] += roi_psnr[valid].sum().item()
+                    roi_totals['l1_sum'] += roi_l1[valid].sum().item()
+                    roi_totals['samples'] += int(valid.sum().item())
+
+                    if model.edge_loss is not None:
+                        edge_difference = (
+                            model.edge_loss._gradient(pred.float())
+                            - model.edge_loss._gradient(gt.float()))
+                        edge_error = torch.sqrt(
+                            edge_difference.square()
+                            + model.edge_loss.eps ** 2).mean(
+                                dim=1, keepdim=True)
+                        roi_edge = (
+                            (edge_error * hard_roi).sum(dim=(1, 2, 3))
+                            / denominators)
+                        roi_totals['edge_sum'] += (
+                            roi_edge[valid].sum().item())
+
+                    has_merged = (
+                        len(merged_pad) > 0
+                        if isinstance(merged_pad, (list, tuple))
+                        else torch.is_tensor(merged_pad))
+                    if has_merged:
+                        last_merge_pad = (
+                            merged_pad[-1]
+                            if isinstance(merged_pad, (list, tuple))
+                            else merged_pad)
+                        last_merge = model.unpad(
+                            last_merge_pad, pad_right, pad_bottom)
+                        warp_sq = (
+                            last_merge - gt).square().mean(
+                                dim=1, keepdim=True)
+                        warp_mse = (
+                            (warp_sq * hard_roi).sum(dim=(1, 2, 3))
+                            / denominators).clamp(min=1e-12)
+                        warp_psnr = -10.0 * torch.log10(warp_mse)
+                        roi_totals['warp_psnr_sum'] += (
+                            warp_psnr[valid].sum().item())
+                        roi_totals['warp_samples'] += int(valid.sum().item())
 
             group = None
             if name == 'teacher' and hasattr(
@@ -491,6 +558,44 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
             metrics[f'{name}/psnr'] = psnr
             writer.add_scalar(f'val/{name}_psnr', psnr, nr_eval)
             message = f'[eval {nr_eval}] {name}: PSNR={psnr:.4f}'
+            if roi_totals['samples'] > 0:
+                roi_samples = roi_totals['samples']
+                roi_psnr = roi_totals['psnr_sum'] / roi_samples
+                roi_l1 = roi_totals['l1_sum'] / roi_samples
+                roi_edge = roi_totals['edge_sum'] / roi_samples
+                roi_area = roi_totals['area_sum'] / sample_count
+                roi_coverage = roi_samples / sample_count
+                roi_values = {
+                    'roi_psnr': roi_psnr,
+                    'roi_l1': roi_l1,
+                    'roi_edge_error': roi_edge,
+                    'roi_area': roi_area,
+                    'roi_sample_coverage': roi_coverage,
+                }
+                for suffix, value in roi_values.items():
+                    metrics[f'{name}/{suffix}'] = value
+                    writer.add_scalar(
+                        f'val/{name}_{suffix}', value, nr_eval)
+                message += (
+                    f' ROI_PSNR={roi_psnr:.4f}'
+                    f' ROI_L1={roi_l1:.5f}'
+                    f' ROI_area={roi_area:.3f}')
+                if roi_totals['warp_samples'] > 0:
+                    warp_roi_psnr = (
+                        roi_totals['warp_psnr_sum']
+                        / roi_totals['warp_samples'])
+                    roi_final_gain = roi_psnr - warp_roi_psnr
+                    metrics[f'{name}/warp_roi_psnr'] = warp_roi_psnr
+                    metrics[f'{name}/roi_final_gain_db'] = roi_final_gain
+                    writer.add_scalar(
+                        f'val/{name}_warp_roi_psnr',
+                        warp_roi_psnr, nr_eval)
+                    writer.add_scalar(
+                        f'val/{name}_roi_final_gain_db',
+                        roi_final_gain, nr_eval)
+                    message += (
+                        f' warp_ROI_PSNR={warp_roi_psnr:.4f}'
+                        f' final_gain={roi_final_gain:+.4f}dB')
             if flow_totals['count'] > 0:
                 epe = flow_totals['sum'] / flow_totals['count']
                 metrics[f'{name}/flow_epe'] = epe
@@ -722,6 +827,9 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         'edge_loss_weight', 'edge_warp_loss_weight',
         'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
         'edge_charbonnier_eps',
+        'hard_roi_ratio', 'hard_roi_min_residual', 'hard_roi_dilation',
+        'hard_roi_final_weight', 'hard_roi_warp_weight',
+        'hard_roi_edge_weight', 'hard_roi_charbonnier_eps',
     )                                                        # 训练侧消费, 不进结构
     _extra = {k: v for k, v in m.items()
               if k not in ('F', 'depth', 'M', 'version') + _train_keys}
@@ -757,7 +865,15 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         edge_motion_gain=m.get('edge_motion_gain', 0.0),
         edge_motion_scale=m.get('edge_motion_scale', 0.1),
         edge_weight_cap=m.get('edge_weight_cap', 4.0),
-        edge_charbonnier_eps=m.get('edge_charbonnier_eps', 1e-3))
+        edge_charbonnier_eps=m.get('edge_charbonnier_eps', 1e-3),
+        hard_roi_ratio=m.get('hard_roi_ratio', 0.0),
+        hard_roi_min_residual=m.get('hard_roi_min_residual', 0.04),
+        hard_roi_dilation=m.get('hard_roi_dilation', 0),
+        hard_roi_final_weight=m.get('hard_roi_final_weight', 0.0),
+        hard_roi_warp_weight=m.get('hard_roi_warp_weight', 0.0),
+        hard_roi_edge_weight=m.get('hard_roi_edge_weight', 0.0),
+        hard_roi_charbonnier_eps=m.get(
+            'hard_roi_charbonnier_eps', 1e-3))
     if m.get('blend_mode', 'soft') == 'pervfi':
         print('[blend] PerVFI-inspired quasi-binary asymmetric blending: '
               f'temperature={m.get("pervfi_mask_temperature", 0.5)} '
@@ -785,6 +901,14 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
               f'final={m.get("edge_loss_weight", 0.0):g} '
               f'last_warp={m.get("edge_warp_loss_weight", 0.0):g} '
               f'motion_gain={m.get("edge_motion_gain", 0.0):g}')
+    if m.get('hard_roi_ratio', 0.0) > 0.0:
+        print('[hard-roi] interpolation residual supervision: '
+              f'ratio={m.get("hard_roi_ratio", 0.0):.1%} '
+              f'min_residual={m.get("hard_roi_min_residual", 0.04):g} '
+              f'dilation_kernel={m.get("hard_roi_dilation", 0)} '
+              f'final={m.get("hard_roi_final_weight", 0.0):g} '
+              f'warp={m.get("hard_roi_warp_weight", 0.0):g} '
+              f'edge={m.get("hard_roi_edge_weight", 0.0):g}')
     if m['loss_type'] == 'lc':
         print('[loss] LC-Mamba: Charbonnier + Census7x7 + final Lap '
               f'+ {m.get("lc_warp_weight", 0.5)} * Σ(stage warp Lap)')
@@ -1065,12 +1189,27 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                         f' alt_flow:{multi_flow.item():.3f}px'
                         f' mix:{multi_mix.item():.4f}'
                         if multi_delta is not None else '')
+                    roi_area = model.last_loss_components.get(
+                        'hard_roi_area')
+                    roi_final = model.last_loss_components.get(
+                        'hard_roi_final')
+                    roi_warp = model.last_loss_components.get(
+                        'hard_roi_warp')
+                    roi_edge = model.last_loss_components.get(
+                        'hard_roi_edge')
+                    roi_text = (
+                        f' roi:{roi_area.item():.1%}'
+                        f' roi_final:{roi_final.item():.4f}'
+                        f' roi_warp:{roi_warp.item():.4f}'
+                        f' roi_edge:{roi_edge.item():.4f}'
+                        if roi_area is not None and roi_area.item() > 0.0
+                        else '')
                     print(f'[{phase["name"]}] epoch:{epoch_global} '
                           f'{i}/{phase_steps_per_epoch} '
                           f'time:{data_time:.2f}+{train_time:.2f} '
                           f'loss:{loss:.4f} ema:{loss_ema:.4f} '
                           f'flow:{loss_flow:.3f} lr:{lr:.2e}'
-                          f'{caun_text}{sparse_text}{multi_text}')
+                          f'{caun_text}{sparse_text}{multi_text}{roi_text}')
                 step += 1
 
             epoch_global += 1

@@ -44,7 +44,11 @@ class Model:
                  multi_hypothesis_oracle_eps=1e-3,
                  edge_loss_weight=0.0, edge_warp_loss_weight=0.0,
                  edge_motion_gain=0.0, edge_motion_scale=0.1,
-                 edge_weight_cap=4.0, edge_charbonnier_eps=1e-3):
+                 edge_weight_cap=4.0, edge_charbonnier_eps=1e-3,
+                 hard_roi_ratio=0.0, hard_roi_min_residual=0.04,
+                 hard_roi_dilation=0, hard_roi_final_weight=0.0,
+                 hard_roi_warp_weight=0.0, hard_roi_edge_weight=0.0,
+                 hard_roi_charbonnier_eps=1e-3):
         """
         loss_type        : 'l1' | 'lap' | 'l1+lap' | 'lc'
         flow_loss_weight : teacher flow 监督的总权重, 0=关闭
@@ -89,7 +93,27 @@ class Model:
         self.edge_loss = (
             EdgeCharbonnierLoss(eps=edge_charbonnier_eps).to(self._dev)
             if self.edge_loss_weight > 0.0
-            or self.edge_warp_loss_weight > 0.0 else None)
+            or self.edge_warp_loss_weight > 0.0
+            or float(hard_roi_edge_weight) > 0.0 else None)
+        self.hard_roi_ratio = float(hard_roi_ratio)
+        if not 0.0 <= self.hard_roi_ratio <= 1.0:
+            raise ValueError(
+                f'hard_roi_ratio must be in [0,1], got {hard_roi_ratio}')
+        self.hard_roi_min_residual = max(
+            float(hard_roi_min_residual), 0.0)
+        self.hard_roi_dilation = max(int(hard_roi_dilation), 0)
+        if self.hard_roi_dilation > 0 and self.hard_roi_dilation % 2 == 0:
+            raise ValueError(
+                'hard_roi_dilation must be 0 or an odd kernel size, '
+                f'got {hard_roi_dilation}')
+        self.hard_roi_final_weight = max(
+            float(hard_roi_final_weight), 0.0)
+        self.hard_roi_warp_weight = max(
+            float(hard_roi_warp_weight), 0.0)
+        self.hard_roi_edge_weight = max(
+            float(hard_roi_edge_weight), 0.0)
+        self.hard_roi_charbonnier_eps = max(
+            float(hard_roi_charbonnier_eps), 1e-12)
         if (self.multi_hypothesis_oracle_weight > 0.0
                 and getattr(self.net, 'multi_hypothesis', None) is None):
             raise ValueError(
@@ -503,6 +527,68 @@ class Model:
         return weight.clamp(max=self.edge_weight_cap).detach()
 
     @staticmethod
+    def hard_roi_mask(imgs, gt, timestep, ratio=0.1,
+                      min_residual=0.04, dilation=0):
+        """Select a detached per-image top-residual interpolation ROI.
+
+        The residual compares the real middle frame with the timestamp-linear
+        endpoint blend.  At most ``ratio`` of the pre-dilation pixels are
+        selected, and pixels below ``min_residual`` are never selected.
+        ``dilation`` is 0 (disabled) or an odd max-pool kernel size.
+        """
+        ratio = float(ratio)
+        if not 0.0 <= ratio <= 1.0:
+            raise ValueError(f'ROI ratio must be in [0,1], got {ratio}')
+        if imgs.ndim != 4 or imgs.shape[1] != 6 or gt.shape != (
+                imgs.shape[0], 3, *imgs.shape[-2:]):
+            raise ValueError(
+                f'ROI expects imgs [B,6,H,W] and gt [B,3,H,W], '
+                f'got {imgs.shape} and {gt.shape}')
+        if ratio == 0.0:
+            return imgs.new_zeros((imgs.shape[0], 1, *imgs.shape[-2:]))
+        if torch.is_tensor(timestep):
+            t = timestep.to(device=imgs.device, dtype=imgs.dtype)
+        else:
+            t = imgs.new_tensor(float(timestep))
+        if t.ndim == 0:
+            t = t.reshape(1, 1, 1, 1).expand(imgs.shape[0], -1, -1, -1)
+        elif t.ndim == 1:
+            t = t[:, None, None, None]
+        elif t.ndim != 4:
+            raise ValueError(f'unsupported timestep shape for ROI: {t.shape}')
+        if t.shape[0] not in (1, imgs.shape[0]):
+            raise ValueError(
+                f'ROI timestep batch mismatch: {t.shape[0]} vs {imgs.shape[0]}')
+        linear = (1.0 - t) * imgs[:, :3] + t * imgs[:, 3:6]
+        residual = (gt - linear).abs().mean(dim=1, keepdim=True).detach()
+        flat = residual.flatten(1)
+        count = min(
+            max(int(round(flat.shape[1] * ratio)), 1), flat.shape[1])
+        values, indices = flat.topk(count, dim=1, largest=True, sorted=False)
+        selected = values >= max(float(min_residual), 0.0)
+        mask_flat = flat.new_zeros(flat.shape)
+        mask_flat.scatter_(1, indices, selected.to(mask_flat.dtype))
+        mask = mask_flat.view_as(residual)
+        dilation = max(int(dilation), 0)
+        if dilation:
+            if dilation % 2 == 0:
+                raise ValueError(
+                    f'ROI dilation must be 0 or odd, got {dilation}')
+            mask = F.max_pool2d(
+                mask, kernel_size=dilation, stride=1,
+                padding=dilation // 2)
+        return mask.detach()
+
+    @staticmethod
+    def _masked_charbonnier(input, target, mask, eps=1e-3):
+        if mask.ndim != 4 or mask.shape[1] != 1:
+            raise ValueError(f'ROI mask must be [B,1,H,W], got {mask.shape}')
+        error = torch.sqrt(
+            (input - target).square() + float(eps) ** 2).mean(
+                dim=1, keepdim=True)
+        return (error * mask).sum() / mask.sum().clamp(min=1.0)
+
+    @staticmethod
     def _safe_flow(flow_gt):
         finite = torch.isfinite(flow_gt[:, :4]).all(dim=1)
         flow = torch.nan_to_num(
@@ -731,6 +817,34 @@ class Model:
                         loss
                         + self.edge_warp_loss_weight * loss_edge_warp)
 
+            # Pixel-level hard-region supervision complements hard crops: a
+            # small moving foreground can still occupy only a tiny fraction
+            # of a 384x704 crop and otherwise receive negligible gradient.
+            loss_hard_roi_final = loss.new_zeros(())
+            loss_hard_roi_warp = loss.new_zeros(())
+            loss_hard_roi_edge = loss.new_zeros(())
+            hard_roi_area = loss.new_zeros(())
+            if self.hard_roi_ratio > 0.0:
+                hard_roi = self.hard_roi_mask(
+                    imgs, gt, timestep, ratio=self.hard_roi_ratio,
+                    min_residual=self.hard_roi_min_residual,
+                    dilation=self.hard_roi_dilation)
+                hard_roi_area = hard_roi.mean()
+                loss_hard_roi_final = self._masked_charbonnier(
+                    pred, gt, hard_roi, eps=self.hard_roi_charbonnier_eps)
+                if merged:
+                    loss_hard_roi_warp = self._masked_charbonnier(
+                        merged[-1], gt, hard_roi,
+                        eps=self.hard_roi_charbonnier_eps)
+                if self.edge_loss is not None:
+                    loss_hard_roi_edge = self.edge_loss(
+                        pred, gt, hard_roi)
+                loss = (
+                    loss
+                    + self.hard_roi_final_weight * loss_hard_roi_final
+                    + self.hard_roi_warp_weight * loss_hard_roi_warp
+                    + self.hard_roi_edge_weight * loss_hard_roi_edge)
+
             # The final output is an exact no-op at initialization because the
             # hypothesis mixing channel starts at zero.  This auxiliary loss
             # gives the alternative warp a direct signal in disagreement
@@ -797,6 +911,19 @@ class Model:
                 'edge_warp': loss_edge_warp.detach(),
                 'edge_warp_weighted': (
                     self.edge_warp_loss_weight * loss_edge_warp).detach(),
+                'hard_roi_area': hard_roi_area.detach(),
+                'hard_roi_final': loss_hard_roi_final.detach(),
+                'hard_roi_final_weighted': (
+                    self.hard_roi_final_weight
+                    * loss_hard_roi_final).detach(),
+                'hard_roi_warp': loss_hard_roi_warp.detach(),
+                'hard_roi_warp_weighted': (
+                    self.hard_roi_warp_weight
+                    * loss_hard_roi_warp).detach(),
+                'hard_roi_edge': loss_hard_roi_edge.detach(),
+                'hard_roi_edge_weighted': (
+                    self.hard_roi_edge_weight
+                    * loss_hard_roi_edge).detach(),
             }
             caun = getattr(self.net.local_block[-1],
                            'content_upsampler', None)

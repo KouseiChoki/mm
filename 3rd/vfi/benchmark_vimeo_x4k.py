@@ -91,7 +91,10 @@ def load_custom(ckpt_path: Path):
         'multi_hypothesis_oracle_eps',
         'edge_loss_weight', 'edge_warp_loss_weight',
         'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
-        'edge_charbonnier_eps')
+        'edge_charbonnier_eps',
+        'hard_roi_ratio', 'hard_roi_min_residual', 'hard_roi_dilation',
+        'hard_roi_final_weight', 'hard_roi_warp_weight',
+        'hard_roi_edge_weight', 'hard_roi_charbonnier_eps')
     named = ('F', 'depth', 'M', 'version')
     extra = {key: value for key, value in model_cfg.items()
              if key not in named + train_only}

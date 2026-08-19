@@ -176,6 +176,9 @@ _TRAIN_ONLY_KEYS = (
     'edge_loss_weight', 'edge_warp_loss_weight',
     'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
     'edge_charbonnier_eps',
+    'hard_roi_ratio', 'hard_roi_min_residual', 'hard_roi_dilation',
+    'hard_roi_final_weight', 'hard_roi_warp_weight',
+    'hard_roi_edge_weight', 'hard_roi_charbonnier_eps',
 )                                                        # 训练侧消费, 不进结构
 _NAMED_KEYS = ('F', 'depth', 'M', 'version')
 
