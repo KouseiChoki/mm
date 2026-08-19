@@ -1,0 +1,18 @@
+# Fixed real-application gate for explicit correspondence experiments.
+# Use with: --scene-list eval_lists/explicit_matching_real_scenes.txt
+001_aeon2
+008_antenna
+009_gemini01
+2061_0150_v0380
+Dune_019_SDR_2160p
+Hunter_clip010
+Hunter_clip022
+Hunter_clip083
+greenbook_clip05
+greenbook_clip06
+lalaland_006
+lalaland_009
+titanic_clip11
+titanic_clip18
+titanic_clip19
+titanic_clip20

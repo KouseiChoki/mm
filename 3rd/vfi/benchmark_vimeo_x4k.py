@@ -293,7 +293,12 @@ def evaluate_x4k(args, infer, color_order, ssim_fn,
 
 
 def run_one(args) -> None:
-    spec = MODEL_SPECS[args.model]
+    if args.ckpt is not None:
+        spec = {'kind': 'custom', 'ckpt': Path(args.ckpt).expanduser()}
+        result_name = args.model_name or Path(args.ckpt).stem
+    else:
+        spec = MODEL_SPECS[args.model]
+        result_name = args.model
     ckpt = Path(spec['ckpt'])
     official_root = Path(args.official_root)
     if not ckpt.is_file():
@@ -303,8 +308,8 @@ def run_one(args) -> None:
     else:
         infer, color_order = load_official(ckpt, official_root)
     ssim_fn = load_ssim(official_root)
-    result_path = Path(args.output_dir) / f'{args.model}.json'
-    state = load_progress(result_path, args.model, args.resume)
+    result_path = Path(args.output_dir) / f'{result_name}.json'
+    state = load_progress(result_path, result_name, args.resume)
     state.update({
         'checkpoint': str(ckpt),
         'tta': bool(args.tta),
@@ -318,7 +323,7 @@ def run_one(args) -> None:
     state['complete'] = all(
         item.get('complete', False) for item in state['datasets'].values())
     atomic_json(result_path, state)
-    print(f'[done] {args.model}: {result_path}', flush=True)
+    print(f'[done] {result_name}: {result_path}', flush=True)
 
 
 def print_table(output_dir: Path, names: Sequence[str]) -> None:
@@ -366,6 +371,12 @@ def run_all(args) -> None:
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', choices=['all', *MODEL_SPECS], default='all')
+    parser.add_argument(
+        '--ckpt', default=None,
+        help='评测任意自定义checkpoint；设置后忽略--model')
+    parser.add_argument(
+        '--model-name', default=None,
+        help='--ckpt结果名；默认使用checkpoint文件名')
     parser.add_argument('--data-root', default=str(DEFAULT_ROOT))
     parser.add_argument(
         '--vimeo-root',
@@ -398,7 +409,9 @@ def main() -> None:
     torch.set_grad_enabled(False)
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = True
-    if args.model == 'all':
+    if args.ckpt is not None:
+        run_one(args)
+    elif args.model == 'all':
         run_all(args)
     else:
         run_one(args)

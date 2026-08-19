@@ -5,6 +5,7 @@ import random
 
 from .warplayer import warp
 from .refine import *
+from .gmflow_pretrained import GMFlowFeatureEncoder
 
 # 局部精化结构固定在代码中，避免 YAML 改动导致 checkpoint 结构不兼容。
 LOCAL_CFG = ((2, 4, 1.0, 8), (1, 4, 1.0, 8))
@@ -195,8 +196,15 @@ class SparseGlobalMatcher(nn.Module):
 
         self.last_selected_ratio = None
         self.last_confidence = None
+        self.last_margin = None
+        self.last_mutual_error = None
+        self.last_mutual_ratio = None
+        self.last_valid_ratio = None
+        self.last_similarity_gain = None
+        self.last_similarity_improved_ratio = None
         self.last_proposal_abs = None
         self.last_residual_abs = None
+        self.last_residual_selected_abs = None
 
     @staticmethod
     def _coordinate_grid(batch, height, width, device, dtype):
@@ -219,7 +227,8 @@ class SparseGlobalMatcher(nn.Module):
                    height * width)
 
     def _sparse_proposal(self, query_feature0, endpoint_feature0, feature1,
-                         flow_low, score, timestep_low):
+                         flow_low, score, timestep_low,
+                         current_feature1=None):
         """Return sparse midpoint-preserving flow correction and support.
 
         All coordinates and flow values in this method use feature-grid
@@ -254,6 +263,18 @@ class SparseGlobalMatcher(nn.Module):
             margin = torch.ones_like(top_values[:, :, 0])
         margin_confidence = (
             margin / self.confidence_scale).clamp(0.0, 1.0)
+        if current_feature1 is not None:
+            current_similarity = F.cosine_similarity(
+                query_feature0, current_feature1, dim=1, eps=1e-6)
+            current_similarity = torch.gather(
+                current_similarity.flatten(1), 1, point_indices)
+            similarity_gain = top_values[:, :, 0] - current_similarity
+            self.last_similarity_gain = similarity_gain.detach().mean()
+            self.last_similarity_improved_ratio = (
+                similarity_gain.detach() > 0).to(margin.dtype).mean()
+        else:
+            self.last_similarity_gain = margin.new_zeros(())
+            self.last_similarity_improved_ratio = margin.new_zeros(())
 
         grid = self._coordinate_grid(
             batch, height, width, query_feature0.device, query_feature0.dtype)
@@ -301,6 +322,13 @@ class SparseGlobalMatcher(nn.Module):
         confidence = (
             margin_confidence * mutual_confidence
             * coordinate_valid.to(margin_confidence.dtype))
+        self.last_margin = margin.detach().mean()
+        self.last_mutual_error = mutual_error.detach().mean()
+        self.last_mutual_ratio = (
+            mutual_error.detach() <= self.mutual_sigma).to(
+                margin_confidence.dtype).mean()
+        self.last_valid_ratio = (
+            confidence.detach() >= 0.25).to(confidence.dtype).mean()
 
         # Bound a single wrong global match before the learned adapter sees it.
         max_displacement_low = self.max_displacement / self.feature_scale
@@ -369,7 +397,7 @@ class SparseGlobalMatcher(nn.Module):
 
         proposal, support = self._sparse_proposal(
             warped_feature0, feature0, feature1, flow_low, score,
-            timestep_low)
+            timestep_low, current_feature1=warped_feature1)
         adapter_input = torch.cat((
             flow_low, proposal, support, feature_score[:, None],
             photo_score[:, None]), dim=1)
@@ -393,6 +421,13 @@ class SparseGlobalMatcher(nn.Module):
         residual[:, 0::2] *= scale_x
         residual[:, 1::2] *= scale_y
         self.last_residual_abs = residual.detach().abs().mean()
+        support_full = F.interpolate(
+            support, size=flow.shape[-2:], mode='nearest')
+        selected = (support_full > 0).to(residual.dtype)
+        selected_count = selected.sum().clamp(min=1.0)
+        self.last_residual_selected_abs = (
+            residual.detach().abs().mul(selected).sum()
+            / (4.0 * selected_count))
         return flow + residual
 
 
@@ -661,15 +696,37 @@ class MultiScaleFlow(nn.Module):
         ])
 
         self.sparse_matcher = None
+        self.sparse_matching_feature_encoder = None
         if bool(kargs.get('sparse_matching', False)):
-            # The penultimate backbone level is 1/8 for the current five-level
-            # architecture.  It is fine enough for small objects while keeping
-            # sparse all-pairs matching inexpensive.
-            self.sparse_matching_feature_index = -2
+            self.sparse_matching_feature_source = str(kargs.get(
+                'sparse_matching_feature_source', 'mamba')).lower()
+            if self.sparse_matching_feature_source not in ('mamba', 'gmflow'):
+                raise ValueError(
+                    'sparse_matching_feature_source must be mamba or gmflow, '
+                    f'got {self.sparse_matching_feature_source!r}')
+            if self.sparse_matching_feature_source == 'gmflow':
+                feature_channels = 128
+                feature_scale = 8
+                self.sparse_matching_feature_encoder = GMFlowFeatureEncoder(
+                    checkpoint_path=kargs.get(
+                        'sparse_matching_pretrained_path'),
+                    checkpoint_required=bool(kargs.get(
+                        'sparse_matching_pretrained_required', True)),
+                    feature_channels=feature_channels,
+                    num_transformer_layers=6)
+                for parameter in (
+                        self.sparse_matching_feature_encoder.parameters()):
+                    parameter.requires_grad_(False)
+            else:
+                # The penultimate backbone level is 1/8 for the current
+                # five-level architecture.
+                self.sparse_matching_feature_index = -2
+                feature_channels = kargs['embed_dims'][
+                    self.sparse_matching_feature_index]
+                feature_scale = kargs['scales'][-2]
             self.sparse_matcher = SparseGlobalMatcher(
-                feature_channels=kargs['embed_dims'][
-                    self.sparse_matching_feature_index],
-                feature_scale=kargs['scales'][-2],
+                feature_channels=feature_channels,
+                feature_scale=feature_scale,
                 hidden_channels=int(
                     kargs.get('sparse_matching_hidden_channels', 32)),
                 topk_ratio=float(
@@ -754,6 +811,14 @@ class MultiScaleFlow(nn.Module):
         else:
             self.unet = Unet(kargs['c'] * 2, kargs['M'])
 
+    def train(self, mode=True):
+        super().train(mode)
+        # The external correspondence representation is a fixed prior.  In
+        # particular, keep its BatchNorm statistics fixed during VFI training.
+        if self.sparse_matching_feature_encoder is not None:
+            self.sparse_matching_feature_encoder.eval()
+        return self
+
     def _compose_prediction(self, merged, refine_output):
         if self.version == 3:
             res = refine_output * self.refine_res_scale
@@ -813,10 +878,16 @@ class MultiScaleFlow(nn.Module):
     def _apply_sparse_matching(self, af, img0, img1, flow, timestep):
         if self.sparse_matcher is None:
             return flow
-        feature = af[self.sparse_matching_feature_index]
-        batch = img0.shape[0]
+        if self.sparse_matching_feature_encoder is not None:
+            with torch.no_grad():
+                feature0, feature1 = (
+                    self.sparse_matching_feature_encoder(img0, img1))
+        else:
+            feature = af[self.sparse_matching_feature_index]
+            batch = img0.shape[0]
+            feature0, feature1 = feature[:batch], feature[batch:]
         return self.sparse_matcher(
-            feature[:batch], feature[batch:], img0, img1, flow, timestep)
+            feature0, feature1, img0, img1, flow, timestep)
 
     def _apply_multi_hypothesis(self, img0, img1, warped_img0, warped_img1,
                                 flow, mask, timestep, primary_merged):

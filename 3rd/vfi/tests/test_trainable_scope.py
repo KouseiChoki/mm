@@ -18,6 +18,8 @@ class _TinyFlowNet(nn.Module):
                 'content_upsampler': nn.Linear(2, 2),
             }),
         ])
+        self.sparse_matching_feature_encoder = nn.Sequential(
+            nn.Linear(2, 2))
         self.sparse_matcher = nn.Sequential(nn.Linear(2, 2))
         self.multi_hypothesis = nn.Sequential(nn.Linear(2, 2))
         self.unet = nn.Linear(2, 2)
@@ -58,6 +60,22 @@ class TrainableScopeTest(unittest.TestCase):
         self.assertFalse(states['block.0.weight'])
         self.assertFalse(states['feature_bone.weight'])
         self.assertFalse(states['unet.weight'])
+
+    def test_all_scope_keeps_pretrained_matching_features_frozen(self):
+        model = object.__new__(Model)
+        model.net = _TinyFlowNet()
+        model.optimG = torch.optim.AdamW(model.net.parameters(), lr=1e-4)
+
+        model.set_trainable_scope('all')
+
+        states = {
+            name: parameter.requires_grad
+            for name, parameter in model.net.named_parameters()
+        }
+        self.assertTrue(states['feature_bone.weight'])
+        self.assertTrue(states['sparse_matcher.0.weight'])
+        self.assertFalse(
+            states['sparse_matching_feature_encoder.0.weight'])
 
     def test_multi_hypothesis_scope_only_enables_candidate_branch(self):
         model = object.__new__(Model)

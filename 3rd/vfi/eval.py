@@ -244,6 +244,9 @@ def parse_args():
     parser.add_argument(
         '--max_pairs_per_scene', '--max-pairs-per-scene', default=0, type=int,
         help='每个序列最多测试的相邻帧对数量；0=全部，用于快速检查')
+    parser.add_argument(
+        '--scene_list', '--scene-list', default=None, type=str,
+        help='可选的相对场景目录清单；用于固定实拍验收集和跨机器复现')
     parser.add_argument('--dry_run', '--dry-run', action='store_true',
                         help='只扫描并打印测试集，不加载模型或写输出')
     parser.add_argument(
@@ -290,6 +293,28 @@ def main():
 
     model_yaml = resolve_model_yaml(ckpt_path, args.model_yaml)
     sequences = collect_sequences(root, output)
+    scene_list_path = None
+    if args.scene_list is not None:
+        scene_list_path = Path(args.scene_list).expanduser().resolve()
+        if not scene_list_path.is_file():
+            raise FileNotFoundError(f'场景清单不存在: {scene_list_path}')
+        requested = {
+            line.strip().replace('\\', '/')
+            for line in scene_list_path.read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith('#')
+        }
+        available = {
+            str(folder.relative_to(root)).replace('\\', '/')
+            for folder, _ in sequences
+        }
+        missing = sorted(requested - available)
+        if missing:
+            raise ValueError(
+                f'场景清单有 {len(missing)} 项未在测试集发现: {missing[:8]}')
+        sequences = [
+            item for item in sequences
+            if str(item[0].relative_to(root)).replace('\\', '/') in requested
+        ]
     pair_count = sum(len(frames) - 1 for _, frames in sequences)
     if not sequences:
         raise ValueError(f'测试集下没有发现至少包含两帧的图像序列: {root}')
@@ -322,6 +347,7 @@ def main():
         'checkpoint': str(ckpt_path),
         'model_yaml': str(model_yaml),
         'test_root': str(root),
+        'scene_list': str(scene_list_path) if scene_list_path else None,
         'output': str(output),
         'device': str(model._dev),
         'local': args.local,

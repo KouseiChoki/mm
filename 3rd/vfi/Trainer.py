@@ -155,7 +155,11 @@ class Model:
         local_only = scope in ('local', 'local_ifblock')
         trainable, total = 0, 0
         for name, parameter in self.net.named_parameters():
-            if local_only:
+            if name.startswith('sparse_matching_feature_encoder.'):
+                # GMFlow is a fixed correspondence prior and stays frozen
+                # even when the original VFI model trains end to end.
+                enabled = False
+            elif local_only:
                 enabled = name.startswith('local_block.')
             elif scope == 'flow_heads':
                 enabled = name.startswith(('block.', 'local_block.'))
@@ -808,8 +812,21 @@ class Model:
                         sparse_matcher.last_proposal_abs),
                     'sparse_match_confidence': (
                         sparse_matcher.last_confidence),
+                    'sparse_match_margin': sparse_matcher.last_margin,
+                    'sparse_match_mutual_error': (
+                        sparse_matcher.last_mutual_error),
+                    'sparse_match_mutual_ratio': (
+                        sparse_matcher.last_mutual_ratio),
+                    'sparse_match_valid_ratio': (
+                        sparse_matcher.last_valid_ratio),
+                    'sparse_match_similarity_gain': (
+                        sparse_matcher.last_similarity_gain),
+                    'sparse_match_similarity_improved_ratio': (
+                        sparse_matcher.last_similarity_improved_ratio),
                     'sparse_match_selected_ratio': (
                         sparse_matcher.last_selected_ratio),
+                    'sparse_match_selected_delta': (
+                        sparse_matcher.last_residual_selected_abs),
                 })
             if (multi_hypothesis is not None
                     and multi_hypothesis.last_output_delta_abs is not None):

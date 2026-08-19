@@ -766,7 +766,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
               f'mask_loss={m.get("pervfi_mask_loss_weight", 0.0)}')
     if m.get('sparse_matching', False):
         print('[matching] sparse global correspondence: '
-              'feature=1/8 '
+              f'features={m.get("sparse_matching_feature_source", "mamba")}@1/8 '
               f'points={m.get("sparse_matching_topk_ratio", 0.02):.2%} '
               f'max_points={m.get("sparse_matching_max_points", 128)} '
               f'max_displacement='
@@ -1044,9 +1044,15 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                         'sparse_match_delta')
                     sparse_confidence = model.last_loss_components.get(
                         'sparse_match_confidence')
+                    sparse_selected_delta = model.last_loss_components.get(
+                        'sparse_match_selected_delta')
+                    sparse_valid = model.last_loss_components.get(
+                        'sparse_match_valid_ratio')
                     sparse_text = (
                         f' sgm_delta:{sparse_delta.item():.4f}px'
+                        f' selected:{sparse_selected_delta.item():.3f}px'
                         f' conf:{sparse_confidence.item():.3f}'
+                        f' valid:{sparse_valid.item():.2%}'
                         if sparse_delta is not None else '')
                     multi_delta = model.last_loss_components.get(
                         'multi_hypothesis_output_delta')
