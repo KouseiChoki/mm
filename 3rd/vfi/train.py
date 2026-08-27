@@ -19,6 +19,7 @@ import time
 import random
 import argparse
 import shutil
+import re
 
 import yaml
 import numpy as np
@@ -33,6 +34,130 @@ from kousei_dataset import MixedTierDataset, TierDataset, resolve_train_lists
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Model.__init__ consumes these training-only values.  Every other key in the
+# YAML model section is structural and is forwarded to init_model_config.
+# Kept at module scope so architecture smoke tests cannot silently use a
+# different split from the real training entry point.
+MODEL_TRAIN_KEYS = (
+    'loss_type', 'flow_loss_weight', 'flow_stage_gamma',
+    'flow_motion_threshold', 'flow_motion_balance', 'flow_motion_gain',
+    'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
+    'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
+    'normalize_pixel_loss', 'residual_loss_weight',
+    'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
+    'lc_warp_weight', 'pervfi_mask_loss_weight',
+    'multi_hypothesis_oracle_weight', 'multi_hypothesis_oracle_eps',
+    'pqmax_oracle_weight', 'pqmax_selection_weight',
+    'pqmax_entropy_weight', 'pqmax_diversity_weight',
+    'pqmax_diversity_margin', 'pqmax_frequency_weight',
+    'pqmax_frequency_warp_weight', 'pqmax_frequency_levels',
+    'pqmax_charbonnier_eps',
+    'frequency_loss_weight', 'frequency_warp_loss_weight',
+    'frequency_loss_levels', 'frequency_charbonnier_eps',
+    'edge_loss_weight', 'edge_warp_loss_weight',
+    'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
+    'edge_charbonnier_eps',
+    'hard_roi_ratio', 'hard_roi_min_residual', 'hard_roi_dilation',
+    'hard_roi_final_weight', 'hard_roi_warp_weight',
+    'hard_roi_edge_weight', 'hard_roi_charbonnier_eps',
+)
+
+# Keep the primary loss panel compact. Raw/weighted duplicates, constants and
+# architecture diagnostics are routed to dedicated namespaces below.
+TENSORBOARD_CORE_LOSS_KEYS = (
+    'pixel', 'final',
+    'lc_charbonnier', 'lc_census_weighted',
+    'lc_final_lap_weighted', 'lc_warp',
+    'residual_weighted', 'flow_weighted',
+    'frequency_final_weighted', 'frequency_warp_weighted',
+    'edge_final_weighted', 'edge_warp_weighted',
+    'hard_roi_final_weighted', 'hard_roi_warp_weighted',
+    'hard_roi_edge_weighted',
+)
+
+TENSORBOARD_SINGLE_MATCH_KEYS = (
+    'confidence', 'gate', 'active_ratio', 'proposal', 'applied',
+    'recurrent', 'margin', 'mutual_error', 'similarity_gain',
+    'similarity_improved_ratio',
+)
+
+
+def route_tensorboard_components(components, *, pqmax_enabled=False,
+                                 multi_hypothesis_enabled=False,
+                                 pervfi_enabled=False):
+    """Return a concise, semantically grouped TensorBoard scalar mapping."""
+    routed = {}
+    for name in TENSORBOARD_CORE_LOSS_KEYS:
+        if name in components:
+            routed[f'loss_component/{name}'] = components[name]
+
+    # Stage losses diagnose where flow quality is lost, but do not belong in
+    # the primary loss breakdown. ``merge_*`` is the same value and is omitted.
+    for name, value in components.items():
+        match = re.fullmatch(r'lc_warp_stage_(\d+)', name)
+        if match:
+            routed[f'warp_stage/loss_{match.group(1)}'] = value
+
+        match = re.fullmatch(
+            r'pre_corr_stage_(\d+)_(peak|entropy|scale)', name)
+        if match:
+            routed[
+                f'matching/pre_corr/stage_{match.group(1)}/{match.group(2)}'
+            ] = value
+
+        match = re.fullmatch(
+            r'corr_stage_(\d+)_(peak|entropy|feature_abs)', name)
+        if match:
+            routed[
+                f'matching/local_corr/stage_{match.group(1)}/{match.group(2)}'
+            ] = value
+
+    for suffix in TENSORBOARD_SINGLE_MATCH_KEYS:
+        name = f'single_match_{suffix}'
+        if name in components:
+            routed[f'matching/single/{suffix}'] = components[name]
+
+    if 'hard_roi_area' in components:
+        routed['roi/train_area'] = components['hard_roi_area']
+    if 'residual' in components:
+        routed['synthesis/residual_abs'] = components['residual']
+    if 'caun_delta' in components:
+        routed['matching/caun/delta'] = components['caun_delta']
+
+    # Historical ablations retain useful diagnostics only when their module is
+    # actually enabled. Disabled branches no longer create flat zero curves.
+    if pervfi_enabled:
+        for name in (
+                'pervfi_mask_binary', 'pervfi_mask_soft_ratio',
+                'pervfi_mask_binary_weighted'):
+            if name in components:
+                routed[f'mask/{name.removeprefix("pervfi_mask_")}'] = (
+                    components[name])
+    if multi_hypothesis_enabled:
+        for name, value in components.items():
+            if name.startswith('multi_hypothesis_'):
+                routed[
+                    'synthesis/multi_hypothesis/'
+                    + name.removeprefix('multi_hypothesis_')
+                ] = value
+    if pqmax_enabled:
+        pq_loss_names = {
+            'pqmax_oracle', 'pqmax_oracle_weighted',
+            'pqmax_selection', 'pqmax_selection_weighted',
+            'pqmax_entropy_loss', 'pqmax_entropy_weighted',
+            'pqmax_diversity', 'pqmax_diversity_weighted',
+            'pqmax_frequency', 'pqmax_frequency_weighted',
+            'pqmax_frequency_warp', 'pqmax_frequency_warp_weighted',
+        }
+        for name, value in components.items():
+            if name in pq_loss_names:
+                routed[f'pqmax_loss/{name.removeprefix("pqmax_")}'] = value
+            elif name.startswith('pqmax_'):
+                routed[
+                    f'synthesis/pqmax/{name.removeprefix("pqmax_")}'
+                ] = value
+    return routed
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 工具
@@ -43,17 +168,50 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
-def archive_config(path, checkpoint_dir):
+def validate_crop_sizes(values, label='data.crop_sizes'):
+    """Normalize [height, width, batch] entries and reject ambiguity early."""
+    if not isinstance(values, (list, tuple)) or not values:
+        raise ValueError(f'{label}必须是非空的[height,width,batch]列表')
+    normalized = []
+    for raw in values:
+        if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+            raise ValueError(
+                f'{label}每项必须为[height,width,batch]，got {raw!r}')
+        try:
+            item = tuple(int(value) for value in raw)
+            exact = all(float(value) == integer
+                        for value, integer in zip(raw, item))
+        except (TypeError, ValueError):
+            exact = False
+            item = ()
+        if not exact or min(item) <= 0:
+            raise ValueError(
+                f'{label}每项必须包含三个正整数，got {raw!r}')
+        if item[0] % 16 or item[1] % 16:
+            raise ValueError(
+                f'{label}的height/width必须是16的倍数，got {raw!r}')
+        normalized.append(item)
+    return normalized
+
+
+def archive_config(path, checkpoint_dir, resolved_config=None):
     """同一实验目录禁止静默覆盖不同配置，保护旧checkpoint的release语义。"""
     destination = os.path.join(checkpoint_dir, 'model.yaml')
+    candidate = (
+        resolved_config if resolved_config is not None else load_config(path))
     if os.path.exists(destination):
-        if load_config(destination) != load_config(path):
+        if load_config(destination) != candidate:
             raise ValueError(
                 f'{destination} 已存在且内容与当前配置不同。'
                 '请更换 exp_name，避免旧checkpoint关联到错误model.yaml。')
         print(f'[archive] 复用已归档配置 → {destination}')
         return
-    shutil.copy(path, destination)
+    if resolved_config is None:
+        shutil.copy(path, destination)
+    else:
+        with open(destination, 'w') as output:
+            yaml.safe_dump(
+                candidate, output, allow_unicode=True, sort_keys=False)
     print(f'[archive] 配置已归档 → {destination}')
 
 
@@ -425,7 +583,8 @@ class AnomalyDumper:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
+def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype,
+             average_psnr_domains=None):
     """按数据域评估PSNR；带MV的验证集额外评估最终flow EPE。"""
     model.eval()
     metrics = {}
@@ -659,6 +818,21 @@ def evaluate(model, val_loaders, nr_eval, writer, use_amp, amp_dtype):
                             f' flow_valid={group_valid:.3f}'
                             f' flow_samples={group_coverage:.3f}')
                     print(group_message)
+
+    if average_psnr_domains:
+        domains = list(average_psnr_domains)
+        missing = [
+            name for name in domains if f'{name}/psnr' not in metrics]
+        if missing:
+            print('[eval] WARNING: 无法计算average/psnr，缺少验证域: '
+                  + ', '.join(missing))
+        else:
+            average_psnr = sum(
+                metrics[f'{name}/psnr'] for name in domains) / len(domains)
+            metrics['average/psnr'] = average_psnr
+            writer.add_scalar('val/average_psnr', average_psnr, nr_eval)
+            print(f'[eval {nr_eval}] average: PSNR={average_psnr:.4f} '
+                  f'domains={",".join(domains)}')
     model.train()
     return metrics
 
@@ -671,7 +845,12 @@ def dump_mv_comparisons(model, val_loaders, epoch, dumper,
         return 0
     val_loader = val_loaders.get('teacher')
     if val_loader is None:
-        print('[mv-compare] WARNING: 没有teacher验证集，跳过MV输出')
+        val_loader = next((
+            loader for name, loader in val_loaders.items()
+            if name.startswith('teacher_')), None)
+    if val_loader is None:
+        print('[mv-compare] WARNING: 没有teacher或teacher_*验证集，'
+              '跳过MV输出')
         return 0
 
     was_training = bool(model.net.training)
@@ -775,13 +954,16 @@ def build_val_loaders(data_cfg, lists_dir):
 # 训练
 # ─────────────────────────────────────────────────────────────────────────────
 
-def train(C, restore_ckpt=None, config_path=None, resume=False):
+def train(C, restore_ckpt=None, config_path=None, resume=False,
+          archive_resolved_config=False):
     exp = C['exp_name']
     # 约定: 配置yaml随checkpoint归档, 推理侧读同目录model.yaml构建同构模型
     ckpt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), f'ckpt/{exp}')
     os.makedirs(ckpt_dir, exist_ok=True)
     if config_path:
-        archive_config(config_path, ckpt_dir)
+        archive_config(
+            config_path, ckpt_dir,
+            resolved_config=C if archive_resolved_config else None)
     d, opt, mon = C['data'], C['optim'], C['monitor']
     record_paths = build_record_paths(exp, mon)
     writer = SummaryWriter(record_paths['tensorboard'])
@@ -815,24 +997,8 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     # ── 模型 ────────────────────────────────────────────────────────────────
     m = C['model']
     cfg.MODEL_CONFIG['LOGNAME'] = exp
-    _train_keys = (
-        'loss_type', 'flow_loss_weight', 'flow_stage_gamma',
-        'flow_motion_threshold', 'flow_motion_balance', 'flow_motion_gain',
-        'flow_motion_scale', 'flow_motion_weight_cap', 'flow_charbonnier_eps',
-        'flow_loss_warmup_steps', 'merge_loss_gamma', 'merge_loss_weights',
-        'normalize_pixel_loss', 'residual_loss_weight',
-        'lc_charbonnier_eps', 'lc_census_weight', 'lc_lap_weight',
-        'lc_warp_weight', 'pervfi_mask_loss_weight',
-        'multi_hypothesis_oracle_weight', 'multi_hypothesis_oracle_eps',
-        'edge_loss_weight', 'edge_warp_loss_weight',
-        'edge_motion_gain', 'edge_motion_scale', 'edge_weight_cap',
-        'edge_charbonnier_eps',
-        'hard_roi_ratio', 'hard_roi_min_residual', 'hard_roi_dilation',
-        'hard_roi_final_weight', 'hard_roi_warp_weight',
-        'hard_roi_edge_weight', 'hard_roi_charbonnier_eps',
-    )                                                        # 训练侧消费, 不进结构
     _extra = {k: v for k, v in m.items()
-              if k not in ('F', 'depth', 'M', 'version') + _train_keys}
+              if k not in ('F', 'depth', 'M', 'version') + MODEL_TRAIN_KEYS}
     cfg.MODEL_CONFIG['MODEL_ARCH'] = cfg.init_model_config(
         F=m['F'], depth=m['depth'], M=m.get('M', False), version=m['version'],
         **_extra)
@@ -860,6 +1026,22 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
             'multi_hypothesis_oracle_weight', 0.0),
         multi_hypothesis_oracle_eps=m.get(
             'multi_hypothesis_oracle_eps', 1e-3),
+        pqmax_oracle_weight=m.get('pqmax_oracle_weight', 0.0),
+        pqmax_selection_weight=m.get('pqmax_selection_weight', 0.0),
+        pqmax_entropy_weight=m.get('pqmax_entropy_weight', 0.0),
+        pqmax_diversity_weight=m.get('pqmax_diversity_weight', 0.0),
+        pqmax_diversity_margin=m.get('pqmax_diversity_margin', 1.0),
+        pqmax_frequency_weight=m.get('pqmax_frequency_weight', 0.0),
+        pqmax_frequency_warp_weight=m.get(
+            'pqmax_frequency_warp_weight', 0.0),
+        pqmax_frequency_levels=m.get('pqmax_frequency_levels', 3),
+        pqmax_charbonnier_eps=m.get('pqmax_charbonnier_eps', 1e-3),
+        frequency_loss_weight=m.get('frequency_loss_weight', 0.0),
+        frequency_warp_loss_weight=m.get(
+            'frequency_warp_loss_weight', 0.0),
+        frequency_loss_levels=m.get('frequency_loss_levels', 3),
+        frequency_charbonnier_eps=m.get(
+            'frequency_charbonnier_eps', 1e-3),
         edge_loss_weight=m.get('edge_loss_weight', 0.0),
         edge_warp_loss_weight=m.get('edge_warp_loss_weight', 0.0),
         edge_motion_gain=m.get('edge_motion_gain', 0.0),
@@ -887,6 +1069,20 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
               f'max_points={m.get("sparse_matching_max_points", 128)} '
               f'max_displacement='
               f'{m.get("sparse_matching_max_displacement", 96.0):g}px')
+    if m.get('pyramid_correlation', False):
+        print('[motion-core] integrated flow-aligned cost volumes: '
+              f'radii={m.get("pyramid_correlation_radii", [6, 4, 3])} '
+              f'channels={m.get("pyramid_correlation_channels", 16)} '
+              f'temperature='
+              f'{m.get("pyramid_correlation_temperature", 0.07):g}')
+    if m.get('pretrained_correspondence', False):
+        print('[motion-core] pretrained correspondence pyramid: '
+              f'checkpoint={m.get("pretrained_correspondence_path")} '
+              f'stages={m.get("pretrained_correspondence_stages", [0, 1])} '
+              f'radii={m.get("pretrained_correspondence_radii", [6, 4])} '
+              f'frozen={m.get("pretrained_correspondence_frozen", True)} '
+              f'init_scale='
+              f'{m.get("pretrained_correspondence_init_scale", 0.01):g}')
     if m.get('multi_hypothesis', False):
         print('[multi-hypothesis] primary + one local alternative: '
               f'work_scale=1/{m.get("multi_hypothesis_work_scale", 4)} '
@@ -895,6 +1091,38 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
               f'max_mix={m.get("multi_hypothesis_max_mix", 0.5):g} '
               f'oracle_weight='
               f'{m.get("multi_hypothesis_oracle_weight", 0.0):g}')
+    if m.get('pqmax_enabled', False):
+        print('[PQMax] joint all-pairs recurrent multi-field core: '
+              f'fields={m.get("pqmax_num_fields", 4)} '
+              f'iterations={m.get("pqmax_recurrent_iterations", 6)} '
+              f'local_radius={m.get("pqmax_local_radius", 4)} '
+              f'boundary_channels='
+              f'{m.get("pqmax_boundary_hidden_channels", 128)} '
+              f'boundary_blocks={m.get("pqmax_boundary_blocks", 10)} '
+              f'fusion_temperature='
+              f'{m.get("pqmax_fusion_temperature", 0.35):g}')
+        print('[PQMax-loss] '
+              f'oracle={m.get("pqmax_oracle_weight", 0.0):g} '
+              f'selection={m.get("pqmax_selection_weight", 0.0):g} '
+              f'entropy={m.get("pqmax_entropy_weight", 0.0):g} '
+              f'diversity={m.get("pqmax_diversity_weight", 0.0):g} '
+              f'frequency={m.get("pqmax_frequency_weight", 0.0):g} '
+              f'warp_frequency='
+              f'{m.get("pqmax_frequency_warp_weight", 0.0):g}')
+    if m.get('single_match_enabled', False):
+        print('[single-match] one confidence-gated bilateral flow field: '
+              f'iterations={m.get("single_match_recurrent_iterations", 4)} '
+              f'local_radius={m.get("single_match_local_radius", 4)} '
+              f'max_global_delta='
+              f'{m.get("single_match_max_global_delta", 48.0):g}px '
+              f'gate_init='
+              f'{m.get("single_match_gate_initial_probability", 0.10):.1%}')
+    if (m.get('frequency_loss_weight', 0.0) > 0.0
+            or m.get('frequency_warp_loss_weight', 0.0) > 0.0):
+        print('[frequency-loss] architecture-independent high-pass: '
+              f'final={m.get("frequency_loss_weight", 0.0):g} '
+              f'last_warp={m.get("frequency_warp_loss_weight", 0.0):g} '
+              f'levels={m.get("frequency_loss_levels", 3)}')
     if (m.get('edge_loss_weight', 0.0) > 0.0
             or m.get('edge_warp_loss_weight', 0.0) > 0.0):
         print('[edge-loss] motion-weighted luminance Sobel: '
@@ -936,7 +1164,10 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     lists_dir = d['lists_dir']
     lists = resolve_train_lists(
         lists_dir, C['phases'], tiers=d.get('tiers'))
-    crop_sizes = [tuple(c) for c in d['crop_sizes']]
+    crop_sizes = validate_crop_sizes(d['crop_sizes'])
+    if 'batch_size' in d:
+        print('[data] WARNING: data.batch_size已弃用且不会控制DataLoader；'
+              '实际batch由crop_sizes每项的第三个值决定')
     if d.get('mv_cache_dirname'):
         print('[data] teacher MV cache: '
               f'{d["mv_cache_dirname"]} (mmap crop, '
@@ -949,7 +1180,7 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
         d['root'], lists,
         ratios=C['phases'][0]['ratios'],
         source_options=d.get('source_options'),
-        crop_hw=crop_sizes[0],
+        crop_hw=crop_sizes[0][:2],
         framesteps=tuple(d['framesteps']),
         t_half_prob=d['t_half_prob'],
         mv_prob=d['mv_prob'],
@@ -978,10 +1209,11 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
     val_loaders = build_val_loaders(d, lists_dir)
 
     # 名义 step/epoch: 固定值保证LR调度可预期 (Mixed数据集名义长度过大, 不直接用)
+    default_batch_size = crop_sizes[0][2]
     default_steps_per_epoch = max(
         1, C.get('steps_per_epoch',
-                 min(len(train_set), 2000 * d['batch_size']))
-        // d['batch_size'])
+                 min(len(train_set), 2000 * default_batch_size))
+        // default_batch_size)
     total_steps = sum(
         int(phase['epochs'])
         * int(phase.get('steps_per_epoch', default_steps_per_epoch))
@@ -1020,8 +1252,9 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
             phase.get('grad_accum_steps', opt.get('grad_accum_steps', 1)))
         if grad_accum_steps <= 0:
             raise ValueError(f'{phase["name"]}.grad_accum_steps必须为正整数')
-        phase_crop_sizes = [
-            tuple(value) for value in phase.get('crop_sizes', crop_sizes)]
+        phase_crop_sizes = validate_crop_sizes(
+            phase.get('crop_sizes', crop_sizes),
+            label=f'{phase["name"]}.crop_sizes')
         phase_opt = dict(opt)
         phase_opt.update(phase.get('optim', {}))
         phase_lr_schedule = str(
@@ -1143,9 +1376,17 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                     writer.add_scalar('loss/raw', loss, step)
                     writer.add_scalar('loss/ema', loss_ema, step)
                     writer.add_scalar('loss/flow_epe', loss_flow, step)
-                    for name, value in model.last_loss_components.items():
-                        writer.add_scalar(
-                            f'loss_component/{name}', value.item(), step)
+                    routed_components = route_tensorboard_components(
+                        model.last_loss_components,
+                        pqmax_enabled=getattr(
+                            model.net, 'pqmax', None) is not None,
+                        multi_hypothesis_enabled=getattr(
+                            model.net, 'multi_hypothesis', None) is not None,
+                        pervfi_enabled=(
+                            getattr(model.net, 'blend_mode', 'soft')
+                            == 'pervfi'))
+                    for tag, value in routed_components.items():
+                        writer.add_scalar(tag, value.item(), step)
                     if model.last_flow_stage_losses is not None:
                         for si, stage_loss in enumerate(
                                 model.last_flow_stage_losses.cpu().tolist()):
@@ -1164,6 +1405,38 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                     caun_text = (
                         f' caun_delta:{caun_delta.item():.4f}px'
                         if caun_delta is not None else '')
+                    corr_coarse_peak = model.last_loss_components.get(
+                        'corr_stage_0_peak')
+                    corr_coarse_entropy = model.last_loss_components.get(
+                        'corr_stage_0_entropy')
+                    corr_fine_peak = model.last_loss_components.get(
+                        f'corr_stage_{model.net.flow_num_stage - 1}_peak')
+                    corr_fine_entropy = model.last_loss_components.get(
+                        f'corr_stage_{model.net.flow_num_stage - 1}_entropy')
+                    corr_text = (
+                        f' corr_peak:{corr_coarse_peak.item():.3f}/'
+                        f'{corr_fine_peak.item():.3f}'
+                        f' entropy:{corr_coarse_entropy.item():.3f}/'
+                        f'{corr_fine_entropy.item():.3f}'
+                        if corr_coarse_peak is not None else '')
+                    pre_corr_parts = []
+                    for pre_stage in range(model.net.flow_num_stage):
+                        pre_peak = model.last_loss_components.get(
+                            f'pre_corr_stage_{pre_stage}_peak')
+                        if pre_peak is None:
+                            continue
+                        pre_entropy = model.last_loss_components[
+                            f'pre_corr_stage_{pre_stage}_entropy']
+                        pre_scale = model.last_loss_components[
+                            f'pre_corr_stage_{pre_stage}_scale']
+                        pre_corr_parts.append(
+                            f's{pre_stage}={pre_peak.item():.3f}/'
+                            f'{pre_entropy.item():.3f}/'
+                            f'{pre_scale.item():.4f}')
+                    pre_corr_text = (
+                        ' pre_corr(peak/entropy/scale):'
+                        + ','.join(pre_corr_parts)
+                        if pre_corr_parts else '')
                     sparse_delta = model.last_loss_components.get(
                         'sparse_match_delta')
                     sparse_confidence = model.last_loss_components.get(
@@ -1178,6 +1451,30 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                         f' conf:{sparse_confidence.item():.3f}'
                         f' valid:{sparse_valid.item():.2%}'
                         if sparse_delta is not None else '')
+                    single_applied = model.last_loss_components.get(
+                        'single_match_applied')
+                    single_proposal = model.last_loss_components.get(
+                        'single_match_proposal')
+                    single_recurrent = model.last_loss_components.get(
+                        'single_match_recurrent')
+                    single_confidence = model.last_loss_components.get(
+                        'single_match_confidence')
+                    single_gate = model.last_loss_components.get(
+                        'single_match_gate')
+                    single_mutual = model.last_loss_components.get(
+                        'single_match_mutual_error')
+                    single_gain = model.last_loss_components.get(
+                        'single_match_similarity_gain')
+                    single_text = (
+                        f' sm(proposal/applied/recur):'
+                        f'{single_proposal.item():.2f}/'
+                        f'{single_applied.item():.3f}/'
+                        f'{single_recurrent.item():.3f}px'
+                        f' conf/gate:{single_confidence.item():.3f}/'
+                        f'{single_gate.item():.3f}'
+                        f' cycle:{single_mutual.item():.2f}'
+                        f' gain:{single_gain.item():+.3f}'
+                        if single_applied is not None else '')
                     multi_delta = model.last_loss_components.get(
                         'multi_hypothesis_output_delta')
                     multi_flow = model.last_loss_components.get(
@@ -1189,6 +1486,22 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                         f' alt_flow:{multi_flow.item():.3f}px'
                         f' mix:{multi_mix.item():.4f}'
                         if multi_delta is not None else '')
+                    pq_entropy = model.last_loss_components.get(
+                        'pqmax_fusion_entropy')
+                    pq_spread = model.last_loss_components.get(
+                        'pqmax_flow_spread')
+                    pq_gate = model.last_loss_components.get(
+                        'pqmax_detail_gate')
+                    pq_oracle = model.last_loss_components.get(
+                        'pqmax_oracle')
+                    pq_select = model.last_loss_components.get(
+                        'pqmax_selection')
+                    pq_text = (
+                        f' pq(ent/spread/gate):{pq_entropy.item():.3f}/'
+                        f'{pq_spread.item():.2f}px/{pq_gate.item():.3f}'
+                        f' oracle:{pq_oracle.item():.4f}'
+                        f' select:{pq_select.item():.3f}'
+                        if pq_entropy is not None else '')
                     roi_area = model.last_loss_components.get(
                         'hard_roi_area')
                     roi_final = model.last_loss_components.get(
@@ -1209,14 +1522,17 @@ def train(C, restore_ckpt=None, config_path=None, resume=False):
                           f'time:{data_time:.2f}+{train_time:.2f} '
                           f'loss:{loss:.4f} ema:{loss_ema:.4f} '
                           f'flow:{loss_flow:.3f} lr:{lr:.2e}'
-                          f'{caun_text}{sparse_text}{multi_text}{roi_text}')
+                          f'{caun_text}{corr_text}{pre_corr_text}'
+                          f'{sparse_text}{single_text}{multi_text}{pq_text}'
+                          f'{roi_text}')
                 step += 1
 
             epoch_global += 1
             nr_eval += 1
             if nr_eval % mon['eval_every_epochs'] == 0:
                 metrics = evaluate(
-                    model, val_loaders, nr_eval, writer, use_amp, amp_dtype)
+                    model, val_loaders, nr_eval, writer, use_amp, amp_dtype,
+                    average_psnr_domains=mon.get('average_psnr_domains'))
                 metric_value = metrics.get(best_metric_name)
                 if metric_value is None:
                     print(f'[best] WARNING: 指标 {best_metric_name} 不存在，'
@@ -1274,11 +1590,53 @@ if __name__ == '__main__':
     parser.add_argument(
         '--loader_out_of_order', action='store_true',
         help='允许先返回已完成batch，避免单个慢PNG读取阻塞整个DataLoader')
+    parser.add_argument(
+        '--smoke_epochs', type=int, default=None,
+        help='只跑第一phase的指定轮数，并使用独立_smoke实验名')
+    parser.add_argument(
+        '--smoke_steps', type=int, default=None,
+        help='配合--smoke_epochs覆盖每轮step数')
+    parser.add_argument(
+        '--smoke_tag', type=str, default='smoke',
+        help='短消融独立实验标签，只允许字母、数字、下划线和连字符')
+    parser.add_argument(
+        '--corr_stages', choices=('1/16', '1/8', 'both'), default=None,
+        help='短消融覆盖预训练correspondence注入层级')
     args = parser.parse_args()
     if args.resume and not args.restore_ckpt:
         parser.error('--resume requires --restore_ckpt')
 
     C = load_config(args.config)
+    resolved_override = False
+    if args.corr_stages is not None:
+        if args.smoke_epochs is None:
+            parser.error('--corr_stages目前只用于--smoke_epochs短消融')
+        C['model']['pretrained_correspondence_stages'] = {
+            '1/16': [0], '1/8': [1], 'both': [0, 1],
+        }[args.corr_stages]
+        resolved_override = True
+    if args.smoke_epochs is not None:
+        if args.smoke_epochs <= 0:
+            parser.error('--smoke_epochs必须为正整数')
+        if args.smoke_steps is not None and args.smoke_steps <= 0:
+            parser.error('--smoke_steps必须为正整数')
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', args.smoke_tag):
+            parser.error('--smoke_tag只允许字母、数字、下划线和连字符')
+        C['exp_name'] = f'{C["exp_name"]}_{args.smoke_tag}'
+        C['phases'] = [dict(C['phases'][0])]
+        C['phases'][0]['epochs'] = args.smoke_epochs
+        if args.smoke_steps is not None:
+            C['phases'][0]['steps_per_epoch'] = args.smoke_steps
+        C['monitor']['eval_every_epochs'] = args.smoke_epochs
+        C['monitor']['save_every_epochs'] = args.smoke_epochs
+        if C['monitor'].get('mv_compare_every_epochs', 0) > 0:
+            C['monitor']['mv_compare_every_epochs'] = args.smoke_epochs
+        resolved_override = True
+        print('[smoke override] '
+              f'exp={C["exp_name"]} epochs={args.smoke_epochs} '
+              f'steps={C["phases"][0].get("steps_per_epoch", "default")}')
+    elif args.smoke_steps is not None:
+        parser.error('--smoke_steps需要同时指定--smoke_epochs')
     data_cfg = C['data']
     if args.loader_workers is not None:
         if args.loader_workers < 0:
@@ -1307,4 +1665,5 @@ if __name__ == '__main__':
     os.makedirs('log', exist_ok=True)
     train(
         C, restore_ckpt=args.restore_ckpt,
-        config_path=args.config, resume=args.resume)
+        config_path=args.config, resume=args.resume,
+        archive_resolved_config=resolved_override)

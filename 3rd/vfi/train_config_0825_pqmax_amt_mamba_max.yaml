@@ -1,0 +1,263 @@
+# PQMax long training: a new joint motion/synthesis model, not another frozen
+# repair branch.  It starts from 0729 only as initialization; all old modules,
+# the correspondence encoder, four motion fields and detail synthesis train
+# together.
+#
+# Launch (do NOT add --resume):
+#   ./launch_pqmax_max.sh
+
+exp_name: 0825_pqmax_amt_mamba_max
+seed: 1234
+
+model:
+  # Preserve every compatible 0729 tensor, then spend capacity in the new
+  # motion core where the visual failures actually originate.
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: true
+  content_aware_upsampling: false
+  sparse_matching: false
+  multi_hypothesis: false
+  pyramid_correlation: false
+
+  # The separately trained FlyingThings correspondence representation is only
+  # an initialization.  Freezing it was one cause of the previous ceiling.
+  pretrained_correspondence: true
+  pretrained_correspondence_path: ckpt/0821_flyingthings_correspondence_pretrain/best.pkl
+  pretrained_correspondence_required: true
+  pretrained_correspondence_frozen: false
+  pretrained_correspondence_stages: [0, 1]
+  pretrained_correspondence_transformer_layers: 6
+  pretrained_correspondence_max_feature_tokens: 4096
+  pretrained_correspondence_radii: [8, 6]
+  pretrained_correspondence_temperature: 0.05
+  pretrained_correspondence_init_scale: 0.05
+
+  # AMT/RAFT-inspired high-capacity path: full all-pairs global modes at 1/8,
+  # six recurrent local-correlation updates per field, then a deep 1/4
+  # boundary head emitting full-resolution corrections.
+  pqmax_enabled: true
+  pqmax_num_fields: 4
+  pqmax_recurrent_iterations: 6
+  pqmax_recurrent_hidden_channels: 160
+  pqmax_correlation_channels: 96
+  pqmax_local_radius: 4
+  pqmax_subpixel_radius: 1
+  pqmax_correlation_temperature: 0.05
+  pqmax_max_global_delta: 32.0
+  pqmax_recurrent_delta: 2.0
+  pqmax_boundary_hidden_channels: 128
+  pqmax_boundary_blocks: 10
+  pqmax_boundary_delta: 3.0
+  pqmax_fusion_temperature: 0.35
+  pqmax_primary_logit_bias: 1.0
+  pqmax_detail_hidden_channels: 64
+  pqmax_detail_blocks: 8
+  pqmax_detail_strength: 0.75
+  pqmax_detail_residual_scale: 0.05
+  # Throughput profile for a 32 GiB GPU: smaller crops and batch=2 make room
+  # for saved activations, avoiding backward recomputation.
+  pqmax_gradient_checkpointing: false
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.005
+
+  # Direct field supervision prevents the four hypotheses from becoming an
+  # inactive copy of the primary flow.  Selector+entropy suppress soft average
+  # blur; multi-scale frequency losses preserve fences, text and fine texture.
+  pqmax_oracle_weight: 0.35
+  pqmax_selection_weight: 0.08
+  pqmax_entropy_weight: 0.003
+  pqmax_diversity_weight: 0.002
+  pqmax_diversity_margin: 1.0
+  pqmax_frequency_weight: 0.40
+  pqmax_frequency_warp_weight: 0.15
+  pqmax_frequency_levels: 3
+  pqmax_charbonnier_eps: 1.0e-3
+
+  edge_loss_weight: 0.20
+  edge_warp_loss_weight: 0.15
+  edge_motion_gain: 2.0
+  edge_motion_scale: 0.10
+  edge_weight_cap: 3.0
+  edge_charbonnier_eps: 1.0e-3
+  hard_roi_ratio: 0.15
+  hard_roi_min_residual: 0.035
+  hard_roi_dilation: 5
+  hard_roi_final_weight: 0.50
+  hard_roi_warp_weight: 0.30
+  hard_roi_edge_weight: 0.15
+  hard_roi_charbonnier_eps: 1.0e-3
+
+  # FlyingThings hard-cycle flow is an early motion anchor only.  Target
+  # reconstruction dominates the much longer second and third phases.
+  flow_loss_weight: 0.0005
+  flow_loss_warmup_steps: 4000
+  flow_stage_gamma: 0.35
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.60
+  flow_motion_gain: 0.75
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 3.0
+  flow_charbonnier_eps: 1.0e-3
+
+optim:
+  lr_max: 1.5e-5
+  lr_min: 1.0e-6
+  warmup_steps: 2000
+  finetune: true
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 0.35
+  flow_lr_scale: 1.0
+  refine_lr_scale: 0.50
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, vimeo, xtrain, teacher_flyingthings]
+  batch_size: 2
+  num_workers: 12
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes: [[336, 608, 2]]
+  framesteps: [1]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+
+  mv_cache_dirname: mv_cache_f16
+  mv_cache_required: true
+  mv_cache_preview_stride: 4
+  mv_cycle_confidence: hard
+  mv_cycle_cache_required: true
+  val_mv_cycle_confidence: hard
+  val_mv_cycle_cache_required: false
+  mv_cycle_on_the_fly: false
+  val_mv_cycle_on_the_fly: false
+  motion_aware_crop_prob: 0.80
+  interpolation_aware_crop_prob: 0.80
+  interpolation_residual_threshold: 0.035
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 4
+  small_motion_max_ratio: 0.08
+  motion_crop_jitter: 0.25
+  augment_profile: legacy
+  source_options:
+    easy:
+      framesteps: [1, 2]
+      augment_profile: legacy
+    normal:
+      framesteps: [1, 2]
+      augment_profile: legacy
+    hard:
+      framesteps: [1, 2]
+      augment_profile: legacy
+    vimeo:
+      framesteps: [1]
+      augment_profile: legacy
+    xtrain:
+      framesteps: [4, 8, 16, 32]
+      augment_profile: legacy
+    teacher_flyingthings:
+      framesteps: [1]
+      augment_profile: legacy
+  val_lists:
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    vimeo: vimeo_val.txt
+    xtrain: xtrain_val.txt
+    teacher_flyingthings: teacher_flyingthings_val.txt
+
+phases:
+  # Establish real non-zero motion-field separation while synthetic GT flow is
+  # available.  This phase is deliberately shorter than target training.
+  - name: pqmax_motion_bootstrap
+    epochs: 160
+    steps_per_epoch: 401
+    grad_accum_steps: 4
+    lr_schedule: phase
+    trainable: all
+    local: true
+    crop_sizes: [[320, 576, 2]]
+    ratios: {easy: 0.14, normal: 0.14, hard: 0.14, vimeo: 0.14, xtrain: 0.14, teacher_flyingthings: 0.30}
+
+  # Main high-resolution end-to-end optimization.  No synthetic samples: the
+  # matcher, Mamba flow, field selector and synthesis learn target appearance.
+  - name: pqmax_target_joint
+    epochs: 900
+    steps_per_epoch: 401
+    grad_accum_steps: 4
+    lr_schedule: phase
+    trainable: all
+    local: true
+    optim:
+      lr_max: 1.2e-5
+      lr_min: 1.5e-6
+      warmup_steps: 1000
+    crop_sizes: [[336, 608, 2]]
+    ratios: {easy: 0.20, normal: 0.20, hard: 0.20, vimeo: 0.20, xtrain: 0.20, teacher_flyingthings: 0.0}
+
+  # Long low-LR balanced consolidation. Every target domain is sampled equally
+  # so checkpoint selection and training optimize the same macro objective.
+  - name: pqmax_balanced_frequency_consolidation
+    epochs: 500
+    steps_per_epoch: 401
+    grad_accum_steps: 4
+    lr_schedule: phase
+    trainable: all
+    local: true
+    optim:
+      lr_max: 4.0e-6
+      lr_min: 5.0e-7
+      warmup_steps: 500
+    crop_sizes: [[336, 608, 2]]
+    ratios: {easy: 0.20, normal: 0.20, hard: 0.20, vimeo: 0.20, xtrain: 0.20, teacher_flyingthings: 0.0}
+
+monitor:
+  record_root: record
+  eval_every_epochs: 10
+  save_every_epochs: 20
+  log_every_steps: 20
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps
+  dump_max: 30
+  mv_compare_every_epochs: 20
+  mv_compare_max_samples: 2
+  mv_compare_dir: mv_comparisons
+  average_psnr_domains: [easy, normal, hard, vimeo, xtrain]
+  best_metric: average/psnr
+  best_mode: max

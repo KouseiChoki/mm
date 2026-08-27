@@ -1,0 +1,61 @@
+# Standalone correspondence gate. This does not train the VFI synthesis model.
+# It fine-tunes a dedicated GMFlow representation with FlyingThings hard-cycle
+# GT and measures whether endpoint matching itself becomes reliable.
+
+exp_name: 0821_flyingthings_correspondence_pretrain
+seed: 1234
+record_root: record
+checkpoint_root: ckpt
+
+model:
+  pretrained_path: pretrained/gmflow_sintel-0c07dcb3.pth
+  feature_channels: 128
+  transformer_layers: 6
+  # Training crop 320x576 produces exactly 40x72=2880 tokens at 1/8.
+  max_feature_tokens: 2880
+
+loss:
+  temperature: 0.07
+  max_queries: 256
+  scale_weights:
+    1/8: 1.0
+    1/16: 0.5
+
+optim:
+  lr_max: 2.0e-5
+  lr_min: 2.0e-6
+  warmup_steps: 500
+  backbone_lr_scale: 0.5
+  transformer_lr_scale: 1.0
+  coarse_lr_scale: 5.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  grad_clip: 1.0
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  train_list: /home/zhenying/qhong/data/ssd/vfi_database/lists/teacher_flyingthings_train.txt
+  val_list: /home/zhenying/qhong/data/ssd/vfi_database/lists/teacher_flyingthings_val.txt
+  crop_size: [320, 576]
+  batch_size: 1
+  num_workers: 8
+  val_num_workers: 2
+  prefetch_factor: 2
+  val_samples_per_scene: 1
+  mv_cache_dirname: mv_cache_f16
+  motion_aware_crop_prob: 0.7
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+
+train:
+  epochs: 20
+  steps_per_epoch: 401
+  grad_accum_steps: 4
+
+monitor:
+  eval_every_epochs: 2
+  save_every_epochs: 2
+  log_every_steps: 20
+  print_every_steps: 10

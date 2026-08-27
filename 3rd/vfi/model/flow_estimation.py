@@ -2,10 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import random
+import math
+from torch.utils.checkpoint import checkpoint
 
 from .warplayer import warp
 from .refine import *
 from .gmflow_pretrained import GMFlowFeatureEncoder
+from .correspondence import CorrespondencePyramid
+from .pqmax import PQMaxMotionSynthesizer
+from .single_match import ConfidenceGatedMatchRefiner
 
 # 局部精化结构固定在代码中，避免 YAML 改动导致 checkpoint 结构不兼容。
 LOCAL_CFG = ((2, 4, 1.0, 8), (1, 4, 1.0, 8))
@@ -18,9 +23,100 @@ def conv(in_planes, out_planes, kernel_size=3, stride=1, padding=1, dilation=1):
     )
 
 
+class LocalCorrelationVolume(nn.Module):
+    """Flow-aligned local correlation used inside a pyramid flow head.
+
+    This is deliberately different from the old post-hoc sparse matcher.  At
+    every coarse-to-fine stage, the current bilateral flow first warps the two
+    endpoint features onto the invisible target grid.  A local cost volume is
+    then built between the aligned features and consumed directly by the flow
+    predictor.  Consequently correspondence evidence participates in every
+    residual flow update instead of being an optional correction after the
+    complete motion stack.
+    """
+
+    def __init__(self, feature_channels, radius, output_channels=16,
+                 temperature=0.07):
+        super().__init__()
+        self.radius = int(radius)
+        self.temperature = float(temperature)
+        if self.radius < 1:
+            raise ValueError(f'correlation radius must be >=1, got {radius}')
+        if self.temperature <= 0.0:
+            raise ValueError(
+                f'correlation temperature must be >0, got {temperature}')
+        output_channels = max(int(output_channels), 4)
+        volume_channels = (2 * self.radius + 1) ** 2
+        self.log_volume_channels = math.log(volume_channels)
+        self.encoder = nn.Sequential(
+            nn.Conv2d(volume_channels, output_channels, 1, 1, 0),
+            nn.PReLU(output_channels),
+            nn.Conv2d(output_channels, output_channels, 3, 1, 1),
+            nn.PReLU(output_channels),
+        )
+        self.output_channels = output_channels
+        self.last_peak_probability = None
+        self.last_normalized_entropy = None
+        self.last_feature_abs = None
+
+    @staticmethod
+    def _flow_on_feature_grid(flow, feature):
+        if flow is None:
+            return None
+        image_height, image_width = flow.shape[-2:]
+        feature_height, feature_width = feature.shape[-2:]
+        scale_x = image_width / feature_width
+        scale_y = image_height / feature_height
+        flow_low = F.interpolate(
+            flow, size=(feature_height, feature_width), mode='bilinear',
+            align_corners=False).clone()
+        flow_low[:, 0::2] /= scale_x
+        flow_low[:, 1::2] /= scale_y
+        return flow_low
+
+    def forward(self, feature0, feature1, flow):
+        if feature0.shape != feature1.shape:
+            raise ValueError(
+                'correlation endpoint features must have identical shapes, '
+                f'got {feature0.shape} and {feature1.shape}')
+        flow_low = self._flow_on_feature_grid(flow, feature0)
+        if flow_low is not None:
+            feature0 = warp(feature0, flow_low[:, :2])
+            feature1 = warp(feature1, flow_low[:, 2:4])
+
+        feature0 = F.normalize(feature0, dim=1, eps=1e-6)
+        feature1 = F.normalize(feature1, dim=1, eps=1e-6)
+        batch, channels, height, width = feature0.shape
+        kernel = 2 * self.radius + 1
+        patches = F.unfold(
+            feature1, kernel_size=kernel, padding=self.radius)
+        patches = patches.view(
+            batch, channels, kernel * kernel, height, width)
+        volume = (
+            feature0[:, :, None] * patches).sum(dim=1)
+        volume = volume / self.temperature
+
+        with torch.no_grad():
+            probability = torch.softmax(volume.float(), dim=1)
+            self.last_peak_probability = probability.max(dim=1).values.mean()
+            entropy = -(probability * probability.clamp_min(1e-8).log()).sum(
+                dim=1)
+            self.last_normalized_entropy = (
+                entropy / max(self.log_volume_channels, 1e-6)
+            ).mean()
+
+        encoded = self.encoder(volume)
+        self.last_feature_abs = encoded.detach().abs().mean()
+        return encoded
+
+
 class Head(nn.Module):
     def __init__(self, in_planes, scale, c, in_else=17, zero_init=False,
-                 compact_feature=False):
+                 compact_feature=False, correlation_radius=None,
+                 correlation_channels=16, correlation_temperature=0.07,
+                 external_correlation_radius=None,
+                 external_correlation_temperature=0.07,
+                 external_correlation_init_scale=0.01):
         super(Head, self).__init__()
         self.scale = scale
         feature_channels = in_planes * 2 // (4 * 4)
@@ -36,8 +132,32 @@ class Head(nn.Module):
             self.feature_transform = nn.Sequential(
                 nn.PixelShuffle(2), nn.PixelShuffle(2))
             self.work_scale = scale // 4
+        self.correlation = None
+        correlation_input_channels = 0
+        if correlation_radius is not None:
+            self.correlation = LocalCorrelationVolume(
+                feature_channels=in_planes,
+                radius=correlation_radius,
+                output_channels=correlation_channels,
+                temperature=correlation_temperature)
+            correlation_input_channels = self.correlation.output_channels
+        # The pretrained correspondence cost volume is injected after the
+        # historical first convolution.  It therefore does not change that
+        # convolution's input shape and every 0729 flow-head weight remains
+        # directly reusable.
+        self.external_correlation = None
+        self.external_correlation_scale = None
+        if external_correlation_radius is not None:
+            self.external_correlation = LocalCorrelationVolume(
+                feature_channels=128,
+                radius=external_correlation_radius,
+                output_channels=c,
+                temperature=external_correlation_temperature)
+            self.external_correlation_scale = nn.Parameter(torch.tensor(
+                float(external_correlation_init_scale)))
         self.conv = nn.Sequential(
-                                  conv(feature_channels + in_else, c),
+                                  conv(feature_channels + in_else
+                                       + correlation_input_channels, c),
                                   conv(c, c),
                                   conv(c, 5),
                                   )  
@@ -45,8 +165,16 @@ class Head(nn.Module):
             nn.init.zeros_(self.conv[-1][0].weight)
             nn.init.zeros_(self.conv[-1][0].bias)
 
-    def forward(self, motion_feature, x, flow): 
+    def forward(self, motion_feature, x, flow, external_features=None):
+        correlation = None
+        if self.correlation is not None:
+            feature0, feature1 = motion_feature.chunk(2, dim=1)
+            correlation = self.correlation(feature0, feature1, flow)
         motion_feature = self.feature_transform(motion_feature)
+        if correlation is not None:
+            correlation = F.interpolate(
+                correlation, size=motion_feature.shape[-2:],
+                mode='bilinear', align_corners=False)
         if self.work_scale != 1:
             x = F.interpolate(x, scale_factor=1. / self.work_scale,
                               mode="bilinear", align_corners=False)
@@ -56,7 +184,28 @@ class Head(nn.Module):
                                      mode="bilinear", align_corners=False)
                 flow = flow * (1. / self.work_scale)
             x = torch.cat((x, flow), 1)
-        x = self.conv(torch.cat([motion_feature, x], 1))
+        predictor_inputs = [motion_feature, x]
+        if correlation is not None:
+            predictor_inputs.append(correlation)
+        hidden = self.conv[0](torch.cat(predictor_inputs, 1))
+        if self.external_correlation is not None:
+            if external_features is None:
+                raise ValueError(
+                    'external correspondence features are required for this '
+                    'flow head')
+            external0, external1 = external_features
+            external = self.external_correlation(
+                external0, external1, flow)
+            external = F.interpolate(
+                external, size=hidden.shape[-2:], mode='bilinear',
+                align_corners=False)
+            hidden = hidden + self.external_correlation_scale * external
+        elif external_features is not None:
+            raise ValueError(
+                'external correspondence features were passed to a flow '
+                'head without an external cost-volume adapter')
+        x = self.conv[1](hidden)
+        x = self.conv[2](x)
         if self.work_scale != 1:
             x = F.interpolate(x, scale_factor=self.work_scale,
                               mode="bilinear", align_corners=False)
@@ -667,14 +816,97 @@ class MultiScaleFlow(nn.Module):
         self.feature_bone = backbone
         zero_init_residual_heads = kargs.get('zero_init_residual_heads', False)
         compact_quarter_head = kargs.get('compact_quarter_head', False)
-        self.block = nn.ModuleList([Head( kargs['embed_dims'][-1-i], 
-                            kargs['scales'][-1-i], 
-                            kargs['hidden_dims'][-1-i],
-                            7 if i==0 else 18,
-                            zero_init=zero_init_residual_heads and i > 0,
-                            compact_feature=(compact_quarter_head
-                                             and kargs['scales'][-1-i] == 4))
-                            for i in range(self.flow_num_stage)])
+        pyramid_correlation = bool(
+            kargs.get('pyramid_correlation', False))
+        correlation_radii = list(kargs.get(
+            'pyramid_correlation_radii', (6, 4, 3)))
+        if pyramid_correlation and len(correlation_radii) < self.flow_num_stage:
+            raise ValueError(
+                'pyramid_correlation_radii must provide one radius per flow '
+                f'stage, got {correlation_radii} for {self.flow_num_stage}')
+        correlation_channels = int(
+            kargs.get('pyramid_correlation_channels', 16))
+        correlation_temperature = float(
+            kargs.get('pyramid_correlation_temperature', 0.07))
+
+        self.correspondence_pyramid = None
+        self.correspondence_frozen = bool(
+            kargs.get('pretrained_correspondence_frozen', True))
+        pretrained_correspondence = bool(
+            kargs.get('pretrained_correspondence', False))
+        raw_external_stages = list(kargs.get(
+            'pretrained_correspondence_stages', (0, 1)))
+        stage_aliases = {'1/16': 0, '1/8': 1}
+        try:
+            self.correspondence_stage_indices = {
+                stage_aliases.get(str(stage), int(stage))
+                if not isinstance(stage, str) or stage not in stage_aliases
+                else stage_aliases[stage]
+                for stage in raw_external_stages
+            }
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                'pretrained_correspondence_stages only supports 0/1 or '
+                '1/16,1/8') from exc
+        if pretrained_correspondence:
+            if not self.correspondence_stage_indices:
+                raise ValueError(
+                    'pretrained_correspondence_stages cannot be empty')
+            invalid_stages = sorted(
+                stage for stage in self.correspondence_stage_indices
+                if stage not in (0, 1) or stage >= self.flow_num_stage)
+            if invalid_stages:
+                raise ValueError(
+                    'pretrained correspondence only supports available '
+                    f'flow stages 0/1, got {invalid_stages}')
+        external_radii = list(kargs.get(
+            'pretrained_correspondence_radii', (6, 4)))
+        if pretrained_correspondence:
+            required_radius_count = max(
+                self.correspondence_stage_indices) + 1
+            if len(external_radii) < required_radius_count:
+                raise ValueError(
+                    'pretrained_correspondence_radii must provide radii for '
+                    f'enabled stages {sorted(self.correspondence_stage_indices)}, got '
+                    f'{external_radii}')
+            self.correspondence_pyramid = CorrespondencePyramid(
+                checkpoint_path=kargs.get(
+                    'pretrained_correspondence_path'),
+                feature_channels=128,
+                transformer_layers=int(kargs.get(
+                    'pretrained_correspondence_transformer_layers', 6)),
+                max_feature_tokens=int(kargs.get(
+                    'pretrained_correspondence_max_feature_tokens', 2880)),
+                checkpoint_required=bool(kargs.get(
+                    'pretrained_correspondence_required', True)))
+            if self.correspondence_frozen:
+                self.correspondence_pyramid.requires_grad_(False)
+
+        external_temperature = float(kargs.get(
+            'pretrained_correspondence_temperature', 0.07))
+        external_init_scale = float(kargs.get(
+            'pretrained_correspondence_init_scale', 0.01))
+        self.block = nn.ModuleList([
+            Head(
+                kargs['embed_dims'][-1-i],
+                kargs['scales'][-1-i],
+                kargs['hidden_dims'][-1-i],
+                7 if i == 0 else 18,
+                zero_init=zero_init_residual_heads and i > 0,
+                compact_feature=(compact_quarter_head
+                                 and kargs['scales'][-1-i] == 4),
+                correlation_radius=(
+                    correlation_radii[i] if pyramid_correlation else None),
+                correlation_channels=correlation_channels,
+                correlation_temperature=correlation_temperature,
+                external_correlation_radius=(
+                    external_radii[i]
+                    if (pretrained_correspondence
+                        and i in self.correspondence_stage_indices) else None),
+                external_correlation_temperature=external_temperature,
+                external_correlation_init_scale=external_init_scale)
+            for i in range(self.flow_num_stage)
+        ])
 
         # 每级为 [scale, down, 通道倍率, blocks]，工作分辨率分别为 1/8、1/4。
         base_c = kargs['local_hidden_dims']
@@ -771,6 +1003,111 @@ class MultiScaleFlow(nn.Module):
                 candidate_init_std=float(kargs.get(
                     'multi_hypothesis_candidate_init_std', 0.005)))
 
+        self.pqmax = None
+        self.pqmax_gradient_checkpointing = bool(
+            kargs.get('pqmax_gradient_checkpointing', False))
+        if bool(kargs.get('pqmax_enabled', False)):
+            if self.correspondence_pyramid is None:
+                raise ValueError(
+                    'pqmax_enabled requires pretrained_correspondence=true')
+            if 1 not in self.correspondence_stage_indices:
+                raise ValueError(
+                    'pqmax_enabled requires stage 1/8 in '
+                    'pretrained_correspondence_stages')
+            if self.correspondence_frozen:
+                raise ValueError(
+                    'PQMax is a jointly trained motion core; set '
+                    'pretrained_correspondence_frozen=false')
+            if self.multi_hypothesis is not None:
+                raise ValueError(
+                    'PQMax replaces the old multi_hypothesis ablation; '
+                    'disable multi_hypothesis')
+            self.pqmax = PQMaxMotionSynthesizer(
+                feature_channels=128,
+                num_fields=int(kargs.get('pqmax_num_fields', 4)),
+                recurrent_iterations=int(kargs.get(
+                    'pqmax_recurrent_iterations', 6)),
+                recurrent_hidden_channels=int(kargs.get(
+                    'pqmax_recurrent_hidden_channels', 160)),
+                correlation_channels=int(kargs.get(
+                    'pqmax_correlation_channels', 96)),
+                local_radius=int(kargs.get('pqmax_local_radius', 4)),
+                subpixel_radius=int(kargs.get('pqmax_subpixel_radius', 1)),
+                correlation_temperature=float(kargs.get(
+                    'pqmax_correlation_temperature', 0.05)),
+                max_global_delta=float(kargs.get(
+                    'pqmax_max_global_delta', 32.0)),
+                recurrent_delta=float(kargs.get(
+                    'pqmax_recurrent_delta', 2.0)),
+                boundary_hidden_channels=int(kargs.get(
+                    'pqmax_boundary_hidden_channels', 128)),
+                boundary_blocks=int(kargs.get(
+                    'pqmax_boundary_blocks', 10)),
+                boundary_delta=float(kargs.get(
+                    'pqmax_boundary_delta', 3.0)),
+                fusion_temperature=float(kargs.get(
+                    'pqmax_fusion_temperature', 0.35)),
+                primary_logit_bias=float(kargs.get(
+                    'pqmax_primary_logit_bias', 1.0)),
+                detail_hidden_channels=int(kargs.get(
+                    'pqmax_detail_hidden_channels', 64)),
+                detail_blocks=int(kargs.get('pqmax_detail_blocks', 8)),
+                detail_strength=float(kargs.get(
+                    'pqmax_detail_strength', 0.75)),
+                detail_residual_scale=float(kargs.get(
+                    'pqmax_detail_residual_scale', 0.05)),
+                gradient_checkpointing=(
+                    self.pqmax_gradient_checkpointing))
+
+        self.single_match = None
+        if bool(kargs.get('single_match_enabled', False)):
+            if self.correspondence_pyramid is None:
+                raise ValueError(
+                    'single_match_enabled requires '
+                    'pretrained_correspondence=true')
+            if 1 not in self.correspondence_stage_indices:
+                raise ValueError(
+                    'single_match_enabled requires stage 1/8 in '
+                    'pretrained_correspondence_stages')
+            if self.correspondence_frozen:
+                raise ValueError(
+                    'single_match jointly adapts correspondence; set '
+                    'pretrained_correspondence_frozen=false')
+            if self.pqmax is not None:
+                raise ValueError(
+                    'single_match replaces PQMax multi-field synthesis; '
+                    'disable pqmax_enabled')
+            if self.sparse_matcher is not None or self.multi_hypothesis is not None:
+                raise ValueError(
+                    'single_match must not be combined with sparse_matching '
+                    'or multi_hypothesis')
+            self.single_match = ConfidenceGatedMatchRefiner(
+                feature_channels=128,
+                recurrent_iterations=int(kargs.get(
+                    'single_match_recurrent_iterations', 4)),
+                recurrent_hidden_channels=int(kargs.get(
+                    'single_match_recurrent_hidden_channels', 128)),
+                correlation_channels=int(kargs.get(
+                    'single_match_correlation_channels', 64)),
+                local_radius=int(kargs.get(
+                    'single_match_local_radius', 4)),
+                subpixel_radius=int(kargs.get(
+                    'single_match_subpixel_radius', 1)),
+                correlation_temperature=float(kargs.get(
+                    'single_match_correlation_temperature', 0.05)),
+                max_global_delta=float(kargs.get(
+                    'single_match_max_global_delta', 48.0)),
+                recurrent_delta=float(kargs.get(
+                    'single_match_recurrent_delta', 2.0)),
+                mutual_sigma=float(kargs.get(
+                    'single_match_mutual_sigma', 1.5)),
+                similarity_gain_scale=float(kargs.get(
+                    'single_match_similarity_gain_scale', 0.05)),
+                gate_hidden_channels=int(kargs.get(
+                    'single_match_gate_hidden_channels', 64)),
+                gate_initial_probability=float(kargs.get(
+                    'single_match_gate_initial_probability', 0.10)))
+
         self.version = int(kargs['version'])
         # PerVFI-inspired ablation.  This deliberately keeps the existing
         # flow estimator/refiner and only changes the two-warp blending rule,
@@ -822,7 +1159,27 @@ class MultiScaleFlow(nn.Module):
         # particular, keep its BatchNorm statistics fixed during VFI training.
         if self.sparse_matching_feature_encoder is not None:
             self.sparse_matching_feature_encoder.eval()
+        if (self.correspondence_pyramid is not None
+                and self.correspondence_frozen):
+            self.correspondence_pyramid.eval()
         return self
+
+    def _correspondence_features(self, img0, img1):
+        """Return stage-aligned 1/16, 1/8 pretrained descriptors."""
+        if self.correspondence_pyramid is None:
+            return [None] * self.flow_num_stage
+        if self.correspondence_frozen:
+            with torch.no_grad():
+                pyramid = self.correspondence_pyramid(img0, img1)
+        else:
+            pyramid = self.correspondence_pyramid(img0, img1)
+        features = [
+            pyramid['1/16'] if 0 in self.correspondence_stage_indices else None,
+            pyramid['1/8'] if 1 in self.correspondence_stage_indices else None,
+        ]
+        if self.flow_num_stage > 2:
+            features.extend([None] * (self.flow_num_stage - 2))
+        return features[:self.flow_num_stage]
 
     def _compose_prediction(self, merged, refine_output):
         if self.version == 3:
@@ -894,6 +1251,13 @@ class MultiScaleFlow(nn.Module):
         return self.sparse_matcher(
             feature0, feature1, img0, img1, flow, timestep)
 
+    def _apply_single_match(self, img0, img1, flow, timestep,
+                            correspondence_features):
+        if self.single_match is None:
+            return flow
+        return self.single_match(
+            img0, img1, flow, timestep, correspondence_features[1])
+
     def _apply_multi_hypothesis(self, img0, img1, warped_img0, warped_img1,
                                 flow, mask, timestep, primary_merged):
         if self.multi_hypothesis is None:
@@ -916,6 +1280,7 @@ class MultiScaleFlow(nn.Module):
         flow, mask = None, None
         if af is None:
             af = self.feature_bone(img0, img1)
+        correspondence_features = self._correspondence_features(img0, img1)
         timestep = (img0[:, :1].clone() * 0 + 1) * timestep
         for i in range(self.flow_num_stage):
             if flow != None:
@@ -924,7 +1289,8 @@ class MultiScaleFlow(nn.Module):
                 flow_, mask_ = self.block[i](
                     torch.cat([af[-1-i][:B],af[-1-i][B:]],1),
                     torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1),
-                    flow
+                    flow,
+                    external_features=correspondence_features[i]
                     )
                 flow = flow + flow_
                 mask = mask + mask_
@@ -932,11 +1298,14 @@ class MultiScaleFlow(nn.Module):
                 flow, mask = self.block[i](
                     torch.cat([af[-1-i][:B],af[-1-i][B:]],1),
                     torch.cat((img0, img1, timestep), 1),
-                    None
+                    None,
+                    external_features=correspondence_features[i]
                     )
 
         flow = self._apply_sparse_matching(
             af, img0, img1, flow, timestep)
+        flow = self._apply_single_match(
+            img0, img1, flow, timestep, correspondence_features)
 
         if local:
             for block in self.local_block:
@@ -948,6 +1317,13 @@ class MultiScaleFlow(nn.Module):
                 flow = flow + flow_d
                 mask = mask + mask_d
 
+        if self.pqmax is not None:
+            pq_output = self.pqmax(
+                img0, img1, flow, mask, timestep,
+                correspondence_features[1])
+            flow = pq_output['flow']
+            mask = pq_output['mask_logits']
+
         return flow, mask
 
     def coraseWarp_and_Refine(self, imgs, af, flow, mask):
@@ -955,7 +1331,15 @@ class MultiScaleFlow(nn.Module):
         warped_img0 = warp(img0, flow[:, :2])
         warped_img1 = warp(img1, flow[:, 2:4])
         c0, c1 = self.warp_features(af, flow)
-        tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
+        if (self.pqmax_gradient_checkpointing and self.training
+                and torch.is_grad_enabled()):
+            tmp = checkpoint(
+                self.unet, img0, img1, warped_img0, warped_img1,
+                mask, flow, c0, c1, use_reentrant=False)
+        else:
+            tmp = self.unet(
+                img0, img1, warped_img0, warped_img1,
+                mask, flow, c0, c1)
         mask_, merged = self._blend_warps(warped_img0, warped_img1, mask)
         res, pred = self._compose_prediction(merged, tmp)
         return pred,warped_img0,warped_img1,mask_
@@ -975,16 +1359,19 @@ class MultiScaleFlow(nn.Module):
         warped_img1 = img1
         flow = None
         af = self.feature_bone(img0, img1)
+        correspondence_features = self._correspondence_features(img0, img1)
         timestep = (x[:, :1].clone() * 0 + 1) * (timestep.float() if type(timestep) is not float else timestep)
         for i in range(self.flow_num_stage):
             if flow != None:
                 flow_d, mask_d = self.block[i]( torch.cat([af[-1-i][:B],af[-1-i][B:]],1), 
-                                                torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1), flow)
+                                                torch.cat((img0, img1, warped_img0, warped_img1, mask, timestep), 1), flow,
+                                                external_features=correspondence_features[i])
                 flow = flow + flow_d
                 mask = mask + mask_d
             else:
                 flow, mask = self.block[i]( torch.cat([af[-1-i][:B],af[-1-i][B:]],1), 
-                                            torch.cat((img0, img1, timestep), 1), None)
+                                            torch.cat((img0, img1, timestep), 1), None,
+                                            external_features=correspondence_features[i])
             flow_list.append(flow)
             warped_img0 = warp(img0, flow[:, :2])
             warped_img1 = warp(img1, flow[:, 2:4])
@@ -995,8 +1382,11 @@ class MultiScaleFlow(nn.Module):
 
         flow = self._apply_sparse_matching(
             af, img0, img1, flow, timestep)
+        flow = self._apply_single_match(
+            img0, img1, flow, timestep, correspondence_features)
         # Recompute the inputs consumed by the first local block.  With the
-        # zero-initialized adapter these are bit-identical to the old path.
+        # optional matching branches disabled these are bit-identical to the
+        # historical path.
         warped_img0 = warp(img0, flow[:, :2])
         warped_img1 = warp(img1, flow[:, 2:4])
         if self.sparse_matcher is not None:
@@ -1004,6 +1394,15 @@ class MultiScaleFlow(nn.Module):
                 warped_img0, warped_img1, mask)
             mask_list[-1] = mask_prob
             merged[-1] = stage_merged
+        if self.single_match is not None:
+            # Unlike the failed post-hoc sparse adapter, the corrected single
+            # field is an explicit supervised motion stage.  It is then fed
+            # into both existing local IFBlocks for boundary refinement.
+            flow_list.append(flow)
+            mask_prob, stage_merged = self._blend_warps(
+                warped_img0, warped_img1, mask)
+            mask_list.append(mask_prob)
+            merged.append(stage_merged)
 
         # LC loss需要监督全部learned-feature与local阶段；普通loss仍只消费
         # 原有返回的merged，保证既有实验语义不变。
@@ -1045,6 +1444,20 @@ class MultiScaleFlow(nn.Module):
                 merged.append(stage_merged)
                 all_merged.append(merged[-1])
 
+        pq_output = None
+        if self.pqmax is not None:
+            pq_output = self.pqmax(
+                img0, img1, flow, mask, timestep,
+                correspondence_features[1])
+            flow = pq_output['flow']
+            mask = pq_output['mask_logits']
+            warped_img0 = pq_output['warp0']
+            warped_img1 = pq_output['warp1']
+            flow_list.append(flow)
+            mask_list.append(pq_output['mask_probability'])
+            merged.append(pq_output['merged'])
+            all_merged.append(merged[-1])
+
         merged[-1] = self._apply_multi_hypothesis(
             img0, img1, warped_img0, warped_img1, flow, mask, timestep,
             merged[-1])
@@ -1056,8 +1469,23 @@ class MultiScaleFlow(nn.Module):
             c0, c1 = self.warp_features(af1, flow)
         else:
             c0, c1 = self.warp_features(af, flow)
-        tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
+        if (self.pqmax_gradient_checkpointing and self.training
+                and torch.is_grad_enabled()):
+            tmp = checkpoint(
+                self.unet, img0, img1, warped_img0, warped_img1,
+                mask, flow, c0, c1, use_reentrant=False)
+        else:
+            tmp = self.unet(
+                img0, img1, warped_img0, warped_img1,
+                mask, flow, c0, c1)
         res, pred = self._compose_prediction(merged[-1], tmp)
+        if pq_output is not None:
+            pred = self.pqmax.restore_detail(
+                img0, img1, merged[-1], pred, warped_img0, warped_img1,
+                pq_output['fusion_entropy'])
+            # The public ``res`` tensor always describes the complete final
+            # correction relative to the last synthesized warp candidate.
+            res = pred - merged[-1]
         outputs = (
             flow_list, mask_list, res, warped_img0, warped_img1, merged, pred)
         if return_all_merges:

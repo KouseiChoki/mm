@@ -42,6 +42,15 @@ class Model:
                  pervfi_mask_loss_weight=0.0,
                  multi_hypothesis_oracle_weight=0.0,
                  multi_hypothesis_oracle_eps=1e-3,
+                 pqmax_oracle_weight=0.0, pqmax_selection_weight=0.0,
+                 pqmax_entropy_weight=0.0, pqmax_diversity_weight=0.0,
+                 pqmax_diversity_margin=1.0,
+                 pqmax_frequency_weight=0.0,
+                 pqmax_frequency_warp_weight=0.0,
+                 pqmax_frequency_levels=3, pqmax_charbonnier_eps=1e-3,
+                 frequency_loss_weight=0.0,
+                 frequency_warp_loss_weight=0.0,
+                 frequency_loss_levels=3, frequency_charbonnier_eps=1e-3,
                  edge_loss_weight=0.0, edge_warp_loss_weight=0.0,
                  edge_motion_gain=0.0, edge_motion_scale=0.1,
                  edge_weight_cap=4.0, edge_charbonnier_eps=1e-3,
@@ -84,6 +93,28 @@ class Model:
             float(multi_hypothesis_oracle_weight), 0.0)
         self.multi_hypothesis_oracle_eps = max(
             float(multi_hypothesis_oracle_eps), 1e-12)
+        self.pqmax_oracle_weight = max(float(pqmax_oracle_weight), 0.0)
+        self.pqmax_selection_weight = max(
+            float(pqmax_selection_weight), 0.0)
+        self.pqmax_entropy_weight = max(float(pqmax_entropy_weight), 0.0)
+        self.pqmax_diversity_weight = max(
+            float(pqmax_diversity_weight), 0.0)
+        self.pqmax_diversity_margin = max(
+            float(pqmax_diversity_margin), 0.0)
+        self.pqmax_frequency_weight = max(
+            float(pqmax_frequency_weight), 0.0)
+        self.pqmax_frequency_warp_weight = max(
+            float(pqmax_frequency_warp_weight), 0.0)
+        self.pqmax_frequency_levels = max(int(pqmax_frequency_levels), 1)
+        self.pqmax_charbonnier_eps = max(
+            float(pqmax_charbonnier_eps), 1e-12)
+        self.frequency_loss_weight = max(
+            float(frequency_loss_weight), 0.0)
+        self.frequency_warp_loss_weight = max(
+            float(frequency_warp_loss_weight), 0.0)
+        self.frequency_loss_levels = max(int(frequency_loss_levels), 1)
+        self.frequency_charbonnier_eps = max(
+            float(frequency_charbonnier_eps), 1e-12)
         self.edge_loss_weight = max(float(edge_loss_weight), 0.0)
         self.edge_warp_loss_weight = max(
             float(edge_warp_loss_weight), 0.0)
@@ -118,6 +149,13 @@ class Model:
                 and getattr(self.net, 'multi_hypothesis', None) is None):
             raise ValueError(
                 'multi_hypothesis_oracle_weight>0但模型未启用multi_hypothesis')
+        pqmax_loss_enabled = any(weight > 0.0 for weight in (
+            self.pqmax_oracle_weight, self.pqmax_selection_weight,
+            self.pqmax_entropy_weight, self.pqmax_diversity_weight,
+            self.pqmax_frequency_weight,
+            self.pqmax_frequency_warp_weight))
+        if pqmax_loss_enabled and getattr(self.net, 'pqmax', None) is None:
+            raise ValueError('PQMax loss已启用但模型没有pqmax_enabled')
         self.flow_loss_weight = flow_loss_weight
         self.flow_loss_warmup_steps = max(int(flow_loss_warmup_steps), 0)
         self.flow_stage_gamma = float(flow_stage_gamma)
@@ -165,23 +203,29 @@ class Model:
 
         official IFBlock阶段仅更新local_block；flow_heads阶段更新粗光流
         block和local_block；caun阶段仅更新内容感知上采样器；
-        sparse_matcher阶段仅更新稀疏全局匹配融合分支；multi_hypothesis
-        阶段仅更新双运动假设分支；refiner校准阶段仅更新unet。
+        sparse_matcher阶段仅更新稀疏全局匹配融合分支；single_match阶段
+        更新单光流匹配器及其correspondence；multi_hypothesis阶段仅更新
+        双运动假设分支；refiner校准阶段仅更新unet。
         """
         scope = str(scope).lower()
         if scope not in (
                 'all', 'local', 'local_ifblock', 'flow_heads', 'caun',
-                'sparse_matcher', 'multi_hypothesis', 'refiner'):
+                'sparse_matcher', 'single_match', 'multi_hypothesis',
+                'refiner'):
             raise ValueError(
                 'trainable只支持all/local/local_ifblock/flow_heads/caun/'
-                'sparse_matcher/multi_hypothesis/refiner, '
+                'sparse_matcher/single_match/multi_hypothesis/refiner, '
                 f'got {scope!r}')
         local_only = scope in ('local', 'local_ifblock')
         trainable, total = 0, 0
         for name, parameter in self.net.named_parameters():
-            if name.startswith('sparse_matching_feature_encoder.'):
-                # GMFlow is a fixed correspondence prior and stays frozen
-                # even when the original VFI model trains end to end.
+            if (name.startswith('sparse_matching_feature_encoder.')
+                    or (name.startswith('correspondence_pyramid.')
+                        and getattr(
+                            self.net, 'correspondence_frozen', False))):
+                # Pretrained correspondence encoders are fixed priors and
+                # stay frozen even when the original VFI model trains end to
+                # end. Their small flow-head adapters remain trainable.
                 enabled = False
             elif local_only:
                 enabled = name.startswith('local_block.')
@@ -191,6 +235,9 @@ class Model:
                 enabled = '.content_upsampler.' in name
             elif scope == 'sparse_matcher':
                 enabled = name.startswith('sparse_matcher.')
+            elif scope == 'single_match':
+                enabled = name.startswith((
+                    'single_match.', 'correspondence_pyramid.'))
             elif scope == 'multi_hypothesis':
                 enabled = name.startswith('multi_hypothesis.')
             elif scope == 'refiner':
@@ -208,6 +255,9 @@ class Model:
         if scope == 'sparse_matcher' and trainable == 0:
             raise ValueError(
                 'trainable=sparse_matcher但模型未启用sparse_matching')
+        if scope == 'single_match' and trainable == 0:
+            raise ValueError(
+                'trainable=single_match但模型未启用single_match_enabled')
         if scope == 'multi_hypothesis' and trainable == 0:
             raise ValueError(
                 'trainable=multi_hypothesis但模型未启用multi_hypothesis')
@@ -263,9 +313,12 @@ class Model:
                 continue
             if name.startswith('feature_bone.'):
                 family = 'backbone'
+            elif name.startswith('pqmax.detail_restorer.'):
+                family = 'refine'
             elif name.startswith((
                     'block.', 'local_block.', 'sparse_matcher.',
-                    'multi_hypothesis.')):
+                    'single_match.', 'multi_hypothesis.', 'pqmax.',
+                    'correspondence_pyramid.')):
                 family = 'flow'
             else:
                 family = 'refine'
@@ -351,10 +404,36 @@ class Model:
                 print(f'    {d}')
 
         missing, unexpected = self.net.load_state_dict(filtered, strict=False)
-        if missing:
-            print(f'[load_model] WARNING: {len(missing)} 个模型键未从checkpoint加载'
-                  f'(保持新初始化): {missing[:8]}'
-                  f'{"..." if len(missing) > 8 else ""}')
+        correspondence_missing = [
+            name for name in missing
+            if (name.startswith('correspondence_pyramid.')
+                or '.external_correlation.' in name
+                or name.endswith('.external_correlation_scale'))]
+        pqmax_missing = [
+            name for name in missing if name.startswith('pqmax.')]
+        single_match_missing = [
+            name for name in missing if name.startswith('single_match.')]
+        other_missing = [
+            name for name in missing
+            if (name not in correspondence_missing
+                and name not in pqmax_missing
+                and name not in single_match_missing)]
+        if correspondence_missing:
+            print('[load_model] INFO: pretrained-correspondence新增分支有 '
+                  f'{len(correspondence_missing)} 个键不属于旧VFI checkpoint；'
+                  'encoder已从独立checkpoint加载，adapter使用安全初始化')
+        if pqmax_missing:
+            print('[load_model] INFO: PQMax新模型有 '
+                  f'{len(pqmax_missing)} 个键不属于0729 checkpoint；'
+                  '这些motion/synthesis参数将从新初始化开始联合训练')
+        if single_match_missing:
+            print('[load_model] INFO: 单光流显式匹配新增分支有 '
+                  f'{len(single_match_missing)} 个键不属于旧VFI checkpoint；'
+                  '全局门控保守初始化，循环flow残差为零初始化')
+        if other_missing:
+            print(f'[load_model] WARNING: {len(other_missing)} 个模型键未从checkpoint加载'
+                  f'(保持新初始化): {other_missing[:8]}'
+                  f'{"..." if len(other_missing) > 8 else ""}')
         if unexpected:
             print(f'[load_model] WARNING: {len(unexpected)} 个checkpoint键未被当前模型使用: '
                   f'{unexpected[:8]}{"..." if len(unexpected) > 8 else ""}')
@@ -587,6 +666,95 @@ class Model:
             (input - target).square() + float(eps) ** 2).mean(
                 dim=1, keepdim=True)
         return (error * mask).sum() / mask.sum().clamp(min=1.0)
+
+    @staticmethod
+    def _multiscale_highpass_loss(input, target, levels=3, eps=1e-3):
+        """Charbonnier supervision on progressively coarser detail bands."""
+        total = input.new_zeros(())
+        weight_sum = 0.0
+        current_input = input
+        current_target = target
+        for level in range(max(int(levels), 1)):
+            input_low = F.avg_pool2d(
+                current_input, 3, 1, 1, count_include_pad=False)
+            target_low = F.avg_pool2d(
+                current_target, 3, 1, 1, count_include_pad=False)
+            weight = 0.5 ** level
+            difference = (
+                (current_input - input_low)
+                - (current_target - target_low))
+            total = total + weight * torch.sqrt(
+                difference.square() + float(eps) ** 2).mean()
+            weight_sum += weight
+            if level + 1 < levels and min(current_input.shape[-2:]) >= 4:
+                current_input = F.avg_pool2d(current_input, 2, 2)
+                current_target = F.avg_pool2d(current_target, 2, 2)
+        return total / max(weight_sum, 1e-6)
+
+    def _pqmax_losses(self, gt, pred, last_warp, hard_roi, pr, pb):
+        """Directly supervise PQMax fields, selector and frequency output."""
+        zero = pred.new_zeros(())
+        pqmax = getattr(self.net, 'pqmax', None)
+        if (pqmax is None or pqmax.last_candidate_merges is None
+                or pqmax.last_fusion_weights is None):
+            return {
+                key: zero for key in (
+                    'oracle', 'selection', 'entropy', 'diversity',
+                    'frequency', 'frequency_warp')}
+
+        candidates = self.unpad(pqmax.last_candidate_merges, pr, pb)
+        weights = self.unpad(pqmax.last_fusion_weights, pr, pb)
+        candidate_flows = self.unpad(pqmax.last_candidate_flows, pr, pb)
+        candidate_error = torch.sqrt(
+            (candidates - gt[:, None]).square()
+            + self.pqmax_charbonnier_eps ** 2).mean(dim=2)
+        oracle_error, best_field = candidate_error.min(dim=1)
+        if hard_roi is not None and hard_roi.sum() > 0:
+            roi = hard_roi[:, 0]
+            oracle = (
+                (oracle_error * (1.0 + 2.0 * roi)).sum()
+                / (1.0 + 2.0 * roi).sum().clamp(min=1.0))
+        else:
+            oracle = oracle_error.mean()
+
+        # The selector is explicitly taught which field best reconstructs
+        # each pixel.  This is the key safeguard against soft multi-warp blur.
+        log_weights = weights[:, :, 0].clamp_min(1e-8).log()
+        selection = F.nll_loss(log_weights, best_field.detach())
+        entropy = -(
+            weights * weights.clamp_min(1e-8).log()).sum(dim=1).mean()
+
+        pair_losses = []
+        for first in range(candidate_flows.shape[1]):
+            for second in range(first + 1, candidate_flows.shape[1]):
+                distance = (
+                    candidate_flows[:, first]
+                    - candidate_flows[:, second]).abs().mean(
+                        dim=1, keepdim=True)
+                penalty = F.relu(self.pqmax_diversity_margin - distance)
+                if hard_roi is not None and hard_roi.sum() > 0:
+                    penalty = (
+                        (penalty * hard_roi).sum()
+                        / hard_roi.sum().clamp(min=1.0))
+                else:
+                    penalty = penalty.mean()
+                pair_losses.append(penalty)
+        diversity = (
+            torch.stack(pair_losses).mean() if pair_losses else zero)
+        frequency = self._multiscale_highpass_loss(
+            pred, gt, levels=self.pqmax_frequency_levels,
+            eps=self.pqmax_charbonnier_eps)
+        frequency_warp = self._multiscale_highpass_loss(
+            last_warp, gt, levels=self.pqmax_frequency_levels,
+            eps=self.pqmax_charbonnier_eps)
+        return {
+            'oracle': oracle,
+            'selection': selection,
+            'entropy': entropy,
+            'diversity': diversity,
+            'frequency': frequency,
+            'frequency_warp': frequency_warp,
+        }
 
     @staticmethod
     def _safe_flow(flow_gt):
@@ -824,6 +992,7 @@ class Model:
             loss_hard_roi_warp = loss.new_zeros(())
             loss_hard_roi_edge = loss.new_zeros(())
             hard_roi_area = loss.new_zeros(())
+            hard_roi = None
             if self.hard_roi_ratio > 0.0:
                 hard_roi = self.hard_roi_mask(
                     imgs, gt, timestep, ratio=self.hard_roi_ratio,
@@ -844,6 +1013,39 @@ class Model:
                     + self.hard_roi_final_weight * loss_hard_roi_final
                     + self.hard_roi_warp_weight * loss_hard_roi_warp
                     + self.hard_roi_edge_weight * loss_hard_roi_edge)
+
+            # High-frequency supervision is architecture independent.  The
+            # old implementation lived under PQMax and disappeared when its
+            # multi-field selector was disabled, although fences and fine
+            # textures still need the same direct signal.
+            loss_frequency = loss.new_zeros(())
+            loss_frequency_warp = loss.new_zeros(())
+            if self.frequency_loss_weight > 0.0:
+                loss_frequency = self._multiscale_highpass_loss(
+                    pred, gt, levels=self.frequency_loss_levels,
+                    eps=self.frequency_charbonnier_eps)
+            if self.frequency_warp_loss_weight > 0.0:
+                loss_frequency_warp = self._multiscale_highpass_loss(
+                    merged[-1] if merged else pred, gt,
+                    levels=self.frequency_loss_levels,
+                    eps=self.frequency_charbonnier_eps)
+            loss = (
+                loss
+                + self.frequency_loss_weight * loss_frequency
+                + self.frequency_warp_loss_weight * loss_frequency_warp)
+
+            pq_losses = self._pqmax_losses(
+                gt, pred, merged[-1] if merged else pred,
+                hard_roi, pr, pb)
+            loss = (
+                loss
+                + self.pqmax_oracle_weight * pq_losses['oracle']
+                + self.pqmax_selection_weight * pq_losses['selection']
+                + self.pqmax_entropy_weight * pq_losses['entropy']
+                + self.pqmax_diversity_weight * pq_losses['diversity']
+                + self.pqmax_frequency_weight * pq_losses['frequency']
+                + self.pqmax_frequency_warp_weight
+                * pq_losses['frequency_warp'])
 
             # The final output is an exact no-op at initialization because the
             # hypothesis mixing channel starts at zero.  This auxiliary loss
@@ -905,6 +1107,38 @@ class Model:
                 'multi_hypothesis_oracle_weighted': (
                     self.multi_hypothesis_oracle_weight
                     * loss_multi_oracle).detach(),
+                'pqmax_oracle': pq_losses['oracle'].detach(),
+                'pqmax_oracle_weighted': (
+                    self.pqmax_oracle_weight
+                    * pq_losses['oracle']).detach(),
+                'pqmax_selection': pq_losses['selection'].detach(),
+                'pqmax_selection_weighted': (
+                    self.pqmax_selection_weight
+                    * pq_losses['selection']).detach(),
+                'pqmax_entropy_loss': pq_losses['entropy'].detach(),
+                'pqmax_entropy_weighted': (
+                    self.pqmax_entropy_weight
+                    * pq_losses['entropy']).detach(),
+                'pqmax_diversity': pq_losses['diversity'].detach(),
+                'pqmax_diversity_weighted': (
+                    self.pqmax_diversity_weight
+                    * pq_losses['diversity']).detach(),
+                'pqmax_frequency': pq_losses['frequency'].detach(),
+                'pqmax_frequency_weighted': (
+                    self.pqmax_frequency_weight
+                    * pq_losses['frequency']).detach(),
+                'pqmax_frequency_warp': (
+                    pq_losses['frequency_warp'].detach()),
+                'pqmax_frequency_warp_weighted': (
+                    self.pqmax_frequency_warp_weight
+                    * pq_losses['frequency_warp']).detach(),
+                'frequency_final': loss_frequency.detach(),
+                'frequency_final_weighted': (
+                    self.frequency_loss_weight * loss_frequency).detach(),
+                'frequency_warp': loss_frequency_warp.detach(),
+                'frequency_warp_weighted': (
+                    self.frequency_warp_loss_weight
+                    * loss_frequency_warp).detach(),
                 'edge_final': loss_edge_final.detach(),
                 'edge_final_weighted': (
                     self.edge_loss_weight * loss_edge_final).detach(),
@@ -930,6 +1164,32 @@ class Model:
             if (caun is not None
                     and caun.last_residual_abs is not None):
                 components['caun_delta'] = caun.last_residual_abs
+            for stage_index, flow_head in enumerate(self.net.block):
+                correlation = getattr(flow_head, 'correlation', None)
+                if (correlation is not None
+                        and correlation.last_peak_probability is not None):
+                    components.update({
+                        f'corr_stage_{stage_index}_peak': (
+                            correlation.last_peak_probability),
+                        f'corr_stage_{stage_index}_entropy': (
+                            correlation.last_normalized_entropy),
+                        f'corr_stage_{stage_index}_feature_abs': (
+                            correlation.last_feature_abs),
+                    })
+                external = getattr(
+                    flow_head, 'external_correlation', None)
+                if (external is not None
+                        and external.last_peak_probability is not None):
+                    components.update({
+                        f'pre_corr_stage_{stage_index}_peak': (
+                            external.last_peak_probability),
+                        f'pre_corr_stage_{stage_index}_entropy': (
+                            external.last_normalized_entropy),
+                        f'pre_corr_stage_{stage_index}_feature_abs': (
+                            external.last_feature_abs),
+                        f'pre_corr_stage_{stage_index}_scale': (
+                            flow_head.external_correlation_scale.detach()),
+                    })
             sparse_matcher = getattr(self.net, 'sparse_matcher', None)
             if (sparse_matcher is not None
                     and sparse_matcher.last_residual_abs is not None):
@@ -955,6 +1215,29 @@ class Model:
                     'sparse_match_selected_delta': (
                         sparse_matcher.last_residual_selected_abs),
                 })
+            single_match = getattr(self.net, 'single_match', None)
+            if (single_match is not None
+                    and single_match.last_applied_abs is not None):
+                components.update({
+                    'single_match_confidence': (
+                        single_match.last_confidence),
+                    'single_match_gate': single_match.last_gate,
+                    'single_match_active_ratio': (
+                        single_match.last_active_ratio),
+                    'single_match_proposal': (
+                        single_match.last_proposal_abs),
+                    'single_match_applied': (
+                        single_match.last_applied_abs),
+                    'single_match_recurrent': (
+                        single_match.last_recurrent_abs),
+                    'single_match_margin': single_match.last_margin,
+                    'single_match_mutual_error': (
+                        single_match.last_mutual_error),
+                    'single_match_similarity_gain': (
+                        single_match.last_similarity_gain),
+                    'single_match_similarity_improved_ratio': (
+                        single_match.last_similarity_improved_ratio),
+                })
             if (multi_hypothesis is not None
                     and multi_hypothesis.last_output_delta_abs is not None):
                 components.update({
@@ -968,6 +1251,19 @@ class Model:
                         multi_hypothesis.last_output_delta_abs),
                     'multi_hypothesis_region_ratio': (
                         multi_hypothesis.last_region_ratio),
+                })
+            pqmax = getattr(self.net, 'pqmax', None)
+            if (pqmax is not None
+                    and pqmax.last_fusion_entropy is not None):
+                detail = pqmax.detail_restorer
+                components.update({
+                    'pqmax_global_confidence': (
+                        pqmax.last_global_confidence),
+                    'pqmax_fusion_entropy': pqmax.last_fusion_entropy,
+                    'pqmax_flow_spread': pqmax.last_flow_spread,
+                    'pqmax_detail_gate': detail.last_gate_mean,
+                    'pqmax_detail_delta': detail.last_detail_abs,
+                    'pqmax_detail_residual': detail.last_residual_abs,
                 })
             components.update(self.last_image_loss_components)
             for index, (merge_loss, merge_weight) in enumerate(

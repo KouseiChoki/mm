@@ -138,6 +138,33 @@ class HardRoiEvaluationTest(unittest.TestCase):
         self.assertAlmostEqual(metrics['xtrain/roi_final_gain_db'], 0.0)
         self.assertIn('val/xtrain_roi_psnr', writer.tags)
 
+    def test_evaluate_publishes_equal_weight_domain_average_psnr(self):
+        perfect = torch.zeros(1, 9, 8, 8, dtype=torch.uint8)
+        imperfect = perfect.clone()
+        imperfect[:, 6:9, 2:6, 2:6] = 255
+        samples = {
+            'easy': [(
+                perfect, torch.full((1, 1, 1, 1), 0.5),
+                torch.zeros(1, 5, 8, 8), torch.zeros(1))],
+            'hard': [(
+                imperfect, torch.full((1, 1, 1, 1), 0.5),
+                torch.zeros(1, 5, 8, 8), torch.zeros(1))],
+        }
+        writer = _DummyWriter()
+        old_device = train_module.device
+        train_module.device = torch.device('cpu')
+        try:
+            metrics = train_module.evaluate(
+                _DummyEvaluationModel(), samples, 1, writer,
+                use_amp=False, amp_dtype=torch.bfloat16,
+                average_psnr_domains=['easy', 'hard'])
+        finally:
+            train_module.device = old_device
+
+        expected = (metrics['easy/psnr'] + metrics['hard/psnr']) / 2
+        self.assertAlmostEqual(metrics['average/psnr'], expected)
+        self.assertIn('val/average_psnr', writer.tags)
+
 
 if __name__ == '__main__':
     unittest.main()
