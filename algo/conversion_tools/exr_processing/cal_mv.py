@@ -27,7 +27,8 @@ Unreal EXR → image / mv 提取脚本 (精简版: 仅保留原 mode 1 相机MV�
   - [本次] --exrformat 直接保存线性 float32 RGB, 不再经过 gamma/tone map/clip;
       负值会原样保留, 不会因分数次幂产生 NaN
   - [本次] 修复 --objmvonly: 开启后 mv0/mv1 都直接使用包含完整运动的
-      obj MV，不再计算或混入 camera MV；增加等价别名 --obj-mv-only
+      obj MV，不再计算或混入 camera MV；某个方向通道不存在时仅跳过
+      该方向输出，不中断整个 scene；增加等价别名 --obj-mv-only
 '''
 
 import os
@@ -156,7 +157,8 @@ def init_param():
     mv_source = parser.add_mutually_exclusive_group()
     mv_source.add_argument(
         '--objmvonly', '--obj-mv-only', dest='objmvonly', action='store_true',
-        help='直接使用EXR中的完整obj MV，不计算或混入camera MV')
+        help='直接使用EXR中的完整obj MV，不计算或混入camera MV；'
+             '缺少的方向自动跳过')
     parser.add_argument('--onlymv', action='store_false',
                         help='加此参数则跳过 image 输出 (默认输出 image)')
     parser.add_argument('--debug', action='store_true', help='校验相邻帧相机数据一致性')
@@ -535,17 +537,17 @@ def select_mv(camera_mv, obj_mv, mask=None, *, obj_mv_only=False,
               bg_mode=False, label='mv'):
     """根据MV来源模式返回最终运动场。
 
-    ``obj_mv_only`` 表示EXR的obj MV已包含相机与物体的完整运动，因此直接
-    返回它，不再做mask替换。默认模式保持历史逻辑：camera MV作为背景，
-    obj MV只覆盖运动物体；``bg_mode``则只保留camera MV。
+    ``obj_mv_only`` 表示EXR的obj MV已包含相机与物体的完整运动，
+    因此直接返回对应方向。方向通道不存在时返回None，由调用方
+    只跳过该方向的输出；不使用零流伪装成有效MV。
+
+    默认模式保持历史逻辑：camera MV作为背景，obj MV只覆盖运动
+    物体；``bg_mode``则只保留camera MV。
     """
     if obj_mv_only and bg_mode:
         raise ValueError('obj_mv_only与bg_mode不能同时开启')
     if obj_mv_only:
-        if obj_mv is None:
-            raise ValueError(
-                f'{label}: 已开启--obj-mv-only，但EXR中缺少对应obj MV通道')
-        return np.array(obj_mv, copy=True)
+        return None if obj_mv is None else np.array(obj_mv, copy=True)
     if camera_mv is None:
         raise ValueError(f'{label}: camera MV不能为空')
     if obj_mv is None or bg_mode:
@@ -680,7 +682,8 @@ def mv_cal_core(datas):
             mv1 = select_mv(
                 camera_mv1, objmv1, mask, bg_mode=args.bg_mode,
                 label=f'{base} mv1(current->previous)')
-        mvwrite(os.path.join(mv1_sp, base), adjust(mv1), precision='half')
+        if mv1 is not None:
+            mvwrite(os.path.join(mv1_sp, base), adjust(mv1), precision='half')
 
         # ── mv0: 当前帧 → 后一帧 (i+step) ─────────────────────────────────
         if args.objmvonly or objmv0_ is not None or args.bg_mode:
@@ -699,7 +702,8 @@ def mv_cal_core(datas):
                 mv0 = select_mv(
                     camera_mv0, objmv0, mask, bg_mode=args.bg_mode,
                     label=f'{base} mv0(current->next)')
-            mvwrite(os.path.join(mv0_sp, base), adjust(mv0), precision='half')
+            if mv0 is not None:
+                mvwrite(os.path.join(mv0_sp, base), adjust(mv0), precision='half')
 
     if step != 1:
         return
