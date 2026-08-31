@@ -26,6 +26,8 @@ Unreal EXR → image / mv 提取脚本 (精简版: 仅保留原 mode 1 相机MV�
       无条件先做 AP1→rec709 色域转换再进 tone map (修复漏转导致的去饱和/色偏)
   - [本次] --exrformat 直接保存线性 float32 RGB, 不再经过 gamma/tone map/clip;
       负值会原样保留, 不会因分数次幂产生 NaN
+  - [本次] 修复 --objmvonly: 开启后 mv0/mv1 都直接使用包含完整运动的
+      obj MV，不再计算或混入 camera MV；增加等价别名 --obj-mv-only
 '''
 
 import os
@@ -88,7 +90,10 @@ def init_param():
                         help='dump 数据根目录')
     parser.add_argument('--output', help='输出根目录 (默认原地输出到各序列同级目录)')
     parser.add_argument('--extra_depth', help='用外部深度目录代替 exr 内深度计算 mv')
-    parser.add_argument('--objmvonly', action='store_true', help='mv 只取物体运动分量')
+    mv_source = parser.add_mutually_exclusive_group()
+    mv_source.add_argument(
+        '--objmvonly', '--obj-mv-only', dest='objmvonly', action='store_true',
+        help='直接使用EXR中的完整obj MV，不计算或混入camera MV')
     parser.add_argument('--onlymv', action='store_false',
                         help='加此参数则跳过 image 输出 (默认输出 image)')
     parser.add_argument('--debug', action='store_true', help='校验相邻帧相机数据一致性')
@@ -100,7 +105,9 @@ def init_param():
     parser.add_argument('--ACESCG', action='store_true',
                         help='(配合 --enable_colour_output) rec709 源额外输出 acescg')
     parser.add_argument('--f', action='store_true', help='强制重跑, 忽略已有输出')
-    parser.add_argument('--bg_mode', action='store_true', help='只算相机(背景)运动, 忽略objmv')
+    mv_source.add_argument(
+        '--bg_mode', '--bg-mode', dest='bg_mode', action='store_true',
+        help='只算相机(背景)运动, 忽略objmv')
     parser.add_argument('--step', type=int, default=1,
                         help='帧间隔; !=1 时只输出 mv{2(step-1)}/mv{2(step-1)+1}')
     parser.add_argument('--core', type=int, default=1, help='并行进程数, 0=单进程调试')
@@ -429,6 +436,38 @@ def adjust(res):
     return res
 
 
+def select_mv(camera_mv, obj_mv, mask=None, *, obj_mv_only=False,
+              bg_mode=False, label='mv'):
+    """根据MV来源模式返回最终运动场。
+
+    ``obj_mv_only`` 表示EXR的obj MV已包含相机与物体的完整运动，因此直接
+    返回它，不再做mask替换。默认模式保持历史逻辑：camera MV作为背景，
+    obj MV只覆盖运动物体；``bg_mode``则只保留camera MV。
+    """
+    if obj_mv_only and bg_mode:
+        raise ValueError('obj_mv_only与bg_mode不能同时开启')
+    if obj_mv_only:
+        if obj_mv is None:
+            raise ValueError(
+                f'{label}: 已开启--obj-mv-only，但EXR中缺少对应obj MV通道')
+        return np.array(obj_mv, copy=True)
+    if camera_mv is None:
+        raise ValueError(f'{label}: camera MV不能为空')
+    if obj_mv is None or bg_mode:
+        return camera_mv
+
+    if mask is None:
+        moving = np.where(
+            (obj_mv[..., 0] != 0) | (obj_mv[..., 1] != 0))
+        camera_mv[moving] = obj_mv[moving]
+    else:
+        # 保持原有mask合成语义：mask只替换屏幕空间XY，不改Z/A。
+        mask_xy = np.repeat(mask[..., None], 2, axis=2)
+        moving = np.where(mask_xy != 0)
+        camera_mv[moving] = obj_mv[moving]
+    return camera_mv
+
+
 # ── UE 风格 tone map: ACES RRT+ODT 拟合 (Stephen Hill fit) ───────────────────
 # UE 的 Filmic Tonemapper 即基于 ACES RRT/ODT; 此拟合与编辑器观感一致
 # (剩余差异是 auto exposure, 由 --exposure 固定值近似)。
@@ -515,11 +554,12 @@ def mv_cal_core(datas):
     if extra_depth is not None:
         depth = read(extra_depth)[..., 0] * 100
 
-    if depth is None:
-        # print('no depth inf')
-        if args.dump_depth:
-            return
-    elif args.depth_only:
+    if depth is None and (args.dump_depth or args.dump_ply):
+        return
+    if args.depth_only:
+        pass
+    elif depth is None and not args.objmvonly:
+        # camera MV依赖深度；完整obj MV模式不需要深度。
         pass
     else:
         # ── mv1: 当前帧 → 前一帧 (i-step) ─────────────────────────────────
@@ -536,37 +576,34 @@ def mv_cal_core(datas):
 
         if data0 is None:
             mv1 = np.zeros((hdr_image.shape[0], hdr_image.shape[1], 4))
+        elif args.objmvonly:
+            mv1 = select_mv(
+                None, objmv1, obj_mv_only=True,
+                label=f'{base} mv1(current->previous)')
         else:
-            mv1 = camera_tracking(depth, data1, data0)
-            if objmv1 is not None and not args.bg_mode:
-                if mask is None:
-                    if args.objmvonly:
-                        mv1 = objmv1
-                    else:
-                        tmp = np.where((objmv1[..., 0] != 0) | (objmv1[..., 1] != 0))
-                        mv1[tmp] = objmv1[tmp]
-                else:
-                    tmp_mask = np.repeat(mask[..., None], 2, axis=2)
-                    mv1[np.where(tmp_mask != 0)] = objmv1[np.where(tmp_mask != 0)]
+            camera_mv1 = camera_tracking(depth, data1, data0)
+            mv1 = select_mv(
+                camera_mv1, objmv1, mask, bg_mode=args.bg_mode,
+                label=f'{base} mv1(current->previous)')
         mvwrite(os.path.join(mv1_sp, base), adjust(mv1), precision='half')
 
         # ── mv0: 当前帧 → 后一帧 (i+step) ─────────────────────────────────
-        if objmv0_ is not None or args.bg_mode:
+        if args.objmvonly or objmv0_ is not None or args.bg_mode:
             if i + step < len(file_name):
                 data1_, objmv0 = exr_read_worldpos_next(file_name[i + step])
             else:
                 data1_, objmv0 = None, None
             if data1_ is None:
                 mv0 = np.zeros((hdr_image.shape[0], hdr_image.shape[1], 4))
+            elif args.objmvonly:
+                mv0 = select_mv(
+                    None, objmv0, obj_mv_only=True,
+                    label=f'{base} mv0(current->next)')
             else:
-                mv0 = camera_tracking(depth, data1, data1_)
-                if objmv0 is not None and not args.bg_mode:
-                    if mask is None:
-                        tmp = np.where((objmv0[..., 0] != 0) | (objmv0[..., 1] != 0))
-                        mv0[tmp] = objmv0[tmp]
-                    else:
-                        tmp_mask = np.repeat(mask[..., None], 2, axis=2)
-                        mv0[np.where(tmp_mask != 0)] = objmv0[np.where(tmp_mask != 0)]
+                camera_mv0 = camera_tracking(depth, data1, data1_)
+                mv0 = select_mv(
+                    camera_mv0, objmv0, mask, bg_mode=args.bg_mode,
+                    label=f'{base} mv0(current->next)')
             mvwrite(os.path.join(mv0_sp, base), adjust(mv0), precision='half')
 
     if step != 1:
