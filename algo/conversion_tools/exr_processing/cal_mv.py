@@ -52,6 +52,69 @@ warnings.filterwarnings("ignore")
 pt = Imath.PixelType(Imath.PixelType.FLOAT)
 D2R = np.pi / 180
 
+# Unreal EXR 名称对照表。Unreal 升级或 dump 插件改名后，只需修改此表。
+# 每项按优先级排列：新版名在前，旧版名在后，以同时兼容新旧数据。
+UNREAL_EXR_NAME_MAP = {
+    'headers': {
+        'color_space_destination': (
+            'unreal/colorSpace/destination',
+        ),
+        'focal_length': (
+            'unreal/layerData/rgba/focalLength',
+            'unreal/camera/FinalImage/focalLength',
+        ),
+        'sensor_width': (
+            'unreal/layerData/rgba/sensorWidth',
+            'unreal/camera/FinalImage/sensorWidth',
+        ),
+        'fov': (
+            'unreal/layerData/rgba/fov',
+            'unreal/camera/FinalImage/fov',
+        ),
+        'cur_pos_x': (
+            'unreal/layerData/rgba/curPos/x', 'unreal/camera/curPos/x'),
+        'cur_pos_y': (
+            'unreal/layerData/rgba/curPos/y', 'unreal/camera/curPos/y'),
+        'cur_pos_z': (
+            'unreal/layerData/rgba/curPos/z', 'unreal/camera/curPos/z'),
+        'cur_rot_pitch': (
+            'unreal/layerData/rgba/curRot/pitch', 'unreal/camera/curRot/pitch'),
+        'cur_rot_roll': (
+            'unreal/layerData/rgba/curRot/roll', 'unreal/camera/curRot/roll'),
+        'cur_rot_yaw': (
+            'unreal/layerData/rgba/curRot/yaw', 'unreal/camera/curRot/yaw'),
+        'prev_pos_x': (
+            'unreal/layerData/rgba/prevPos/x', 'unreal/camera/prevPos/x'),
+        'prev_pos_y': (
+            'unreal/layerData/rgba/prevPos/y', 'unreal/camera/prevPos/y'),
+        'prev_pos_z': (
+            'unreal/layerData/rgba/prevPos/z', 'unreal/camera/prevPos/z'),
+        'prev_rot_pitch': (
+            'unreal/layerData/rgba/prevRot/pitch', 'unreal/camera/prevRot/pitch'),
+        'prev_rot_roll': (
+            'unreal/layerData/rgba/prevRot/roll', 'unreal/camera/prevRot/roll'),
+        'prev_rot_yaw': (
+            'unreal/layerData/rgba/prevRot/yaw', 'unreal/camera/prevRot/yaw'),
+    },
+    # 通道名使用子串匹配，允许 EXR 在前面增加 layer 前缀。
+    'channels': {
+        'depth_r': (
+            'FinalImagePWWorldDepth.R',
+            'FinalImageMovieRenderQueue_WorldDepth.R',
+            'ImageDepth.R',
+        ),
+        'mv1_r': ('MV1.R', 'MotionVectors.R'),
+        'mv1_g': ('MV1.G', 'MotionVectors.G'),
+        'mv1_b': ('MV1.B', 'MotionVectors.B'),
+        'mv1_a': ('MV1.A', 'MotionVectors.A'),
+        'mv0_r': ('MV0.R',),
+        'mv0_g': ('MV0.G',),
+        'mv0_b': ('MV0.B',),
+        'mv0_a': ('MV0.A',),
+        'mask_r': ('ObjMask.R', 'PWMask.R'),
+    },
+}
+
 # ── 色域基色坐标: 用于从 chromaticities 头识别色彩空间 ──────────────────────
 type_dict = {
     "PW_PRM_BT601":       [0.640, 0.330, 0.290, 0.600, 0.150, 0.060],
@@ -202,6 +265,48 @@ def loop_helper(root, key='.exr'):
 # EXR 读取
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _resolve_header_key(header, logical_name, required=True):
+    """根据对照表解析 Unreal header 键。
+
+    缺少必需字段时，报错会指出要修改的对照表项和 EXR 中实际存在的键。
+    """
+    candidates = UNREAL_EXR_NAME_MAP['headers'][logical_name]
+    for key in candidates:
+        if key in header:
+            return key
+    if not required:
+        return None
+
+    available = sorted(str(key) for key in header if str(key).startswith('unreal/'))
+    available_text = ', '.join(available) if available else '<无 unreal/* header>'
+    raise KeyError(
+        f"EXR header 缺少逻辑字段 '{logical_name}'。"
+        f"请修改 UNREAL_EXR_NAME_MAP['headers']['{logical_name}']。"
+        f"当前候选: {candidates}; EXR 实际键: {available_text}"
+    )
+
+
+def _read_header_float(header, logical_name, required=True):
+    key = _resolve_header_key(header, logical_name, required=required)
+    return float(header[key]) if key is not None else None
+
+
+def _find_channel_name(channels, logical_name, required=False):
+    """根据对照表查找真实通道名；候选名按子串匹配。"""
+    candidates = UNREAL_EXR_NAME_MAP['channels'][logical_name]
+    for candidate in candidates:
+        for channel_name in channels:
+            if candidate in channel_name:
+                return channel_name
+    if not required:
+        return None
+    raise KeyError(
+        f"EXR channel 缺少逻辑通道 '{logical_name}'。"
+        f"请修改 UNREAL_EXR_NAME_MAP['channels']['{logical_name}']。"
+        f"当前候选: {candidates}; EXR 实际通道: {sorted(channels)}"
+    )
+
+
 def check_type(exr):
     """识别色彩空间, 目前仅区分 rec709 / acescg。"""
     dtype = 'rec709'
@@ -216,8 +321,11 @@ def check_type(exr):
             if loss_ < loss:
                 loss = loss_
                 dtype = item
-    elif 'unreal/colorSpace/destination' in exr.header():
-        if 'acescg' in str(exr.header()['unreal/colorSpace/destination']).lower():
+    else:
+        color_space_key = _resolve_header_key(
+            exr.header(), 'color_space_destination', required=False)
+        if (color_space_key is not None
+                and 'acescg' in str(exr.header()[color_space_key]).lower()):
             dtype = 'acescg'
     if 'pw_prm' in dtype.lower():
         dtype = 'acescg'
@@ -227,17 +335,14 @@ def check_type(exr):
 
 def _read_camera_header(img_exr, size):
     """从 exr header 读取相机公共参数, 返回基础 data dict。"""
+    header = img_exr.header()
     data = {}
-    camera_type = 1
-    for ic in img_exr.header().keys():
-        if '/focalLength' in ic:
-            camera_type = 0
-            data['focal_length'] = float(
-                img_exr.header()['unreal/camera/FinalImage/focalLength'])
-            break
-    data['sensor_w'] = float(img_exr.header()['unreal/camera/FinalImage/sensorWidth'])
-    data['fov'] = float(img_exr.header()['unreal/camera/FinalImage/fov'])
-    data['camera_type'] = camera_type
+    focal_length = _read_header_float(header, 'focal_length', required=False)
+    if focal_length is not None:
+        data['focal_length'] = focal_length
+    data['sensor_w'] = _read_header_float(header, 'sensor_width')
+    data['fov'] = _read_header_float(header, 'fov')
+    data['camera_type'] = 0 if focal_length is not None else 1
     data['h'], data['w'] = size
     return data
 
@@ -258,50 +363,35 @@ def _read_mv_channels(img_exr, size, ch_r, ch_g, ch_b, ch_a):
 def exr_read_worldpos(filePath):
     """读取一帧 dump exr: 返回 (rgb, depth, prev相机, cur相机, mv0, mv1, mask, 色彩空间)。"""
     img_exr = OpenEXR.InputFile(filePath)
+    header = img_exr.header()
     dtype = check_type(img_exr)
-    dw = img_exr.header()['dataWindow']
+    dw = header['dataWindow']
     size = (dw.max.y - dw.min.y + 1, dw.max.x - dw.min.x + 1)
 
     # ── 通道名解析 (初始化为 None, 缺失通道不再触发 NameError) ────────────
-    depth_R = None
-    mv1_R = mv1_G = mv1_B = mv1_A = None
-    mv0_R = mv0_G = mv0_B = mv0_A = None
-    mask_R = None
-    for key in img_exr.header()['channels']:
-        if ('FinalImagePWWorldDepth.R' in key
-                or 'FinalImageMovieRenderQueue_WorldDepth.R' in key
-                or 'ImageDepth.R' in key):
-            depth_R = key
-        if 'MV1.R' in key or 'MotionVectors.R' in key:
-            mv1_R = key
-        if 'MV1.G' in key or 'MotionVectors.G' in key:
-            mv1_G = key
-        if 'MV1.B' in key or 'MotionVectors.B' in key:
-            mv1_B = key
-        if 'MV1.A' in key or 'MotionVectors.A' in key:
-            mv1_A = key
-        if 'MV0.R' in key:
-            mv0_R = key
-        if 'MV0.G' in key:
-            mv0_G = key
-        if 'MV0.B' in key:
-            mv0_B = key
-        if 'MV0.A' in key:
-            mv0_A = key
-        if 'ObjMask.R' in key or 'PWMask.R' in key:
-            mask_R = key
+    channels = header['channels']
+    depth_R = _find_channel_name(channels, 'depth_r')
+    mv1_R = _find_channel_name(channels, 'mv1_r')
+    mv1_G = _find_channel_name(channels, 'mv1_g')
+    mv1_B = _find_channel_name(channels, 'mv1_b')
+    mv1_A = _find_channel_name(channels, 'mv1_a')
+    mv0_R = _find_channel_name(channels, 'mv0_r')
+    mv0_G = _find_channel_name(channels, 'mv0_g')
+    mv0_B = _find_channel_name(channels, 'mv0_b')
+    mv0_A = _find_channel_name(channels, 'mv0_a')
+    mask_R = _find_channel_name(channels, 'mask_r')
 
     worldpos = (np.array(array.array('f', img_exr.channel(depth_R, pt))).reshape(size)
                 if depth_R is not None else None)
 
     data = _read_camera_header(img_exr, size)
     data_pre, data_cur = data.copy(), data.copy()
-    for k, hk in [('x', 'curPos/x'), ('y', 'curPos/y'), ('z', 'curPos/z'),
-                  ('pitch', 'curRot/pitch'), ('roll', 'curRot/roll'), ('yaw', 'curRot/yaw')]:
-        data_cur[k] = float(img_exr.header()[f'unreal/camera/{hk}'])
-    for k, hk in [('x', 'prevPos/x'), ('y', 'prevPos/y'), ('z', 'prevPos/z'),
-                  ('pitch', 'prevRot/pitch'), ('roll', 'prevRot/roll'), ('yaw', 'prevRot/yaw')]:
-        data_pre[k] = float(img_exr.header()[f'unreal/camera/{hk}'])
+    for key in ('x', 'y', 'z'):
+        data_cur[key] = _read_header_float(header, f'cur_pos_{key}')
+        data_pre[key] = _read_header_float(header, f'prev_pos_{key}')
+    for key in ('pitch', 'roll', 'yaw'):
+        data_cur[key] = _read_header_float(header, f'cur_rot_{key}')
+        data_pre[key] = _read_header_float(header, f'prev_rot_{key}')
 
     mv0 = _read_mv_channels(img_exr, size, mv0_R, mv0_G, mv0_B, mv0_A)
     mv1 = _read_mv_channels(img_exr, size, mv1_R, mv1_G, mv1_B, mv1_A)
@@ -321,18 +411,23 @@ def exr_read_worldpos_next(filePath):
     if not os.path.isfile(filePath):
         return None, None
     img_exr = OpenEXR.InputFile(filePath)
-    dw = img_exr.header()['dataWindow']
+    header = img_exr.header()
+    dw = header['dataWindow']
     size = (dw.max.y - dw.min.y + 1, dw.max.x - dw.min.x + 1)
 
     data_cur = _read_camera_header(img_exr, size)
-    for k, hk in [('x', 'curPos/x'), ('y', 'curPos/y'), ('z', 'curPos/z'),
-                  ('pitch', 'curRot/pitch'), ('roll', 'curRot/roll'), ('yaw', 'curRot/yaw')]:
-        data_cur[k] = float(img_exr.header()[f'unreal/camera/{hk}'])
+    for key in ('x', 'y', 'z'):
+        data_cur[key] = _read_header_float(header, f'cur_pos_{key}')
+    for key in ('pitch', 'roll', 'yaw'):
+        data_cur[key] = _read_header_float(header, f'cur_rot_{key}')
 
-    if 'FinalImagePWMV0.R' in img_exr.header()['channels']:
-        mv0 = _read_mv_channels(img_exr, size,
-                                'FinalImagePWMV0.R', 'FinalImagePWMV0.G',
-                                'FinalImagePWMV0.B', 'FinalImagePWMV0.A')
+    channels = header['channels']
+    mv0_channels = tuple(
+        _find_channel_name(channels, f'mv0_{component}')
+        for component in ('r', 'g', 'b', 'a')
+    )
+    if all(channel is not None for channel in mv0_channels):
+        mv0 = _read_mv_channels(img_exr, size, *mv0_channels)
     else:
         mv0 = None
     return data_cur, mv0
