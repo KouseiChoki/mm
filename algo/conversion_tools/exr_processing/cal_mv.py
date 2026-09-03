@@ -103,6 +103,7 @@ UNREAL_EXR_NAME_MAP = {
             'FinalImagePWWorldDepth.R',
             'FinalImageMovieRenderQueue_WorldDepth.R',
             'ImageDepth.R',
+            'PWWorldDepth.R',
         ),
         'mv1_r': ('MV1.R', 'MotionVectors.R'),
         'mv1_g': ('MV1.G', 'MotionVectors.G'),
