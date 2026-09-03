@@ -335,8 +335,16 @@ def check_type(exr):
     return dtype
 
 
-def _read_camera_header(img_exr, size):
-    """从 exr header 读取相机公共参数, 返回基础 data dict。"""
+def _read_camera_header(img_exr, size, required=True):
+    """从 EXR header 读取相机公共参数。
+
+    ``required=False`` 用于 ``--objmvonly``：此时 obj MV 已经包含完整
+    运动，后续不会调用 :func:`camera_tracking`，因此只返回图像尺寸，
+    完全不要求 EXR 携带焦距、sensor width、FOV 或相机位姿。
+    """
+    if not required:
+        return {'h': size[0], 'w': size[1]}
+
     header = img_exr.header()
     data = {}
     focal_length = _read_header_float(header, 'focal_length', required=False)
@@ -362,7 +370,7 @@ def _read_mv_channels(img_exr, size, ch_r, ch_g, ch_b, ch_a):
     return np.stack([mv_x, mv_y, mv_z, mv_a], axis=2)
 
 
-def exr_read_worldpos(filePath):
+def exr_read_worldpos(filePath, read_camera=True):
     """读取一帧 dump exr: 返回 (rgb, depth, prev相机, cur相机, mv0, mv1, mask, 色彩空间)。"""
     img_exr = OpenEXR.InputFile(filePath)
     header = img_exr.header()
@@ -386,14 +394,15 @@ def exr_read_worldpos(filePath):
     worldpos = (np.array(array.array('f', img_exr.channel(depth_R, pt))).reshape(size)
                 if depth_R is not None else None)
 
-    data = _read_camera_header(img_exr, size)
+    data = _read_camera_header(img_exr, size, required=read_camera)
     data_pre, data_cur = data.copy(), data.copy()
-    for key in ('x', 'y', 'z'):
-        data_cur[key] = _read_header_float(header, f'cur_pos_{key}')
-        data_pre[key] = _read_header_float(header, f'prev_pos_{key}')
-    for key in ('pitch', 'roll', 'yaw'):
-        data_cur[key] = _read_header_float(header, f'cur_rot_{key}')
-        data_pre[key] = _read_header_float(header, f'prev_rot_{key}')
+    if read_camera:
+        for key in ('x', 'y', 'z'):
+            data_cur[key] = _read_header_float(header, f'cur_pos_{key}')
+            data_pre[key] = _read_header_float(header, f'prev_pos_{key}')
+        for key in ('pitch', 'roll', 'yaw'):
+            data_cur[key] = _read_header_float(header, f'cur_rot_{key}')
+            data_pre[key] = _read_header_float(header, f'prev_rot_{key}')
 
     mv0 = _read_mv_channels(img_exr, size, mv0_R, mv0_G, mv0_B, mv0_A)
     mv1 = _read_mv_channels(img_exr, size, mv1_R, mv1_G, mv1_B, mv1_A)
@@ -408,7 +417,7 @@ def exr_read_worldpos(filePath):
     return image, worldpos, data_pre, data_cur, mv0, mv1, mask, dtype
 
 
-def exr_read_worldpos_next(filePath):
+def exr_read_worldpos_next(filePath, read_camera=True):
     """读取相邻帧的相机参数与 mv0 (轻量版, 不读 RGB/深度)。"""
     if not os.path.isfile(filePath):
         return None, None
@@ -417,11 +426,12 @@ def exr_read_worldpos_next(filePath):
     dw = header['dataWindow']
     size = (dw.max.y - dw.min.y + 1, dw.max.x - dw.min.x + 1)
 
-    data_cur = _read_camera_header(img_exr, size)
-    for key in ('x', 'y', 'z'):
-        data_cur[key] = _read_header_float(header, f'cur_pos_{key}')
-    for key in ('pitch', 'roll', 'yaw'):
-        data_cur[key] = _read_header_float(header, f'cur_rot_{key}')
+    data_cur = _read_camera_header(img_exr, size, required=read_camera)
+    if read_camera:
+        for key in ('x', 'y', 'z'):
+            data_cur[key] = _read_header_float(header, f'cur_pos_{key}')
+        for key in ('pitch', 'roll', 'yaw'):
+            data_cur[key] = _read_header_float(header, f'cur_rot_{key}')
 
     channels = header['channels']
     mv0_channels = tuple(
@@ -640,7 +650,7 @@ def mv_cal_core(datas):
     mv1_sp = os.path.join(save_path, f'mv{(step - 1) * 2 + 1}')
 
     hdr_image, depth, data_prev_hdr, data1, objmv0_, objmv1, mask, dtype = \
-        exr_read_worldpos(file_name[i])
+        exr_read_worldpos(file_name[i], read_camera=not args.objmvonly)
 
     if mask is not None:
         mvwrite(os.path.join(save_path, 'Mask', base),
@@ -661,7 +671,8 @@ def mv_cal_core(datas):
     else:
         # ── mv1: 当前帧 → 前一帧 (i-step) ─────────────────────────────────
         if i - step >= 0:
-            data0, _ = exr_read_worldpos_next(file_name[i - step])
+            data0, _ = exr_read_worldpos_next(
+                file_name[i - step], read_camera=not args.objmvonly)
         else:
             data0, objmv1 = None, None
 
@@ -688,7 +699,8 @@ def mv_cal_core(datas):
         # ── mv0: 当前帧 → 后一帧 (i+step) ─────────────────────────────────
         if args.objmvonly or objmv0_ is not None or args.bg_mode:
             if i + step < len(file_name):
-                data1_, objmv0 = exr_read_worldpos_next(file_name[i + step])
+                data1_, objmv0 = exr_read_worldpos_next(
+                    file_name[i + step], read_camera=not args.objmvonly)
             else:
                 data1_, objmv0 = None, None
             if data1_ is None:
