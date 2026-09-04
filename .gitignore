@@ -9,6 +9,7 @@ mypy
 dataset/
 *_bak.py
 result/
+record/
 kouseipython/
 log/
 logs/

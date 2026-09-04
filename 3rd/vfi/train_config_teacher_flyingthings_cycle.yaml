@@ -1,0 +1,166 @@
+# FlyingThings-only teacher-source experiment, directly comparable to the
+# 0813 controlled teacher-flow ablations. Standard reconstruction sources stay
+# unchanged; only the 10% teacher micro-batch is restricted to FlyingThings3D.
+#
+# Run as a fresh fine-tune from the same epoch-320 checkpoint (no --resume):
+#   conda run -n vfi python train.py \
+#     --config train_config_teacher_flyingthings_cycle.yaml \
+#     --restore_ckpt ckpt/0807_s2v3_official_tuesday/0807_s2v3_official_tuesday_320.pkl
+
+exp_name: 0814_teacher_flyingthings_cycle
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.05
+
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lap
+  merge_loss_weights: [0.5]
+  normalize_pixel_loss: false
+  residual_loss_weight: 0.0
+
+  # Keep the 0813 auxiliary weight for a source-only controlled comparison.
+  # FlyingThings has much larger motion, so gradient clipping and the existing
+  # warmup are retained; flow scalars are dumped if raw loss exceeds 40.
+  flow_loss_weight: 0.0005
+  flow_loss_warmup_steps: 2000
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.5
+  flow_motion_gain: 0.5
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 3.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: false
+
+optim:
+  lr_max: 2.0e-5
+  lr_min: 2.0e-6
+  warmup_steps: 500
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 0.25
+  flow_lr_scale: 1.0
+  refine_lr_scale: 0.25
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, vimeo, xtrain, teacher_flyingthings]
+  batch_size: 20
+  num_workers: 24
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes:
+    - [256, 256, 20]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+
+  mv_cache_dirname: mv_cache_f16
+  mv_cache_required: true
+  mv_cache_preview_stride: 4
+  # Native past/future flow is reliable, while hard cycle removes occlusion,
+  # out-of-frame and many-to-one regions before applying direct supervision.
+  mv_cycle_confidence: hard
+  mv_cycle_cache_required: true
+  val_mv_cycle_confidence: hard
+  # Aggregate teacher_val also contains legacy Spring scenes without cycle
+  # sidecars.  Keep training strict; validation uses sidecars where available.
+  val_mv_cycle_cache_required: false
+  mv_cycle_on_the_fly: false
+  val_mv_cycle_on_the_fly: false
+  motion_aware_crop_prob: 0.7
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  source_options:
+    vimeo:
+      framesteps: [1]
+      augment_profile: vimeo
+    xtrain:
+      framesteps: [1]
+      resize_hw: [256, 256]
+      augment_profile: vimeo
+    teacher_flyingthings:
+      framesteps: [1]
+      augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    vimeo: vimeo_val.txt
+    xtrain: xtrain_val.txt
+    teacher: teacher_val.txt
+    teacher_flyingthings: teacher_flyingthings_val.txt
+
+phases:
+  - name: teacher_flyingthings_cycle
+    # Run through the weekend, but retain the exact original 20-epoch LR curve;
+    # epochs 20-150 continue at lr_min and all 5-epoch checkpoints are kept.
+    epochs: 150
+    steps_per_epoch: 802
+    grad_accum_steps: 2
+    lr_schedule: phase
+    lr_total_steps: 16040
+    trainable: all
+    local: true
+    crop_sizes:
+      - [256, 256, 20]
+    ratios: {vimeo: 0.4, xtrain: 0.1, easy: 0.1, normal: 0.1, hard: 0.2, teacher_flyingthings: 0.1}
+    batch_counts: {vimeo: 8, xtrain: 2, easy: 2, normal: 2, hard: 4, teacher_flyingthings: 2}
+    curriculum:
+      source: xtrain
+      every_epochs: 16
+      max_stage: 4
+      framestep_start: 1
+      framestep_multiplier: 2
+      resize_start: 256
+      resize_multiplier: 1.1
+
+monitor:
+  record_root: record
+  eval_every_epochs: 5
+  save_every_epochs: 5
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps
+  dump_max: 20
+  mv_compare_every_epochs: 5
+  mv_compare_max_samples: 2
+  mv_compare_dir: mv_comparisons
+  best_metric: all/psnr
+  best_mode: max

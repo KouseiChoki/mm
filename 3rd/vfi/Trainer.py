@@ -10,7 +10,7 @@ from config import *
 
 def convert(param):
     return {
-        k.replace("module.", ""): v
+        k: v
         for k, v in param.items()
         if 'attn_mask' not in k and 'HW' not in k
     }
@@ -30,7 +30,7 @@ def load_checkpoint_file(path):
 
 
 class Model:
-    def __init__(self, local_rank=0, loss_type='lap', flow_loss_weight=0.01,
+    def __init__(self, loss_type='lap', flow_loss_weight=0.01,
                  flow_stage_gamma=0.2, flow_motion_threshold=1.0,
                  flow_motion_balance=0.1, flow_motion_gain=0.0,
                  flow_motion_scale=10.0, flow_motion_weight_cap=4.0,
@@ -38,7 +38,8 @@ class Model:
                  merge_loss_gamma=0.5, merge_loss_weights=None,
                  normalize_pixel_loss=True, residual_loss_weight=0.0,
                  lc_charbonnier_eps=1e-3, lc_census_weight=1.0,
-                 lc_lap_weight=1.0, lc_warp_weight=0.5):
+                 lc_lap_weight=1.0, lc_warp_weight=0.5,
+                 pervfi_mask_loss_weight=0.0):
         """
         loss_type        : 'l1' | 'lap' | 'l1+lap' | 'lc'
         flow_loss_weight : teacher flow 监督的总权重, 0=关闭
@@ -48,7 +49,7 @@ class Model:
         backbonecfg, multiscalecfg = MODEL_CONFIG['MODEL_ARCH']
         self.net = multiscaletype(backbonetype(**backbonecfg), **multiscalecfg)
         self.name = MODEL_CONFIG['LOGNAME']
-        self.local = LOCAL
+        self.local = True
 
         self.device()
 
@@ -68,6 +69,8 @@ class Model:
         self.lc_census_weight = max(float(lc_census_weight), 0.0)
         self.lc_lap_weight = max(float(lc_lap_weight), 0.0)
         self.lc_warp_weight = max(float(lc_warp_weight), 0.0)
+        self.pervfi_mask_loss_weight = max(
+            float(pervfi_mask_loss_weight), 0.0)
         self.flow_loss_weight = flow_loss_weight
         self.flow_loss_warmup_steps = max(int(flow_loss_warmup_steps), 0)
         self.flow_stage_gamma = float(flow_stage_gamma)
@@ -99,6 +102,64 @@ class Model:
 
     def train(self): self.net.train()
     def eval(self):  self.net.eval()
+
+    def set_local_enabled(self, enabled):
+        """Enable/bypass local IFBlocks for the current training phase.
+
+        Bypassed parameters receive no gradient and AdamW therefore leaves
+        both their weights and optimizer state untouched.  This permits the
+        official-style coarse-to-local schedule without changing checkpoint
+        structure or rebuilding the optimizer between phases.
+        """
+        self.local = bool(enabled)
+
+    def set_trainable_scope(self, scope='all'):
+        """切换训练参数范围。
+
+        official IFBlock阶段仅更新local_block；refiner校准阶段仅更新
+        unet，避免改变已经验证过的flow、mask和merged结果。
+        """
+        scope = str(scope).lower()
+        if scope not in ('all', 'local', 'local_ifblock', 'refiner'):
+            raise ValueError(
+                'trainable只支持all/local/local_ifblock/refiner, '
+                f'got {scope!r}')
+        local_only = scope in ('local', 'local_ifblock')
+        trainable, total = 0, 0
+        for name, parameter in self.net.named_parameters():
+            if local_only:
+                enabled = name.startswith('local_block.')
+            elif scope == 'refiner':
+                enabled = name.startswith('unet.')
+            else:
+                enabled = True
+            parameter.requires_grad_(enabled)
+            count = parameter.numel()
+            total += count
+            if parameter.requires_grad:
+                trainable += count
+        self.optimG.zero_grad(set_to_none=True)
+        print(f'[trainable] scope={scope} params={trainable:,}/{total:,} '
+              f'({100.0 * trainable / max(total, 1):.2f}%)')
+
+    @staticmethod
+    def _quasi_binary_mask_loss(mask_list, reference):
+        """Mean uncertainty m*(1-m); zero for binary masks, max at 0.5."""
+        if not mask_list:
+            return reference.new_zeros(())
+        return torch.stack([
+            (mask * (1.0 - mask)).mean() for mask in mask_list
+        ]).mean()
+
+    @staticmethod
+    def _mask_soft_ratio(mask_list, reference, low=0.1, high=0.9):
+        """Fraction of mask pixels that still perform meaningful soft mixing."""
+        if not mask_list:
+            return reference.new_zeros(())
+        return torch.stack([
+            ((mask > low) & (mask < high)).to(mask.dtype).mean()
+            for mask in mask_list
+        ]).mean()
 
     def device(self):
         if torch.cuda.is_available():
@@ -186,11 +247,6 @@ class Model:
 
     # ── checkpoint ────────────────────────────────────────────────────────────
 
-    # def load_model(self, ckpt_path, rank=0, real=False):
-    #     self.net.load_state_dict(
-    #         convert(torch.load(ckpt_path, map_location='cpu')), strict=False
-    #     )
-
     def load_model(self, ckpt_path, resume=False):
         ckpt = load_checkpoint_file(ckpt_path)
         state = ckpt['net'] if 'net' in ckpt else ckpt          # 兼容新旧格式
@@ -270,7 +326,7 @@ class Model:
                       f'仅恢复模型权重并重建optimizer ({exc})')
         return ckpt.get('epoch', 0), ckpt.get('step', 0)
 
-    def save_model(self, sp, epoch, rank=0, step=0, scaler=None,
+    def save_model(self, sp, epoch, step=0, scaler=None,
                    tag=None, extra_state=None):
         filename = f'{self.name}_{tag or str(epoch)}.pkl'
         ckpt_path = os.path.join(
@@ -359,11 +415,18 @@ class Model:
         merge_losses = [
             self._pixel_loss(merge, gt) for merge in merged]
         if self.merge_loss_weights is not None:
-            if len(self.merge_loss_weights) != len(merge_losses):
+            if len(self.merge_loss_weights) == 1:
+                # 一个值表示所有warp阶段共用同一权重。这样主网络的
+                # learned-feature heads与后续IFBlock专项阶段可使用同一套
+                # 官方 Lap(1.0) + warp(0.5) 配置，即使两阶段输出级数不同。
+                weights = final_loss.new_full(
+                    (len(merge_losses),), self.merge_loss_weights[0])
+            elif len(self.merge_loss_weights) != len(merge_losses):
                 raise ValueError(
                     f'merge_loss_weights长度({len(self.merge_loss_weights)}) '
-                    f'必须等于local merge数量({len(merge_losses)})')
-            weights = final_loss.new_tensor(self.merge_loss_weights)
+                    f'必须为1或等于merge数量({len(merge_losses)})')
+            else:
+                weights = final_loss.new_tensor(self.merge_loss_weights)
         else:
             count = len(merge_losses)
             weights = final_loss.new_tensor([
@@ -536,7 +599,8 @@ class Model:
     # ── train / eval step ─────────────────────────────────────────────────────
 
     def update(self, imgs, gt, timestep=0.5, learning_rate=0, training=True,
-               scaler=None, flow_gt=None, has_mv=None, loss_step=None):
+               scaler=None, flow_gt=None, has_mv=None, loss_step=None,
+               accumulation_steps=1, accumulation_index=0):
         """
         imgs     : [B, 6, H, W] float 0~1  (img0, img1)
         gt       : [B, 3, H, W] float 0~1
@@ -552,16 +616,26 @@ class Model:
         if training:
             self.train()
             self.set_learning_rate(learning_rate)
+            accumulation_steps = int(accumulation_steps)
+            accumulation_index = int(accumulation_index)
+            if accumulation_steps < 1:
+                raise ValueError('accumulation_steps必须>=1')
+            if not 0 <= accumulation_index < accumulation_steps:
+                raise ValueError(
+                    'accumulation_index必须位于[0, accumulation_steps)')
+            if accumulation_index == 0:
+                self.optimG.zero_grad(set_to_none=True)
 
             outputs = self.net(
                 imgs_pad, timestep=timestep, scale=0, local=self.local,
                 return_all_merges=self.loss_type == 'lc')
             if self.loss_type == 'lc':
-                (flow_list, _, res_pad, _, _, merged_pad, pred_pad,
+                (flow_list, mask_list, res_pad, _, _, merged_pad, pred_pad,
                  all_merged_pad) = outputs
                 supervised_merged_pad = all_merged_pad
             else:
-                (flow_list, _, res_pad, _, _, merged_pad, pred_pad) = outputs
+                (flow_list, mask_list, res_pad, _, _, merged_pad,
+                 pred_pad) = outputs
                 supervised_merged_pad = merged_pad
 
             pred = self.unpad(pred_pad, pr, pb)
@@ -572,7 +646,12 @@ class Model:
             loss_pixel, loss_final, merge_losses, merge_weights = (
                 self._pixel_supervision(pred, merged, gt))
             loss_residual = res.abs().mean()
-            loss = loss_pixel + self.residual_loss_weight * loss_residual
+            loss_mask = self._quasi_binary_mask_loss(mask_list, loss_pixel)
+            mask_soft_ratio = self._mask_soft_ratio(mask_list, loss_pixel)
+            loss = (
+                loss_pixel
+                + self.residual_loss_weight * loss_residual
+                + self.pervfi_mask_loss_weight * loss_mask)
 
             # teacher flow 多阶段监督 (仅对 has_mv=1 的样本生效)
             loss_flow = torch.zeros((), device=self._dev)
@@ -595,6 +674,12 @@ class Model:
                 'residual': loss_residual.detach(),
                 'residual_weighted': (
                     self.residual_loss_weight * loss_residual).detach(),
+                'pervfi_mask_binary': loss_mask.detach(),
+                'pervfi_mask_soft_ratio': mask_soft_ratio.detach(),
+                'pervfi_mask_binary_weighted': (
+                    self.pervfi_mask_loss_weight * loss_mask).detach(),
+                'pervfi_mask_loss_weight': loss.new_tensor(
+                    self.pervfi_mask_loss_weight),
                 'flow_raw': loss_flow.detach(),
                 'flow_weighted': (flow_weight * loss_flow).detach(),
                 'flow_weight': loss.new_tensor(flow_weight),
@@ -606,19 +691,22 @@ class Model:
                 components[f'merge_weight_{index}'] = merge_weight.detach()
             self.last_loss_components = components
 
-            self.optimG.zero_grad(set_to_none=True)
+            backward_loss = loss / accumulation_steps
+            should_step = accumulation_index == accumulation_steps - 1
             if scaler is not None:
-                scaler.scale(loss).backward()
-                scaler.unscale_(self.optimG)
-                self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.net.parameters(), max_norm=self.grad_clip)
-                scaler.step(self.optimG)
-                scaler.update()
+                scaler.scale(backward_loss).backward()
+                if should_step:
+                    scaler.unscale_(self.optimG)
+                    self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.net.parameters(), max_norm=self.grad_clip)
+                    scaler.step(self.optimG)
+                    scaler.update()
             else:
-                loss.backward()
-                self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
-                    self.net.parameters(), max_norm=self.grad_clip)
-                self.optimG.step()
+                backward_loss.backward()
+                if should_step:
+                    self.last_grad_norm = torch.nn.utils.clip_grad_norm_(
+                        self.net.parameters(), max_norm=self.grad_clip)
+                    self.optimG.step()
 
             return pred.detach(), loss.item(), loss_flow.item()
 

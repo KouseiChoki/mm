@@ -1,0 +1,128 @@
+# PerVFI-inspired blending + coarse-to-local training ablation.
+#
+# 从头训练:
+#   python train.py --config train_config_pervfi_ablation.yaml
+#
+# 严格对照建议:
+#   1. 本文件作为实验组。
+#   2. 复制本文件，将 blend_mode 改为 soft、pervfi_mask_loss_weight 改为0，
+#      作为融合基线。
+#   3. 两组必须使用相同 seed、数据列表、phase/local 设置和训练步数。
+
+exp_name: 0805_s2v3_pervfi
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.25
+
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  # PerVFI-inspired消融: 不引入normalizing-flow generator，只验证准二值
+  # 非对称融合是否能缓解两个warp轻微错位造成的纹理/噪点模糊。
+  # control实验改为 blend_mode: soft 且 pervfi_mask_loss_weight: 0，
+  # 其他配置保持完全相同。
+  blend_mode: pervfi
+  pervfi_mask_temperature: 0.5       # 越小越接近二值；首轮不建议低于0.35
+  pervfi_disagreement_threshold: 0.03 # 两个warp平均RGB差达到该值时完全锐化
+  pervfi_blend_strength: 1.0
+  pervfi_mask_loss_weight: 0.002     # m*(1-m)；最大附加loss约0.0005
+
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+
+  flow_loss_weight: 0.01
+  flow_loss_warmup_steps: 10000
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 0.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: true
+  zero_init_residual_heads: true
+  local_zero_init: true
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.01
+
+optim:
+  # 与main当前F48从头训练配置保持一致，避免把LR变化混入消融结论。
+  lr_max: 2.5e-5
+  lr_min: 2.5e-6
+  warmup_steps: 5000
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 1.0
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, opensource, illumination, noise, teacher]
+  batch_size: 1
+  num_workers: 8
+  val_num_workers: 4
+  crop_sizes:
+    - [384, 704,  6]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+  motion_aware_crop_prob: 0.5
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  val_lists:
+    all: val.txt
+    teacher: teacher_val.txt
+
+phases:
+  # 先只训练backbone、learned-feature flow heads和refiner。local_block完全绕过，
+  # 参数无梯度且AdamW不会更新；结构仍保留，因此checkpoint始终兼容。
+  - name: coarse_warmup
+    epochs: 100
+    local: false
+    ratios: {easy: 0.10, normal: 0.1, hard: 0.1, teacher: 0.40, opensource: 0.3, illumination: 0.0, noise: 0.0}
+  # 开启local后先从容易数据适应，再逐步增加normal/hard比例。
+  - name: local_mix
+    epochs: 500
+    local: true
+    ratios: {easy: 0.20, normal: 0.2, hard: 0.2, teacher: 0.10, opensource: 0.3, illumination: 0.0, noise: 0.0}
+
+monitor:
+  eval_every_epochs: 10
+  save_every_epochs: 10
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples_pervfi
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps_pervfi
+  dump_max: 1000
+  best_metric: all/psnr
+  best_mode: auto

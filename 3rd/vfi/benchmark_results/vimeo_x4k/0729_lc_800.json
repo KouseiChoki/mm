@@ -1,0 +1,31 @@
+{
+  "model": "0729_lc_800",
+  "datasets": {
+    "vimeo90k": {
+      "protocol": "official tri_testlist; im1,im3 -> im2",
+      "cases_done": 3782,
+      "predicted_frames": 3782,
+      "psnr_sum": 134929.82473182678,
+      "ssim_sum": 3700.9657408595085,
+      "psnr": 35.6768441913873,
+      "ssim": 0.9785737019723714,
+      "complete": true
+    },
+    "x4k1000fps_holdout": {
+      "protocol": "xtrain_val; 65-frame 768x768 clips; recursive 8x on 0->32 and 32->64; uint8 metric",
+      "cases_done": 36,
+      "scene_count": 18,
+      "predicted_frames": 252,
+      "psnr_sum": 7820.277944564819,
+      "ssim_sum": 227.85577231645584,
+      "psnr": 31.032848986368332,
+      "ssim": 0.9041895726843486,
+      "complete": true
+    }
+  },
+  "complete": true,
+  "checkpoint": "/home/zhenying/qhong/repo/mm/3rd/vfi/ckpt/0729_lc_v3s2/0729_lc_v3s2_800.pkl",
+  "tta": true,
+  "color_order": "RGB",
+  "metric": "per-frame mean PSNR + official VFIMamba ssim_matlab"
+}

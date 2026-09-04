@@ -1,0 +1,132 @@
+# Single-variable refiner calibration based on 0729_lc_v3s2.
+#
+# Restore the exact 0729 LC data distribution/crop and freeze every flow,
+# mask, backbone and local-IFBlock parameter. The only intended behavioral
+# change is refine_res_scale 0.25 -> 0.05, followed by a low-LR refiner-only
+# calibration.
+#
+# Fine-tune command (do not add --resume):
+#   conda run -n vfi python train.py \
+#     --config train_config_s2v3_0729_refiner_calibration.yaml \
+#     --restore_ckpt ckpt/0729_lc_v3s2/0729_lc_v3s2_best.pkl
+
+exp_name: 0812_s2v3_0729_refiner_calibration
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.05
+
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  residual_loss_weight: 0.01
+
+  # No teacher flow supervision in this calibration experiment.
+  flow_loss_weight: 0.0
+  flow_loss_warmup_steps: 0
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.1
+  flow_motion_gain: 0.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: true
+
+optim:
+  # Only the refiner is trainable. This is deliberately much lower than a
+  # from-scratch LR because the source refiner is already converged.
+  lr_max: 1.0e-5
+  lr_min: 1.0e-6
+  warmup_steps: 500
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  backbone_lr_scale: 1.0
+  flow_lr_scale: 1.0
+  refine_lr_scale: 1.0
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, opensource]
+  batch_size: 6
+  num_workers: 16
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  # Exact spatial crop and micro-batch used by 0729.
+  crop_sizes:
+    - [384, 704, 6]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 0.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+  motion_aware_crop_prob: 0.0
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    opensource: opensource_val.txt
+
+phases:
+  - name: refiner_calibration
+    epochs: 40
+    steps_per_epoch: 1000
+    grad_accum_steps: 1
+    lr_schedule: phase
+    # Trainer.py guarantees that only parameters named unet.* receive grads.
+    trainable: refiner
+    local: true
+    crop_sizes:
+      - [384, 704, 6]
+    ratios: {easy: 0.2, normal: 0.2, hard: 0.2, opensource: 0.4}
+
+monitor:
+  # Evaluate early: visual calibration should not need a long run.
+  eval_every_epochs: 5
+  save_every_epochs: 5
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples_s2v3_0729_refiner_calibration
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps_s2v3_0729_refiner_calibration
+  dump_max: 10
+  best_metric: hard/psnr
+  best_mode: max

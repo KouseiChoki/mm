@@ -1,0 +1,31 @@
+{
+  "model": "0807_official_recipe_320",
+  "datasets": {
+    "vimeo90k": {
+      "protocol": "official tri_testlist; im1,im3 -> im2",
+      "cases_done": 3782,
+      "predicted_frames": 3782,
+      "psnr_sum": 138825.1056613922,
+      "ssim_sum": 3714.223559677601,
+      "psnr": 36.70679684330836,
+      "ssim": 0.9820792066836597,
+      "complete": true
+    },
+    "x4k1000fps_holdout": {
+      "protocol": "xtrain_val; 65-frame 768x768 clips; recursive 8x on 0->32 and 32->64; uint8 metric",
+      "cases_done": 36,
+      "scene_count": 18,
+      "predicted_frames": 252,
+      "psnr_sum": 7391.269568443298,
+      "ssim_sum": 216.5998396873474,
+      "psnr": 29.330434795409914,
+      "ssim": 0.8595231733624897,
+      "complete": true
+    }
+  },
+  "complete": true,
+  "checkpoint": "/home/zhenying/qhong/repo/mm/3rd/vfi/ckpt/0807_s2v3_official_tuesday/0807_s2v3_official_tuesday_320.pkl",
+  "tta": true,
+  "color_order": "RGB",
+  "metric": "per-frame mean PSNR + official VFIMamba ssim_matlab"
+}

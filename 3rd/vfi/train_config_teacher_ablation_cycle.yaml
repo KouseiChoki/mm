@@ -1,0 +1,175 @@
+# Controlled teacher-flow ablation: teacher_ablation_cycle.
+# official-recipe checkpoint on mms2.
+#
+# The previous crop512 run resized every Vimeo frame from 256x448 to 512x896,
+# while validation stayed at native resolution. This config deliberately keeps
+# Vimeo at native scale and uses the official 256x256 crop.
+#
+# Start from the same checkpoint for every variant (do not add --resume):
+#   conda run -n vfi python train.py \
+#     --config train_config_teacher_ablation_cycle.yaml \
+#     --restore_ckpt ckpt/0807_s2v3_official_tuesday/0807_s2v3_official_tuesday_320.pkl
+
+exp_name: 0813_teacher_ablation_cycle
+seed: 1234
+
+model:
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  refine_res_scale: 0.05
+
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lap
+  merge_loss_weights: [0.5]
+  normalize_pixel_loss: false
+  residual_loss_weight: 0.0
+
+  # Teacher supervision is auxiliary. The failed crop512 run used 0.002 and
+  # its weighted flow term reached about 20% of the pixel loss. Start at 1/4
+  # of that strength so reconstruction remains the primary objective.
+  flow_loss_weight: 0.0005
+  flow_loss_warmup_steps: 2000
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.5
+  flow_motion_gain: 0.5
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 3.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: false
+
+optim:
+  # Explicit low fine-tune LR. Keep finetune=false because train.py otherwise
+  # applies another implicit 0.25 multiplier to these values.
+  lr_max: 2.0e-5
+  lr_min: 2.0e-6
+  warmup_steps: 500
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  # Preserve the high-PSNR backbone/refiner and preferentially adapt flow.
+  backbone_lr_scale: 0.25
+  flow_lr_scale: 1.0
+  refine_lr_scale: 0.25
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, vimeo, xtrain, teacher]
+  batch_size: 20
+  num_workers: 24
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes:
+    - [256, 256, 20]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+
+  mv_cache_dirname: mv_cache_f16
+  mv_cache_required: true
+  mv_cache_preview_stride: 4
+  # Train-mask is the only ablated variable; all variants validate on the same hard mask.
+  mv_cycle_confidence: hard
+  mv_cycle_cache_required: false
+  val_mv_cycle_confidence: hard
+  val_mv_cycle_cache_required: false
+  mv_cycle_on_the_fly: true
+  val_mv_cycle_on_the_fly: true
+  motion_aware_crop_prob: 0.7
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  source_options:
+    vimeo:
+      framesteps: [1]
+      # Intentionally no resize_hw: train and validation both use native scale.
+      augment_profile: vimeo
+    xtrain:
+      framesteps: [1]
+      resize_hw: [256, 256]
+      augment_profile: vimeo
+    teacher:
+      framesteps: [1]
+      augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    vimeo: vimeo_val.txt
+    xtrain: xtrain_val.txt
+    teacher: teacher_val.txt
+
+phases:
+  - name: teacher_ablation_cycle
+    epochs: 20
+    # 20 * 802 = 16,040 optimizer updates for a controlled pilot. Extend only
+    # the winning variant after comparing reconstruction and moving-flow EPE.
+    steps_per_epoch: 802
+    grad_accum_steps: 2
+    lr_schedule: phase
+    trainable: all
+    # The epoch-320 source checkpoint already contains trained local IFBlocks.
+    local: true
+    crop_sizes:
+      - [256, 256, 20]
+    # Fixed micro-batch: retain 40% native Vimeo, emphasize hard scenes, and
+    # keep teacher at only 10% so it cannot dominate reconstruction.
+    ratios: {vimeo: 0.4, xtrain: 0.1, easy: 0.1, normal: 0.1, hard: 0.2, teacher: 0.1}
+    batch_counts: {vimeo: 8, xtrain: 2, easy: 2, normal: 2, hard: 4, teacher: 2}
+    curriculum:
+      source: xtrain
+      every_epochs: 16
+      max_stage: 4
+      framestep_start: 1
+      framestep_multiplier: 2
+      resize_start: 256
+      resize_multiplier: 1.1
+
+monitor:
+  # All non-checkpoint artifacts go to record/<exp_name>/.
+  record_root: record
+  eval_every_epochs: 5
+  save_every_epochs: 5
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps
+  dump_max: 20
+  # 0 disables MV output. The teacher val list currently has two deterministic
+  # samples, so save both every five epochs.
+  mv_compare_every_epochs: 5
+  mv_compare_max_samples: 2
+  mv_compare_dir: mv_comparisons
+  # Use reconstruction quality for model selection; flow EPE remains logged.
+  best_metric: all/psnr
+  best_mode: max

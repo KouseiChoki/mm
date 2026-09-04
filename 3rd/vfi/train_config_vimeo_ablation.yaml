@@ -1,17 +1,14 @@
 # 仅使用官方 Vimeo90K-Triplet 的独立消融配置。
 # 准备清单:
 #   python data_prepare/build_vimeo_lists.py --root /data/vimeo_triplet
-# 单卡:
+# 训练:
 #   python train.py --config train_config_vimeo_ablation.yaml
-# 多机DDP:
-#   torchrun ... train_ddp.py --config train_config_vimeo_ablation.yaml
 
 exp_name: Vimeo_F48_v3_lc
 seed: 1234
 
-# 51,312 train triplets / 单rank batch 16 = 3,207。
-# 两个rank且preserve_single_node_samples_per_epoch=true时自动变为1,604 step，
-# global batch=32，与LC-Mamba论文一致。若单rank batch改为8，这里同步改为6414。
+# 51,312 train triplets / batch 16 = 3,207 steps。
+# 若 batch 改为 8，这里同步改为 6,414。
 steps_per_epoch: 3207
 
 model:
@@ -49,7 +46,6 @@ model:
   compact_quarter_head: true
   zero_init_residual_heads: true
   local_zero_init: true
-  local_cfg: [[2, 4, 1.0, 8], [1, 2, 1.0, 8], [1, 1, 0.5, 4]]
   merge_loss_gamma: 0.5
   normalize_pixel_loss: true
   residual_loss_weight: 0.0
@@ -63,9 +59,6 @@ optim:
   amp: true
   amp_dtype: bf16
   grad_clip: 1.0
-  grad_accum_steps: 1
-  cudnn_benchmark: true
-  matmul_precision: high
   weight_decay: 1.0e-4
   betas: [0.9, 0.999]
   eps: 1.0e-8
@@ -81,8 +74,6 @@ data:
   batch_size: 16
   num_workers: 16
   val_num_workers: 4
-  persistent_workers: true
-  prefetch_factor: 2
 
   # 官方图像为256x448；只随机裁256x256，不放大、不补边。
   crop_sizes:
@@ -95,17 +86,6 @@ data:
   augment_profile: vimeo
   val_lists:
     vimeo: vimeo_val.txt
-
-distributed:
-  backend: nccl
-  timeout_minutes: 30
-  broadcast_buffers: false
-  find_unused_parameters: false
-  gradient_as_bucket_view: true
-  static_graph: false
-  bucket_cap_mb: 25
-  fp16_compress_hook: false
-  preserve_single_node_samples_per_epoch: true
 
 phases:
   - name: vimeo

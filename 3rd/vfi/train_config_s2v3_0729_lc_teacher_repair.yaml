@@ -1,0 +1,155 @@
+# 0729_lc_v3s2 texture-preserving repair fine-tune.
+#
+# Goal:
+#   1. Keep the LC/Census texture reconstruction learned by 0729_lc_v3s2.
+#   2. Limit the final refiner so a good merged frame is not blurred again.
+#   3. Add motion-balanced teacher flow supervision and motion-aware crops for
+#      foreground boundaries and small moving objects.
+#
+# This is a fine-tune, not a resume. Do NOT add --resume:
+#   conda run -n vfi python train.py \
+#     --config train_config_s2v3_0729_lc_teacher_repair.yaml \
+#     --restore_ckpt ckpt/0729_lc_v3s2/0729_lc_v3s2_best.pkl
+
+exp_name: 0811_s2v3_0729_lc_teacher_repair
+seed: 1234
+
+model:
+  # Keep the 0729 checkpoint architecture unchanged so all learned weights load.
+  F: 32
+  depth: [2, 2, 2, 3, 3]
+  version: 3
+  refine_attn_dim: 512
+  refine_attn_heads: 8
+  refine_kv_pool: 4
+  # 0729 used 0.25. The smaller residual keeps the sharp merged result dominant.
+  refine_res_scale: 0.05
+
+  ssm_version: 2
+  ssd_dstate: 64
+  ssd_headdim: 64
+  ssd_chunk: 256
+
+  blend_mode: soft
+  pervfi_mask_loss_weight: 0.0
+  loss_type: lc
+  lc_charbonnier_eps: 1.0e-3
+  lc_census_weight: 1.0
+  lc_lap_weight: 1.0
+  lc_warp_weight: 0.5
+  merge_loss_gamma: 0.5
+  normalize_pixel_loss: true
+  # Penalize unnecessary final-refiner changes without freezing the refiner.
+  residual_loss_weight: 0.02
+
+  # Corrected teacher-flow convention and motion-balanced supervision.
+  flow_loss_weight: 0.002
+  flow_loss_warmup_steps: 2500
+  flow_stage_gamma: 0.2
+  flow_motion_threshold: 1.0
+  flow_motion_balance: 0.8
+  flow_motion_gain: 1.0
+  flow_motion_scale: 10.0
+  flow_motion_weight_cap: 4.0
+  flow_charbonnier_eps: 1.0e-3
+
+  flow_num_stages: 3
+  compact_quarter_head: false
+  zero_init_residual_heads: true
+  local_zero_init: true
+
+optim:
+  # Fine-tune LR is explicit here; optim.finetune stays false to avoid train.py
+  # applying another implicit 0.25 multiplier.
+  lr_max: 1.0e-5
+  lr_min: 1.0e-6
+  warmup_steps: 500
+  finetune: false
+  amp: true
+  amp_dtype: bf16
+  grad_clip: 1.0
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  # Protect the learned texture backbone/refiner; let flow blocks adapt faster.
+  backbone_lr_scale: 0.2
+  flow_lr_scale: 1.0
+  refine_lr_scale: 0.2
+
+data:
+  root: /home/zhenying/qhong/data/ssd/vfi_database
+  lists_dir: /home/zhenying/qhong/data/ssd/vfi_database/lists
+  tiers: [easy, normal, hard, opensource, teacher]
+  # LC Census has a large 7x7 activation at 512x512. Micro-batch 10 peaks
+  # above a 32 GiB GPU, so use 8 and compensate with accumulation=5.
+  batch_size: 8
+  num_workers: 24
+  prefetch_factor: 4
+  in_order: false
+  val_num_workers: 4
+  val_samples_per_scene: 1
+  crop_sizes:
+    - [512, 512, 8]
+  framesteps: [1, 2]
+  t_half_prob: 1.0
+  mv_prob: 1.0
+  mv_sign: [1, 1]
+  mv_symmetry_confidence: false
+  occ_alpha: 0.05
+  occ_beta: 1.0
+
+  # Use mmap-friendly cached MV crops; fail early instead of silently reading EXR.
+  mv_cache_dirname: mv_cache_f16
+  mv_cache_required: true
+  mv_cache_preview_stride: 4
+  motion_aware_crop_prob: 0.7
+  motion_crop_threshold: 1.0
+  small_motion_min_pixels: 8
+  small_motion_max_ratio: 0.05
+  motion_crop_jitter: 0.2
+  augment_profile: legacy
+  source_options:
+    teacher:
+      framesteps: [1]
+      augment_profile: legacy
+  val_lists:
+    all: val.txt
+    easy: easy_val.txt
+    normal: normal_val.txt
+    hard: hard_val.txt
+    opensource: opensource_val.txt
+    teacher: teacher_val.txt
+
+phases:
+  - name: lc_teacher_repair
+    epochs: 100
+    # Same 512-crop pixel budget as the current crop512 experiment.
+    steps_per_epoch: 401
+    # 8 x 5 keeps the effective batch at 40.
+    grad_accum_steps: 2
+    lr_schedule: phase
+    trainable: all
+    # Keep the loaded local IFBlocks active; this is not a local-only phase.
+    local: true
+    crop_sizes:
+      - [512, 512, 8]
+    # Fixed micro-batch: 2 open-source, 1 easy, 1 normal, 2 hard, 2 teacher.
+    # This slightly raises teacher sampling to 25%, which benefits the repair
+    # goal while keeping every source represented in every micro-batch.
+    ratios: {opensource: 0.25, easy: 0.125, normal: 0.125, hard: 0.25, teacher: 0.25}
+    batch_counts: {opensource: 2, easy: 1, normal: 1, hard: 2, teacher: 2}
+
+monitor:
+  eval_every_epochs: 10
+  save_every_epochs: 10
+  log_every_steps: 100
+  print_every_steps: 10
+  spike_ratio: 3.0
+  spike_dir: spike_samples_s2v3_0729_lc_teacher_repair
+  flow_loss_dump_threshold: 40
+  dump_dir: anomaly_dumps_s2v3_0729_lc_teacher_repair
+  dump_max: 20
+  # Small foreground problems are concentrated in hard; do not select solely
+  # by teacher EPE, which can trade away perceptual reconstruction quality.
+  best_metric: hard/psnr
+  best_mode: max
